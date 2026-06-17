@@ -1,0 +1,4 @@
+name: time
+version: 1.0.0
+description: High-Precision Time, Duration, and Calendar Library
+dependencies: {}

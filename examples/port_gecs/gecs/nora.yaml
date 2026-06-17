@@ -1,0 +1,26 @@
+name: gecs
+version: 1.0.0
+language: 0.1.0
+entry: src/lib.nr
+output: libgecs
+plugins: []
+dependencies:
+    gecs:
+        path: src
+        version: ""
+native:
+    compiler: ""
+    opt_release: ""
+    opt_debug: ""
+    debug_symbols: ""
+    out_flag: ""
+    inc_flag: ""
+    define_flag: ""
+    lib_dir_flag: ""
+    cflags: ["-Wno-pointer-sign", "-Wno-deprecated-declarations", "-Wno-parentheses-equality", "-Wno-unused-value"]
+    dynamic_libs: []
+    static_libs: []
+    include_dirs: ["build/debug", "build/release"]
+    lib_dirs: []
+    headers: []
+    source_files: []

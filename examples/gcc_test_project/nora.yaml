@@ -1,0 +1,12 @@
+name: gcc_test_project
+version: 1.0.0
+entry: src/main.nr
+output: main
+
+native:
+  compiler: gcc
+  opt_release: "-O3"
+  opt_debug: "-O0"
+  cflags:
+    - "-Wall"
+    - "-Wextra"

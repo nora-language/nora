@@ -1,0 +1,9 @@
+name: verification_proj
+version: 1.0.0
+entry: src/main.nr
+output: verification_proj
+plugins: []
+dependencies:
+    test_lib:
+        path: ../scratch/test_lib
+        version: 0.5.2

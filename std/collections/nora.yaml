@@ -1,0 +1,4 @@
+name: collections
+version: 1.0.0
+description: Standard Collections (Vector, List, HashMap)
+dependencies: {}

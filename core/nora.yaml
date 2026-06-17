@@ -1,0 +1,11 @@
+name: core
+version: 1.0.0
+allow_unsafe: true
+description: Nora Core Library (Non-Allocating Primitives)
+components:
+  - cmp
+  - hash
+  - iter
+  - math
+  - ops
+  - prelude

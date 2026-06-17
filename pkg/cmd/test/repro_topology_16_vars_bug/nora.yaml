@@ -1,0 +1,12 @@
+name: repro_topology_16_vars_bug
+version: 1.0.0
+language: 0.1.0
+entry: src/main.nr
+output: main_bin
+plugins: []
+dependencies:
+native:
+  compiler: clang
+  cflags: []
+  headers: []
+  source_files: ["src/native.c"]

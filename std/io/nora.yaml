@@ -1,0 +1,4 @@
+name: io
+version: 1.0.0
+description: Standard Input/Output and Printing
+dependencies: {}

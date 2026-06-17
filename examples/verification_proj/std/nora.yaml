@@ -1,0 +1,8 @@
+name: std
+version: 1.0.0
+description: Nora Standard Library
+components:
+  - io
+  - string
+  - plugin
+  - runtime

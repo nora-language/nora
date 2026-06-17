@@ -1,0 +1,43 @@
+name: engine_demo
+version: 1.0.0
+entry: src/main.nr
+output: engine_demo.exe
+
+dependencies:
+  gecs:
+    path: ../port_gecs/gecs/src
+    version: 1.0.0
+  core:
+    path: src/core
+    version: ""
+  ecs:
+    path: src/features/ecs
+    version: ""
+  rendering:
+    path: src/features/rendering
+    version: ""
+  physics:
+    path: src/features/physics
+    version: ""
+
+native:
+  source_files:
+    - src/features/rendering/native.c
+  compiler: clang
+  cflags: ["-O3", "-DNDEBUG", "-w", "-DGLFW_EXPOSE_NATIVE_WIN32", "-lstdc++"]
+  dynamic_libs:
+    - glfw3dll
+    - wgpu_native
+    - userenv
+    - bcrypt
+    - ntdll
+  static_libs:
+    - "lib/wrapper.obj"
+    - "../jolt_test/lib/Jolt.lib"
+  include_dirs:
+    - ../glfw_test/lib/glfw-3.4.bin.WIN64/include
+    - ../glfw_test/lib/wgpu/include
+    - ../jolt_test/JoltPhysics
+  lib_dirs:
+    - ../glfw_test/lib/glfw-3.4.bin.WIN64/lib-vc2022
+    - ../glfw_test/lib/wgpu/lib

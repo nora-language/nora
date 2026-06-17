@@ -1,0 +1,285 @@
+{
+  "Function Declaration": {
+    "prefix": "fn",
+    "body": [
+      "fn ${1:name}(${2:params}) ${3:return_type} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Nora function declaration"
+  },
+  "Main Function": {
+    "prefix": "fnmain",
+    "body": [
+      "fn main() i32 {",
+      "\t$0",
+      "\treturn 0",
+      "}"
+    ],
+    "description": "Main entry point function"
+  },
+  "Method Declaration": {
+    "prefix": "fnm",
+    "body": [
+      "fn (${1:self}: ${2|&,mut,#,@|}${3:Type}) ${4:MethodName}(${5:params}) ${6:return_type} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Method with receiver"
+  },
+  "Package Main": {
+    "prefix": "pkgmain",
+    "body": [
+      "package main",
+      "",
+      "fn main() i32 {",
+      "\t$0",
+      "\treturn 0",
+      "}"
+    ],
+    "description": "Package main with main function boilerplate"
+  },
+  "Package Declaration": {
+    "prefix": "pkg",
+    "body": [
+      "package ${1:name}"
+    ],
+    "description": "Package declaration"
+  },
+  "Import": {
+    "prefix": "imp",
+    "body": [
+      "import \"${1:io}\""
+    ],
+    "description": "Import a package"
+  },
+  "Import with Alias": {
+    "prefix": "impa",
+    "body": [
+      "import ${1:alias} \"${2:path}\""
+    ],
+    "description": "Import a package with alias"
+  },
+  "Variable Declaration": {
+    "prefix": "var",
+    "body": [
+      "var ${1:name} = ${2:value}"
+    ],
+    "description": "Variable declaration with type inference"
+  },
+  "Variable with Type": {
+    "prefix": "vart",
+    "body": [
+      "var ${1:name}: ${2:type} = ${3:value}"
+    ],
+    "description": "Variable declaration with explicit type"
+  },
+  "If Statement": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "If statement"
+  },
+  "If-Else Statement": {
+    "prefix": "ife",
+    "body": [
+      "if ${1:condition} {",
+      "\t$2",
+      "} else {",
+      "\t$0",
+      "}"
+    ],
+    "description": "If-else statement"
+  },
+  "For Loop (C-style)": {
+    "prefix": "for",
+    "body": [
+      "for ${1:var i = 0}; ${2:i < n}; ${3:i++} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "C-style for loop"
+  },
+  "For-In Loop": {
+    "prefix": "forin",
+    "body": [
+      "for ${1:item} in ${2:collection} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "For-in range loop"
+  },
+  "While Loop": {
+    "prefix": "while",
+    "body": [
+      "while ${1:condition} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "While loop"
+  },
+  "Match Expression": {
+    "prefix": "match",
+    "body": [
+      "match ${1:value} {",
+      "\t${2:Pattern} => {",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ],
+    "description": "Match expression with pattern arms"
+  },
+  "Match Option": {
+    "prefix": "matchopt",
+    "body": [
+      "match ${1:value} {",
+      "\tSome(${2:val}) => {",
+      "\t\t$3",
+      "\t}",
+      "\tNone => {",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ],
+    "description": "Match on Option[T] with Some/None"
+  },
+  "Match Result": {
+    "prefix": "matchres",
+    "body": [
+      "match ${1:value} {",
+      "\tOk(${2:val}) => {",
+      "\t\t$3",
+      "\t}",
+      "\tErr(${4:err}) => {",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ],
+    "description": "Match on Result[T, E] with Ok/Err"
+  },
+  "Struct Type": {
+    "prefix": "struct",
+    "body": [
+      "type ${1:Name} = struct {",
+      "\t${2:Field}: ${3:type},",
+      "}"
+    ],
+    "description": "Struct type definition"
+  },
+  "Sum Type (Enum)": {
+    "prefix": "sumtype",
+    "body": [
+      "type ${1:Name} =",
+      "\t| ${2:Variant1}",
+      "\t| ${3:Variant2}(${4:field}: ${5:type})"
+    ],
+    "description": "Sum type (tagged union) definition"
+  },
+  "Protocol": {
+    "prefix": "protocol",
+    "body": [
+      "protocol ${1:Name} {",
+      "\tfn ${2:MethodName}(${3:params}) ${4:return_type}",
+      "}"
+    ],
+    "description": "Protocol (interface) definition"
+  },
+  "Spawn Fiber": {
+    "prefix": "spawn",
+    "body": [
+      "spawn {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Spawn a new fiber (lightweight task)"
+  },
+  "Spawn Function Call": {
+    "prefix": "spawnfn",
+    "body": [
+      "spawn ${1:function_name}(${2:args})"
+    ],
+    "description": "Spawn a function call as a fiber"
+  },
+  "Parallel Block": {
+    "prefix": "parallel",
+    "body": [
+      "parallel {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Parallel block — runs tasks on separate OS threads"
+  },
+  "Channel Creation": {
+    "prefix": "chan",
+    "body": [
+      "var ${1:ch} = make(chan ${2:i32}, ${3:0})"
+    ],
+    "description": "Create a channel"
+  },
+  "Select Statement": {
+    "prefix": "select",
+    "body": [
+      "select {",
+      "\tcase ${1:msg} = <-${2:ch}:",
+      "\t\t$3",
+      "\tdefault:",
+      "\t\t$0",
+      "}"
+    ],
+    "description": "Select on channels"
+  },
+  "Defer": {
+    "prefix": "defer",
+    "body": [
+      "defer ${1:function_call}(${2:args})"
+    ],
+    "description": "Defer a function call to scope exit"
+  },
+  "Pin": {
+    "prefix": "pin",
+    "body": [
+      "pin ${1:variable}"
+    ],
+    "description": "Pin a variable's lease for FFI interop"
+  },
+  "Extern Declaration": {
+    "prefix": "extern",
+    "body": [
+      "extern fn ${1:name}(${2:params}) ${3:return_type}"
+    ],
+    "description": "Declare an external C function"
+  },
+  "Export Declaration": {
+    "prefix": "export",
+    "body": [
+      "export fn ${1:name}(${2:params}) ${3:return_type} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Export a function for C interop"
+  },
+  "Print Line": {
+    "prefix": "pln",
+    "body": [
+      "io.println(\"${1:message}\")"
+    ],
+    "description": "Print a line to stdout"
+  },
+  "Print Interpolated": {
+    "prefix": "plnf",
+    "body": [
+      "io.println(\"${1:message}: \\${${2:expr}}\")"
+    ],
+    "description": "Print with string interpolation"
+  },
+  "Doc Comment": {
+    "prefix": "///",
+    "body": [
+      "/// ${1:description}"
+    ],
+    "description": "Documentation comment"
+  }
+}

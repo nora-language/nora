@@ -1,0 +1,7 @@
+name: mylib
+version: 1.0.0
+native:
+  source_files:
+    - "my_c_lib.c"
+  include_dirs:
+    - mylib

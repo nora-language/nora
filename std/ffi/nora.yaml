@@ -1,0 +1,4 @@
+name: ffi
+version: 1.0.0
+description: Premium Standard Foreign Function Interface Library
+dependencies: {}

@@ -1,0 +1,4 @@
+name: nursery
+version: 1.0.0
+description: Structured Concurrency Nursery Scopes
+dependencies: {}

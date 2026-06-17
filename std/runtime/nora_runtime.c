@@ -1,0 +1,13 @@
+#include "runtime.h"
+
+#include "base.c"
+#include "memory.c"
+#include "fiber.c"
+#include "string.c"
+#include "collection.c"
+#include "channel.c"
+#include "time.c"
+#include "sync.c"
+#include "os.c"
+#include "crypto.c"
+#include "net.c"

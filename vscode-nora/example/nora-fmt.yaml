@@ -1,0 +1,4 @@
+indent_size: 8
+use_tabs: false
+max_line_width: 100
+organize_imports: true

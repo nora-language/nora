@@ -1,0 +1,26 @@
+name: my_test_lib_anywhere
+version: 1.0.0
+language: 0.1.0
+entry: src/lib.nr
+output: libmy_test_lib_anywhere
+plugins: []
+dependencies:
+    my_test_lib_anywhere:
+        path: src
+        version: ""
+native:
+    compiler: ""
+    opt_release: ""
+    opt_debug: ""
+    debug_symbols: ""
+    out_flag: ""
+    inc_flag: ""
+    define_flag: ""
+    lib_dir_flag: ""
+    cflags: []
+    dynamic_libs: []
+    static_libs: []
+    include_dirs: []
+    lib_dirs: []
+    headers: []
+    source_files: []

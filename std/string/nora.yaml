@@ -1,0 +1,4 @@
+name: string
+version: 1.0.0
+description: Standard String Manipulation
+dependencies: {}

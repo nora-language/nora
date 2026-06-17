@@ -1,0 +1,4 @@
+name: crypto
+version: 1.0.0
+description: Premium Hashing, Encoding and Cryptographic Library
+dependencies: {}

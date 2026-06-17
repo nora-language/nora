@@ -1,0 +1,145 @@
+{
+  "name": "nora",
+  "displayName": "Nora Language",
+  "description": "Full language support for Nora — syntax highlighting, LSP, completions, and more",
+  "version": "0.2.0",
+  "publisher": "nora",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Formatters",
+    "Linters"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "nr",
+        "aliases": [
+          "Nora",
+          "nr"
+        ],
+        "extensions": [
+          ".nr"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "nr",
+        "scopeName": "source.nr",
+        "path": "./syntaxes/nora.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "nr",
+        "path": "./snippets/nora.code-snippets.json"
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "nr"
+      }
+    ],
+    "commands": [
+      {
+        "command": "nora.formatDocument",
+        "title": "Format Document",
+        "category": "Nora"
+      },
+      {
+        "command": "nora.formatWorkspace",
+        "title": "Format All .nr Files in Workspace",
+        "category": "Nora"
+      }
+    ],
+    "menus": {
+      "editor.context": [
+        {
+          "when": "editorLangId == nr",
+          "command": "nora.formatDocument",
+          "group": "1_modification"
+        }
+      ]
+    },
+    "configurationDefaults": {
+      "[nr]": {
+        "editor.defaultFormatter": "nora.nora"
+      }
+    },
+    "semanticTokenScopes": [
+      {
+        "language": "nr",
+        "scopes": {
+          "namespace": ["entity.name.namespace.nr"],
+          "type": ["entity.name.type.nr"],
+          "class": ["entity.name.type.class.nr"],
+          "enum": ["entity.name.type.enum.nr"],
+          "interface": ["entity.name.type.interface.nr"],
+          "struct": ["entity.name.type.struct.nr"],
+          "typeParameter": ["entity.name.type.parameter.nr"],
+          "parameter": ["variable.parameter.nr"],
+          "variable": ["variable.other.nr"],
+          "property": ["variable.other.property.nr"],
+          "enumMember": ["variable.other.enummember.nr"],
+          "function": ["entity.name.function.nr", "entity.name.function.declaration.nr"],
+          "method": ["entity.name.function.method.nr"],
+          "macro": ["entity.name.function.macro.nr"],
+          "keyword": ["keyword.nr"],
+          "modifier": ["storage.modifier.nr"],
+          "comment": ["comment.nr"],
+          "string": ["string.quoted.double.nr", "string.quoted.triple.nr", "string.nr"],
+          "number": ["constant.numeric.nr"],
+          "operator": [
+            "keyword.operator.nr",
+            "keyword.operator.parenthesis.nr",
+            "keyword.operator.interpolation.nr",
+            "punctuation.section.interpolation.begin.nr",
+            "punctuation.section.interpolation.end.nr",
+            "punctuation.section.interpolation.simple.nr"
+          ]
+        }
+      }
+    ],
+    "configuration": {
+      "title": "Nora",
+      "properties": {
+        "nora.server.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Nora language server binary. Leave empty to use the bundled binary."
+        },
+        "nora.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the Nora language server."
+        },
+        "nora.format.onSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Format .nr files on save using the Nora formatter (via LSP)."
+        }
+      }
+    }
+  },
+  "main": "./out/extension.js",
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.75.0",
+    "@types/node": "^16.18.34",
+    "typescript": "^5.1.3"
+  }
+}

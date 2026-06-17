@@ -1,0 +1,6 @@
+name: aho
+version: 1.0.0
+entry: src/main.nr
+output: aho
+plugins: []
+dependencies: {}

@@ -1,0 +1,28 @@
+name: std
+version: 1.0.0
+allow_unsafe: true
+description: Nora Standard Library
+components:
+  - io
+  - string
+  - plugin
+  - runtime
+  - collections
+  - json
+  - crypto
+  - math
+  - os
+  - time
+  - net
+  - sync
+  - event
+  - ffi
+  - random
+
+native:
+  include_dirs:
+    - runtime
+  headers:
+    - runtime.h
+  source_files:
+    - runtime/nora_runtime.c

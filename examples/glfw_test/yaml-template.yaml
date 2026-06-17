@@ -1,0 +1,25 @@
+name: my_game
+version: 1.0.0
+entry: src/main.nr
+output: game.exe
+
+# New Section for Native C Interop
+native:
+  # Dynamic Linking (passes -lraylib -lGL etc. to the C compiler)
+  dynamic_libs:
+    - raylib
+    - GL
+    - m
+    - pthread
+    
+  # Static Linking (passes actual .a / .lib files to the linker)
+  static_libs:
+    - libs/libglfw3.a
+    
+  # Custom Include Directories (passes -I to the C compiler)
+  include_dirs:
+    - vendor/raylib/src
+    
+  # Custom Library Directories (passes -L to the C compiler)
+  lib_dirs:
+    - vendor/raylib/lib

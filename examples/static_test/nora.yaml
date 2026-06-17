@@ -1,0 +1,7 @@
+name: test_static
+version: 1.0.0
+entry: src/test_static.nr
+output: test_static
+dependencies:
+  mylib:
+    path: "./mylib"

@@ -1,0 +1,4 @@
+name: random
+version: 1.0.0
+description: Standard Random Library utilizing Knuth Linear Congruential Generator
+dependencies: {}

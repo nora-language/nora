@@ -1,0 +1,10 @@
+name: ffi_test
+version: 1.0.0
+entry: src/main.nr
+output: demo_ffi.exe
+
+native:
+  static_libs:
+    - libmylib.a
+  include_dirs:
+    - .

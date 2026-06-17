@@ -1,0 +1,45 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Nora Program (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/debug/aho",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Nora (Debug) (Linux)",
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            // 🚀 THIS FIXES THE "FILE NOT FOUND" ON LINUX
+            "sourceFileMap": {
+                "src": "${workspaceFolder}/src"
+            }
+        },
+         {
+            "name": "Debug Nora Program (Windows)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/debug/basic.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build Nora (Debug) (Windows)",
+            "sourceFileMap": {
+                "src": "${workspaceFolder}/src",
+                "std": "${workspaceFolder}../../../std"
+            }
+        }
+    ]
+}

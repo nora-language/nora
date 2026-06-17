@@ -1,0 +1,22 @@
+name: glfw_test
+version: 1.0.0
+entry: src/main.nr
+output: demo_glfw.exe
+
+native:
+  compiler: clang
+  cflags: ["-O3", "-DNDEBUG", "-w"]
+  headers: []
+  source_files: ["src/native.c"]
+  dynamic_libs:
+    - glfw3dll
+    - wgpu_native
+    - userenv
+    - bcrypt
+    - ntdll
+  include_dirs:
+    - lib/glfw-3.4.bin.WIN64/include
+    - lib/wgpu/include
+  lib_dirs:
+    - lib/glfw-3.4.bin.WIN64/lib-vc2022
+    - lib/wgpu/lib

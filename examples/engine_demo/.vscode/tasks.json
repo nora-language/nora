@@ -1,0 +1,34 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Nora (Debug) (Linux)",
+            "type": "shell",
+            "command": "../../nora",
+            "args": [
+                "build",
+                "-g"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build Nora (Debug) (Windows)",
+            "type": "shell",
+            "command": "../../nora.exe",
+            "args": [
+                "build",
+                "-g",
+                "-debug-memory"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        }
+    ]
+}
