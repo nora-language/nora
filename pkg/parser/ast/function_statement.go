@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/token"
+	"github.com/nora-language/nora/pkg/token"
 )
 
 // FunctionStatement represents: fn add(a: i32, b: i32) i32 { ... }

@@ -3,9 +3,9 @@ package hir
 import (
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
-	"github.com/DwiYI/Project-Nora/pkg/types"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/types"
 )
 
 type BlockElementKind int

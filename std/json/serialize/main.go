@@ -6,10 +6,10 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/DwiYI/Project-Nora/pkg/lexer"
-	"github.com/DwiYI/Project-Nora/pkg/parser"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/plugin/api"
+	"github.com/nora-language/nora/pkg/lexer"
+	"github.com/nora-language/nora/pkg/parser"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/plugin/api"
 )
 
 func main() {
@@ -195,7 +195,7 @@ func generateNoraSerializationCode(sName string, sl *ast.StructLiteral) string {
 	sb.WriteString("            var i = 0\n")
 	sb.WriteString("            while (i < obj.Len[json.JsonProperty]()) {\n")
 	sb.WriteString("                var prop = obj.Get[json.JsonProperty](i)\n")
-	
+
 	matchedAny := false
 	for _, f := range sl.Fields {
 		if isFieldBorrowed(f) {

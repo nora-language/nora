@@ -1,6 +1,6 @@
 package ast
 
-import "github.com/DwiYI/Project-Nora/pkg/token"
+import "github.com/nora-language/nora/pkg/token"
 
 // export fn my_api() { ... }
 type ExportStatement struct {

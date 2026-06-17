@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/plugin/api"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
-	"github.com/DwiYI/Project-Nora/pkg/types"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/plugin/api"
+	"github.com/nora-language/nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/types"
 )
 
 func (g *Generator) genExpression(expr ast.Expression) {
@@ -349,17 +349,28 @@ func (g *Generator) genInfixExpression(e *ast.InfixExpression) {
 		if isStruct, ok := utL.(*types.StructType); ok {
 			methodName := ""
 			switch e.Operator {
-			case "+": methodName = "add"
-			case "-": methodName = "sub"
-			case "*": methodName = "mul"
-			case "/": methodName = "div"
-			case "%": methodName = "mod"
-			case "&": methodName = "bitand"
-			case "|": methodName = "bitor"
-			case "^": methodName = "bitxor"
-			case "<<": methodName = "shl"
-			case ">>": methodName = "shr"
-			case "<", ">", "<=", ">=": methodName = "cmp"
+			case "+":
+				methodName = "add"
+			case "-":
+				methodName = "sub"
+			case "*":
+				methodName = "mul"
+			case "/":
+				methodName = "div"
+			case "%":
+				methodName = "mod"
+			case "&":
+				methodName = "bitand"
+			case "|":
+				methodName = "bitor"
+			case "^":
+				methodName = "bitxor"
+			case "<<":
+				methodName = "shl"
+			case ">>":
+				methodName = "shr"
+			case "<", ">", "<=", ">=":
+				methodName = "cmp"
 			}
 			if methodName != "" {
 				if methodType, exists := isStruct.Methods[methodName]; exists {
@@ -437,13 +448,16 @@ func (g *Generator) genPrefixExpression(e *ast.PrefixExpression) {
 			if st, ok := urt.(*types.StructType); ok {
 				methodName := ""
 				switch e.Operator {
-				case "!": methodName = "not"
-				case "-": methodName = "neg"
-				case "~": methodName = "bitnot"
+				case "!":
+					methodName = "not"
+				case "-":
+					methodName = "neg"
+				case "~":
+					methodName = "bitnot"
 				}
 				g.buf.WriteString(g.mangledTypeName(st) + "_" + methodName + "(")
 				g.buf.WriteString("NULL, ")
-				
+
 				// We need to pass it by address if the method takes a lease
 				if methodType, exists := st.Methods[methodName]; exists {
 					if mt, ok := methodType.(*types.FunctionType); ok {
@@ -462,8 +476,8 @@ func (g *Generator) genPrefixExpression(e *ast.PrefixExpression) {
 
 	if e.Operator == "@" {
 		t := g.SemanticInfo.Types[e.Right]
-		
-		// Strip the lease to get the underlying value, EXCEPT for ProtocolType 
+
+		// Strip the lease to get the underlying value, EXCEPT for ProtocolType
 		// (interfaces are always represented as pointers in C, even when moved).
 		if pt, ok := t.(*types.PointerType); ok && pt.Leased && pt.Kind != types.LeaseMove {
 			if _, isProto := pt.Base.(*types.ProtocolType); !isProto {
@@ -495,7 +509,7 @@ func (g *Generator) genPrefixExpression(e *ast.PrefixExpression) {
 							isHeapPointerLease = true
 						}
 					}
-					
+
 					if isHeapPointerLease {
 						if !g.isPointerTypeInC(t) {
 							g.buf.WriteString(fmt.Sprintf("nr_free(%s); %s = NULL; ", id.Value, id.Value))
@@ -602,7 +616,7 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 	var matchedStruct *types.StructType
 	var castSym *semantic.Symbol
 	var isSelector = false
-	
+
 	funcExpr := e.Function
 	if idx, ok := funcExpr.(*ast.IndexExpression); ok {
 		funcExpr = idx.Left
@@ -884,12 +898,12 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 					g.buf.WriteString(")[")
 					g.genExpression(e.Arguments[0].Value)
 					g.buf.WriteString("] = ")
-					
+
 					oldVal := g.TargetIsValue
 					g.TargetIsValue = true
 					g.genExpression(e.Arguments[1].Value)
 					g.TargetIsValue = oldVal
-					
+
 					g.buf.WriteString(")")
 					return
 				}
@@ -1201,18 +1215,18 @@ func (g *Generator) genAddressOf(expr ast.Expression, targetType types.NRType, l
 		}
 		ct := g.cType(t)
 		g.buf.WriteString(fmt.Sprintf("(%s[]){ ", ct))
-		
+
 		oldTargetIsValue := g.TargetIsValue
 		g.TargetIsValue = true
-		
+
 		if lease == types.LeaseMove {
 			g.genOwnedValue(expr, targetType)
 		} else {
 			g.genExpression(expr)
 		}
-		
+
 		g.TargetIsValue = oldTargetIsValue
-		
+
 		g.buf.WriteString(" }")
 	}
 }
@@ -1786,7 +1800,7 @@ func (g *Generator) genSpawnExpression(e *ast.SpawnExpression) {
 	// 1. Generate Struct
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("struct %s {\n", structName))
-	
+
 	hasScope := len(g.ScopeWaitgroups) > 0
 	if hasScope {
 		sb.WriteString("    void* _scope_wg;\n")
@@ -1969,7 +1983,7 @@ func (g *Generator) genSpawnExpression(e *ast.SpawnExpression) {
 	} else if sel, ok := e.Call.Function.(*ast.SelectorExpression); ok {
 		funcName = sel.Field.Value
 	}
-	
+
 	if len(g.ScopeWaitgroups) > 0 {
 		activeWg := g.ScopeWaitgroups[len(g.ScopeWaitgroups)-1]
 		g.buf.WriteString(fmt.Sprintf("_args->_scope_wg = %s; ", activeWg))
@@ -2653,9 +2667,9 @@ func (g *Generator) genScopeExpression(e *ast.ScopeExpression) {
 
 	g.buf.WriteString("({ ")
 	g.buf.WriteString(fmt.Sprintf("void* %s = nr_sync_waitgroup_create(); ", wgName))
-	
+
 	g.ScopeWaitgroups = append(g.ScopeWaitgroups, wgName)
-	
+
 	oldBlock := g.CurrentBlock
 	oldIdx := g.CurrentStmtIndex
 	g.CurrentBlock = e.Body
@@ -2670,11 +2684,10 @@ func (g *Generator) genScopeExpression(e *ast.ScopeExpression) {
 
 	g.CurrentBlock = oldBlock
 	g.CurrentStmtIndex = oldIdx
-	
+
 	g.ScopeWaitgroups = g.ScopeWaitgroups[:len(g.ScopeWaitgroups)-1]
-	
+
 	g.buf.WriteString(fmt.Sprintf("nr_sync_waitgroup_wait(%s); ", wgName))
 	g.buf.WriteString(fmt.Sprintf("nr_sync_waitgroup_destroy(%s); ", wgName))
 	g.buf.WriteString(" })")
 }
-

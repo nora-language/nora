@@ -1,7 +1,7 @@
 package ast
 
 import (
-	"github.com/DwiYI/Project-Nora/pkg/token"
+	"github.com/nora-language/nora/pkg/token"
 )
 
 // <-ch

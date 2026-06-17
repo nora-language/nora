@@ -2,8 +2,9 @@ package lsp
 
 import (
 	"context"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
 	"testing"
+
+	"github.com/nora-language/nora/pkg/parser/ast"
 )
 
 func TestHoverDoc(t *testing.T) {

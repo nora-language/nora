@@ -1,6 +1,6 @@
 package ast
 
-import "github.com/DwiYI/Project-Nora/pkg/token"
+import "github.com/nora-language/nora/pkg/token"
 
 // AssignmentStatement represents: x = 10; or arr[i] = 10;
 type AssignmentStatement struct {

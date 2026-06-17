@@ -3,8 +3,8 @@ package ast
 import (
 	"bytes"
 
-	"github.com/DwiYI/Project-Nora/pkg/token"
-	"github.com/DwiYI/Project-Nora/pkg/types"
+	"github.com/nora-language/nora/pkg/token"
+	"github.com/nora-language/nora/pkg/types"
 )
 
 type PrefixExpression struct {

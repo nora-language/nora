@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
-	"github.com/DwiYI/Project-Nora/pkg/types"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/types"
 )
 
 type InstructionKind int
@@ -404,6 +404,7 @@ type IteratorLoop struct {
 	KeyType     types.NRType
 	Body        *HIRBlock
 }
+
 func (i *IteratorLoop) isElement() {}
 
 func (i *IteratorLoop) GetElementKind() BlockElementKind {
@@ -428,4 +429,3 @@ func (l *LineInfo) String() string {
 	}
 	return "lineinfo unknown"
 }
-

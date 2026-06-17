@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DwiYI/Project-Nora/pkg/codegen"
-	"github.com/DwiYI/Project-Nora/pkg/lexer"
-	"github.com/DwiYI/Project-Nora/pkg/parser"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
-	"github.com/DwiYI/Project-Nora/pkg/topology"
+	"github.com/nora-language/nora/pkg/codegen"
+	"github.com/nora-language/nora/pkg/lexer"
+	"github.com/nora-language/nora/pkg/parser"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/topology"
 )
 
 // Mock Loader to satisfy Semantic Analyzer
@@ -72,9 +72,9 @@ func TestEndToEndGeneration(t *testing.T) {
 
 	expectedSnippets := []string{
 		"#include \"runtime.h\"",
-		"void add(void* _env_ptr, char** a, char* b)",       // Signature transformation (# -> *)
-		"x = ((char*)_str_lit_1.data);", // Var assignment with static literal
-		"add(_env_ptr, x, y);",                       // Call desugaring
+		"void add(void* _env_ptr, char** a, char* b)",                     // Signature transformation (# -> *)
+		"x = ((char*)_str_lit_1.data);",                                   // Var assignment with static literal
+		"add(_env_ptr, x, y);",                                            // Call desugaring
 		"static const struct { nr_header_t h; char data[6]; } _str_lit_1", // Global static variable definition
 	}
 

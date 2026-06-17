@@ -1,8 +1,8 @@
 package topology
 
 import (
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/semantic"
 )
 
 type CFGBlockKind int

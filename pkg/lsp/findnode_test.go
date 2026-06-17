@@ -3,9 +3,10 @@ package lsp
 import (
 	"fmt"
 	"testing"
-	"github.com/DwiYI/Project-Nora/pkg/lexer"
-	"github.com/DwiYI/Project-Nora/pkg/parser"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
+
+	"github.com/nora-language/nora/pkg/lexer"
+	"github.com/nora-language/nora/pkg/parser"
+	"github.com/nora-language/nora/pkg/parser/ast"
 )
 
 func TestFindNode(t *testing.T) {
@@ -49,7 +50,7 @@ fn main() {
 	}
 
 	h := NewHandler()
-	
+
 	// Test Line 7 (0-indexed line 6)
 	fmt.Println("=== Line 7 (first serialize) ===")
 	node1 := h.findNodeAt(prog, "basic.nr", Position{Line: 6, Character: 2})

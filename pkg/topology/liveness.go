@@ -1,7 +1,7 @@
 package topology
 
 import (
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/semantic"
 )
 
 // SolveLiveness runs backward data-flow analysis on all nodes in a Control-Flow Graph

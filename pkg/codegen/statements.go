@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
-	"github.com/DwiYI/Project-Nora/pkg/topology"
-	"github.com/DwiYI/Project-Nora/pkg/types"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/topology"
+	"github.com/nora-language/nora/pkg/types"
 )
 
 func (g *Generator) genStatement(stmt ast.Statement) {
@@ -451,7 +451,7 @@ func (g *Generator) genForStatement(s *ast.ForStatement) {
 			if s.Key != nil {
 				g.emit("        int %s = _i;", s.Key.Value)
 			}
-			
+
 			varName := "_item"
 			if s.Value != nil {
 				varName = s.Value.Value
@@ -1009,7 +1009,6 @@ func (g *Generator) emitDropsAt(block *ast.BlockStatement, index int) {
 		if g.DebugSemantic {
 			fmt.Printf("[DEBUG-emitDropsAt] block=%p, index=%d, sym.Name=%s, sym.Type=%T (%v), sym.Kind=%v\n", block, index, sym.Name, sym.Type, sym.Type, sym.Kind)
 		}
-
 
 		t := sym.Type
 		name := g.variableName(sym)

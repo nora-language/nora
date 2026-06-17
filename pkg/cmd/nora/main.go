@@ -16,18 +16,19 @@ import (
 	"time"
 
 	"context"
-	"github.com/DwiYI/Project-Nora/pkg/codegen"
-	"github.com/DwiYI/Project-Nora/pkg/diag"
-	"github.com/DwiYI/Project-Nora/pkg/docgen"
-	"github.com/DwiYI/Project-Nora/pkg/format"
-	"github.com/DwiYI/Project-Nora/pkg/lexer"
-	"github.com/DwiYI/Project-Nora/pkg/lsp"
-	"github.com/DwiYI/Project-Nora/pkg/parser"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/plugin"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
-	"github.com/DwiYI/Project-Nora/pkg/target"
-	"github.com/DwiYI/Project-Nora/pkg/topology"
+
+	"github.com/nora-language/nora/pkg/codegen"
+	"github.com/nora-language/nora/pkg/diag"
+	"github.com/nora-language/nora/pkg/docgen"
+	"github.com/nora-language/nora/pkg/format"
+	"github.com/nora-language/nora/pkg/lexer"
+	"github.com/nora-language/nora/pkg/lsp"
+	"github.com/nora-language/nora/pkg/parser"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/plugin"
+	"github.com/nora-language/nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/target"
+	"github.com/nora-language/nora/pkg/topology"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
@@ -207,9 +208,9 @@ type BuildOptions struct {
 	DebugFiber       bool
 	G                bool
 	WasmExperimental bool
-	AllowUnsafe      bool     // Allow [unsafe] attribute
-	NoStdlib         bool     // Skip stdlib injection
-	NoCore           bool     // Skip core injection
+	AllowUnsafe      bool // Allow [unsafe] attribute
+	NoStdlib         bool // Skip stdlib injection
+	NoCore           bool // Skip core injection
 	Native           NativeConfig
 	Compiler         string   // CLI override
 	CFlags           []string // CLI override
@@ -237,16 +238,16 @@ func (c *ProjectConfig) Save() error {
 }
 
 type FileLoader struct {
-	Cache            map[string]*semantic.Scope
-	ParsedFiles      map[string]*ast.File
-	Program          *ast.Program
-	Analyzer         *semantic.SemanticAnalyzer
-	Dependencies     map[string]Dependency
-	CollectedNative  NativeConfig
-	CollectedPlugins []string
-	PluginManager    *plugin.PluginManager
-	NoStdlib         bool
-	NoCore           bool
+	Cache             map[string]*semantic.Scope
+	ParsedFiles       map[string]*ast.File
+	Program           *ast.Program
+	Analyzer          *semantic.SemanticAnalyzer
+	Dependencies      map[string]Dependency
+	CollectedNative   NativeConfig
+	CollectedPlugins  []string
+	PluginManager     *plugin.PluginManager
+	NoStdlib          bool
+	NoCore            bool
 	AllowedUnsafeDirs []string
 }
 
@@ -424,7 +425,7 @@ func (f *FileLoader) Load(path string) (*semantic.Scope, error) {
 		// 2. Check if it exists in core/
 		coreCandidate := filepath.Join(CorePath, path)
 		stdCandidate := filepath.Join(StdPath, path)
-		
+
 		if _, err := os.Stat(coreCandidate); err == nil {
 			path = coreCandidate
 		} else if _, err := os.Stat(coreCandidate + ".nr"); err == nil {
@@ -495,7 +496,7 @@ func (f *FileLoader) Load(path string) (*semantic.Scope, error) {
 					p := parser.New(l)
 					p.AllowNoPackage = false
 					file := p.Parse(fullFilePath)
-					
+
 					if f.PluginManager != nil {
 						if err := f.PluginManager.ProcessMacroForFile(file); err != nil {
 							fmt.Printf("Macro Error in %s: %v\n", fullFilePath, err)
@@ -896,7 +897,7 @@ func runBuild(args []string) {
 		if buildFlags.NArg() >= 1 {
 			inputFile = buildFlags.Arg(0)
 			if err == nil && *outputFile == "" {
-				// If building a specific file but we are in a project, 
+				// If building a specific file but we are in a project,
 				// we still respect the project's output name unless overridden.
 				exeName = config.Output
 			} else if *outputFile == "" {
@@ -914,7 +915,7 @@ func runBuild(args []string) {
 				fmt.Printf("Warning: project requires language version %s, but current version is %s. Build may fail.\n", config.Language, LanguageVersion)
 			}
 		}
-		
+
 		if *outputFile != "" {
 			exeName = *outputFile
 		}
@@ -2184,7 +2185,6 @@ func runLSP() {
 func runTest(args []string) {
 	testDir := "pkg/cmd/test"
 
-
 	passed := 0
 	failed := 0
 	skipped := 0
@@ -2273,7 +2273,7 @@ func runSingleTest(path string) error {
 
 	analyzer := semantic.NewAnalyzer()
 	analyzer.Diagnostics = p.Diagnostics
-	// We don't have opts here, it's Language Server. By default we might not allow unsafe, or maybe we allow it for LSP if it's the stdlib. 
+	// We don't have opts here, it's Language Server. By default we might not allow unsafe, or maybe we allow it for LSP if it's the stdlib.
 	// For now, let's allow it in LSP since stdlib uses it and we don't want false positives in IDE.
 	analyzer.AllowUnsafe = true
 	loader := &FileLoader{
@@ -2917,8 +2917,6 @@ func (c *BuildCacheCatalog) Save(buildDir string) error {
 	}
 	return os.WriteFile(cachePath, data, 0644)
 }
-
-
 
 func compileCToObject(compiler string, srcPath string, objPath string, isMSVC bool, activeConfig CompilerConfig, opts BuildOptions) error {
 	absSrcPath, err := filepath.Abs(srcPath)

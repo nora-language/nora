@@ -9,13 +9,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/hir"
-	"github.com/DwiYI/Project-Nora/pkg/hir/optimize"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/plugin"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
-	"github.com/DwiYI/Project-Nora/pkg/topology"
-	"github.com/DwiYI/Project-Nora/pkg/types"
+	"github.com/nora-language/nora/pkg/hir"
+	"github.com/nora-language/nora/pkg/hir/optimize"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/plugin"
+	"github.com/nora-language/nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/topology"
+	"github.com/nora-language/nora/pkg/types"
 )
 
 type Generator struct {
@@ -35,18 +35,18 @@ type Generator struct {
 	TargetIsValue    bool
 
 	// Internal State
-	buf           *bytes.Buffer
-	Functions     map[string]*semantic.Symbol
-	Structs       map[string]*types.StructType
-	SumTypes      map[string]*types.SumType
-	Protocols     map[string]*types.ProtocolType
-	Globals       map[string]*semantic.Symbol
-	GlobalInits   []*ast.VarStatement
-	SpawnWrappers []string
-	SpawnStructs  []string
-	spawnCounter  int
+	buf             *bytes.Buffer
+	Functions       map[string]*semantic.Symbol
+	Structs         map[string]*types.StructType
+	SumTypes        map[string]*types.SumType
+	Protocols       map[string]*types.ProtocolType
+	Globals         map[string]*semantic.Symbol
+	GlobalInits     []*ast.VarStatement
+	SpawnWrappers   []string
+	SpawnStructs    []string
+	spawnCounter    int
 	ScopeWaitgroups []string
-	scopeCounter int
+	scopeCounter    int
 
 	// Loop states
 	loopCounter int
@@ -1506,7 +1506,7 @@ func (g *Generator) emitGlobalCleanups() {
 
 func (g *Generator) requestVTable(t types.NRType, p *types.ProtocolType) string {
 	sanitizedName := t.Name()
-	
+
 	// Sanitize any characters that are invalid in C identifiers
 	r := strings.NewReplacer(
 		"@", "",
@@ -1523,7 +1523,7 @@ func (g *Generator) requestVTable(t types.NRType, p *types.ProtocolType) string 
 	)
 	sanitizedName = r.Replace(sanitizedName)
 	sanitizedName = strings.Trim(sanitizedName, "_")
-	
+
 	key := fmt.Sprintf("%s_%s", sanitizedName, p.ProtocolName)
 	if _, ok := g.VTables[key]; !ok {
 		g.VTables[key] = VTableInstance{Type: t, Protocol: p}

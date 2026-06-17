@@ -2,9 +2,10 @@ package codegen
 
 import (
 	"fmt"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/types"
 	"sort"
+
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/types"
 )
 
 var cStdlibFunctions = map[string]bool{

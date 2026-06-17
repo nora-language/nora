@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/lexer"
-	"github.com/DwiYI/Project-Nora/pkg/parser"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/lexer"
+	"github.com/nora-language/nora/pkg/parser"
+	"github.com/nora-language/nora/pkg/parser/ast"
 )
 
 type DocGenerator struct {

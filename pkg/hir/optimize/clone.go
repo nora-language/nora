@@ -3,13 +3,13 @@ package optimize
 import (
 	"fmt"
 
-	"github.com/DwiYI/Project-Nora/pkg/hir"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/hir"
+	"github.com/nora-language/nora/pkg/semantic"
 )
 
 type Cloner struct {
-	varMap  map[string]string
-	tempID  int
+	varMap map[string]string
+	tempID int
 }
 
 func NewCloner() *Cloner {

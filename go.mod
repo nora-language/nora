@@ -1,4 +1,4 @@
-module github.com/DwiYI/Project-Nora
+module github.com/nora-language/nora
 
 go 1.25.1
 

@@ -1,6 +1,6 @@
 package semantic
 
-import "github.com/DwiYI/Project-Nora/pkg/types"
+import "github.com/nora-language/nora/pkg/types"
 
 // ModuleType represents an imported package.
 // It resides in 'semantic' because it holds a *Scope.

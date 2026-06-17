@@ -13,16 +13,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DwiYI/Project-Nora/pkg/diag"
-	"github.com/DwiYI/Project-Nora/pkg/format"
-	"github.com/DwiYI/Project-Nora/pkg/lexer"
-	"github.com/DwiYI/Project-Nora/pkg/parser"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/plugin"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
-	"github.com/DwiYI/Project-Nora/pkg/token"
-	"github.com/DwiYI/Project-Nora/pkg/topology"
-	"github.com/DwiYI/Project-Nora/pkg/types"
+	"github.com/nora-language/nora/pkg/diag"
+	"github.com/nora-language/nora/pkg/format"
+	"github.com/nora-language/nora/pkg/lexer"
+	"github.com/nora-language/nora/pkg/parser"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/plugin"
+	"github.com/nora-language/nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/token"
+	"github.com/nora-language/nora/pkg/topology"
+	"github.com/nora-language/nora/pkg/types"
 	"github.com/sourcegraph/jsonrpc2"
 	"gopkg.in/yaml.v3"
 )
@@ -56,15 +56,15 @@ type packageCacheEntry struct {
 	Scope           *semantic.Scope
 	CapturedSymbols map[string]*semantic.Symbol
 	Files           []*ast.File
-	ModTimes      map[string]time.Time
-	DirModTime    time.Time
-	MethodSymbols map[types.NRType]map[string]*semantic.Symbol
-	FieldSymbols  map[*types.StructType]map[string]*semantic.Symbol
-	FuncScopes    map[*ast.FunctionStatement]*semantic.Scope
-	Scopes        map[ast.Node]*semantic.Scope
-	Defs          map[*ast.Identifier]*semantic.Symbol
-	Uses          map[*ast.Identifier]*semantic.Symbol
-	Types         map[ast.Node]types.NRType
+	ModTimes        map[string]time.Time
+	DirModTime      time.Time
+	MethodSymbols   map[types.NRType]map[string]*semantic.Symbol
+	FieldSymbols    map[*types.StructType]map[string]*semantic.Symbol
+	FuncScopes      map[*ast.FunctionStatement]*semantic.Scope
+	Scopes          map[ast.Node]*semantic.Scope
+	Defs            map[*ast.Identifier]*semantic.Symbol
+	Uses            map[*ast.Identifier]*semantic.Symbol
+	Types           map[ast.Node]types.NRType
 }
 
 func NewHandler() *Handler {
@@ -233,7 +233,7 @@ func (h *Handler) analyze(ctx context.Context, conn *jsonrpc2.Conn, doc *Documen
 			}
 		}
 	}
-	
+
 	var preludeFile = h.preludeCache
 	if preludeFile != nil {
 		prog.Files = append(prog.Files, preludeFile)
@@ -242,7 +242,7 @@ func (h *Handler) analyze(ctx context.Context, conn *jsonrpc2.Conn, doc *Documen
 	if h.pmCache == nil {
 		h.pmCache = plugin.NewPluginManager()
 		h.pmCache.RegisterBuiltinMacros()
-		
+
 		// Load plugins from stdDir
 		filepath.Walk(stdDir, func(p string, info os.FileInfo, err error) error {
 			if err == nil && !info.IsDir() && strings.HasSuffix(info.Name(), ".wasm") {
@@ -252,9 +252,9 @@ func (h *Handler) analyze(ctx context.Context, conn *jsonrpc2.Conn, doc *Documen
 			return nil
 		})
 	}
-	
+
 	pm := h.pmCache
-	
+
 	// Load workspace plugins (these could change, so we do it dynamically, or they might error if already loaded, but pmCache ignores duplicate loads)
 	if projRoot := findProjectRoot(path); projRoot != "" {
 		for _, p := range loader.Plugins {
@@ -2718,7 +2718,7 @@ func (f *LSPFileLoader) Load(importPath string) (*semantic.Scope, error) {
 		root := filepath.Dir(f.StdDir)
 		coreCandidate := filepath.Join(root, "core", importPath)
 		stdCandidate := filepath.Join(f.StdDir, importPath)
-		
+
 		if _, err := os.Stat(coreCandidate); err == nil {
 			importPath = "core/" + importPath
 		} else if _, err := os.Stat(coreCandidate + ".nr"); err == nil {
@@ -3091,15 +3091,15 @@ func (f *LSPFileLoader) Load(importPath string) (*semantic.Scope, error) {
 					Scope:           pkgScope,
 					CapturedSymbols: capturedSymbols,
 					Files:           NoraFiles,
-					ModTimes:      modTimes,
-					DirModTime:    dirModTime,
-					MethodSymbols: capturedMethods,
-					FieldSymbols:  capturedFields,
-					FuncScopes:    capturedFuncScopes,
-					Scopes:        capturedScopes,
-					Defs:          capturedDefs,
-					Uses:          capturedUses,
-					Types:         capturedTypes,
+					ModTimes:        modTimes,
+					DirModTime:      dirModTime,
+					MethodSymbols:   capturedMethods,
+					FieldSymbols:    capturedFields,
+					FuncScopes:      capturedFuncScopes,
+					Scopes:          capturedScopes,
+					Defs:            capturedDefs,
+					Uses:            capturedUses,
+					Types:           capturedTypes,
 				})
 
 				return pkgScope, nil

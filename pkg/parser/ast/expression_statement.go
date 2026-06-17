@@ -1,6 +1,6 @@
 package ast
 
-import "github.com/DwiYI/Project-Nora/pkg/token"
+import "github.com/nora-language/nora/pkg/token"
 
 // x + y (an expression used as a statement)
 type ExpressionStatement struct {

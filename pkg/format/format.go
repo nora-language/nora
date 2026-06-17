@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/token"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/token"
 )
 
 type Formatter struct {

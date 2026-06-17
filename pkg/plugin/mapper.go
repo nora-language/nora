@@ -3,11 +3,11 @@ package plugin
 import (
 	"fmt"
 
-	"github.com/DwiYI/Project-Nora/pkg/lexer"
-	"github.com/DwiYI/Project-Nora/pkg/parser"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/plugin/api"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/lexer"
+	"github.com/nora-language/nora/pkg/parser"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/plugin/api"
+	"github.com/nora-language/nora/pkg/semantic"
 )
 
 // MapASTToDTO converts an internal compiler AST node to a stable DTO for plugins.

@@ -6,12 +6,13 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/diag"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
-	"github.com/DwiYI/Project-Nora/pkg/token"
-	"github.com/DwiYI/Project-Nora/pkg/types"
 	"math"
+
+	"github.com/nora-language/nora/pkg/diag"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/token"
+	"github.com/nora-language/nora/pkg/types"
 )
 
 const AnchorEndOfFunction = math.MaxInt32
@@ -23,16 +24,16 @@ type DropInfo struct {
 }
 
 type Lifecycle struct {
-	Symbol            *semantic.Symbol
-	DefinedAt         int
-	LastUsedAt        int
-	IsMoved           bool
+	Symbol               *semantic.Symbol
+	DefinedAt            int
+	LastUsedAt           int
+	IsMoved              bool
 	IsConditionallyMoved bool
-	MovedBy           ast.Node         // The node that caused the move
-	AliasOf           *semantic.Symbol // The origin symbol if this is an alias (borrow)
-	FieldMoves        map[string]bool  // Tracked field moves for this symbol
-	IsExempt          bool             // If true, IsMoved is only for RAII (preventing double-drops), not for reporting violations
-	IsMovedByTerminal bool             // If true, the move was caused by a terminal statement (return, break, continue)
+	MovedBy              ast.Node         // The node that caused the move
+	AliasOf              *semantic.Symbol // The origin symbol if this is an alias (borrow)
+	FieldMoves           map[string]bool  // Tracked field moves for this symbol
+	IsExempt             bool             // If true, IsMoved is only for RAII (preventing double-drops), not for reporting violations
+	IsMovedByTerminal    bool             // If true, the move was caused by a terminal statement (return, break, continue)
 }
 
 type Solver struct {
@@ -847,7 +848,7 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 
 			case *ast.ForStatement:
 				s.debug("      FOR loop detected at index %d", i)
-				
+
 				loopUsages := s.findUsagesInNode(n.Iterable)
 				for _, id := range loopUsages {
 					if sym := s.SemanticInfo.Uses[id]; sym != nil {
@@ -1114,16 +1115,16 @@ func (s *Solver) cloneLifecycles(orig map[*semantic.Symbol]*Lifecycle) map[*sema
 	clone := make(map[*semantic.Symbol]*Lifecycle)
 	for k, v := range orig {
 		clone[k] = &Lifecycle{
-			Symbol:            v.Symbol,
-			DefinedAt:         v.DefinedAt,
-			LastUsedAt:        v.LastUsedAt,
-			IsMoved:           v.IsMoved,
+			Symbol:               v.Symbol,
+			DefinedAt:            v.DefinedAt,
+			LastUsedAt:           v.LastUsedAt,
+			IsMoved:              v.IsMoved,
 			IsConditionallyMoved: v.IsConditionallyMoved,
-			IsExempt:          v.IsExempt,
-			IsMovedByTerminal: v.IsMovedByTerminal,
-			MovedBy:           v.MovedBy,
-			AliasOf:           v.AliasOf,
-			FieldMoves:        make(map[string]bool),
+			IsExempt:             v.IsExempt,
+			IsMovedByTerminal:    v.IsMovedByTerminal,
+			MovedBy:              v.MovedBy,
+			AliasOf:              v.AliasOf,
+			FieldMoves:           make(map[string]bool),
 		}
 		for fk, fv := range v.FieldMoves {
 			clone[k].FieldMoves[fk] = fv

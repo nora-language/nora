@@ -7,8 +7,9 @@ import (
 	"unicode/utf8"
 
 	"context"
-	"github.com/DwiYI/Project-Nora/pkg/diag"
-	"github.com/DwiYI/Project-Nora/pkg/token"
+
+	"github.com/nora-language/nora/pkg/diag"
+	"github.com/nora-language/nora/pkg/token"
 )
 
 type Lexer struct {

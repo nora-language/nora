@@ -3,8 +3,8 @@ package format
 import (
 	"fmt"
 
-	"github.com/DwiYI/Project-Nora/pkg/lexer"
-	"github.com/DwiYI/Project-Nora/pkg/parser"
+	"github.com/nora-language/nora/pkg/lexer"
+	"github.com/nora-language/nora/pkg/parser"
 )
 
 func testFormat(name string, src string) {

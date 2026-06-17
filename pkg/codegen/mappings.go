@@ -4,9 +4,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
-	"github.com/DwiYI/Project-Nora/pkg/types"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/types"
 )
 
 func (g *Generator) cTypePrefix(t types.NRType) string {
@@ -149,8 +149,6 @@ func (g *Generator) sortedFunctionNames() []string {
 	sort.Strings(names)
 	return names
 }
-
-
 
 func (g *Generator) getErasedTypeName(t types.NRType) string {
 	if t == nil {

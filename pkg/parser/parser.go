@@ -8,10 +8,10 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/DwiYI/Project-Nora/pkg/diag"
-	"github.com/DwiYI/Project-Nora/pkg/lexer"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/token"
+	"github.com/nora-language/nora/pkg/diag"
+	"github.com/nora-language/nora/pkg/lexer"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/token"
 )
 
 // Precedence levels
@@ -37,7 +37,7 @@ const (
 
 var precedences = map[token.TokenType]int{
 	token.DOT_DOT: RANGE,
-	token.LOR: LOGICAL_OR, token.LAND: LOGICAL_AND,
+	token.LOR:     LOGICAL_OR, token.LAND: LOGICAL_AND,
 	token.EQ: EQUALS, token.NOT_EQ: EQUALS, token.STRICT_EQ: EQUALS,
 	token.LT: LESSGREATER, token.GT: LESSGREATER, token.LT_EQ: LESSGREATER, token.GT_EQ: LESSGREATER,
 	token.OR: BITWISE_OR, token.XOR: BITWISE_XOR, token.AND: BITWISE_AND,
@@ -1008,12 +1008,12 @@ func extractNumericSuffix(literal string) (string, string) {
 func (p *Parser) parseNumberLiteral() ast.Expression {
 	rawLiteral := p.curToken.Literal
 	numPart, suffix := extractNumericSuffix(rawLiteral)
-	
+
 	if suffix != "" && suffix != "i" && suffix != "j" {
 		p.ReportError(p.curToken.Position, "type suffixes on numeric literals are disallowed; use constructor-style conversion (e.g. %s(%s)) instead", suffix, numPart)
 		suffix = ""
 	}
-	
+
 	// Remove visual separators from numPart for strconv
 	cleanNum := strings.ReplaceAll(numPart, "_", "")
 
@@ -1703,7 +1703,7 @@ func (p *Parser) parseSpawnExpression() ast.Expression {
 		expr.MonitorChannel = firstExp
 		p.nextToken() // move to start of second expression
 		secondExp := p.parseExpression(ACCESSOR - 1)
-		
+
 		call, ok := secondExp.(*ast.CallExpression)
 		if !ok {
 			p.ReportError(p.curToken.Position, "spawn monitor channel must be followed by a function call")

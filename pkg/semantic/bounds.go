@@ -1,7 +1,7 @@
 package semantic
 
 import (
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/parser/ast"
 )
 
 // VarBounds represents the mathematical bounds of an integer variable for Range Analysis (BCE).

@@ -3,8 +3,8 @@ package optimize
 import (
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/hir"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/hir"
+	"github.com/nora-language/nora/pkg/semantic"
 )
 
 // Optimizer provides a suite of compiler passes that operate on HIR.
@@ -112,7 +112,7 @@ func (inl *Inliner) processOperand(op hir.Operand, targetBlock *hir.HIRBlock) hi
 	if instOp, ok := op.(*hir.InstOperand); ok {
 		newInst := inl.processInstruction(instOp.Inst, targetBlock)
 		// If inlined, it might return a VarOperand for the return value
-		if varOp, isVar := newInst.(*hir.Expression); isVar && strings.HasPrefix(varOp.Expr, "_inline_ret_") { 
+		if varOp, isVar := newInst.(*hir.Expression); isVar && strings.HasPrefix(varOp.Expr, "_inline_ret_") {
 			return &hir.VarOperand{Name: varOp.Expr, Type: varOp.Type}
 		}
 		if newInst == nil {
@@ -153,7 +153,7 @@ func (inl *Inliner) processInstruction(inst hir.Instruction, targetBlock *hir.HI
 		if i.FuncSymbol != nil {
 			targetName = i.FuncSymbol.Name
 		}
-		
+
 		targetFunc, exists := inl.hirFuncs[targetName]
 		if exists && targetFunc.FuncSymbol != nil && targetFunc.FuncSymbol.IsInline {
 			// INLINE THIS FUNCTION!
@@ -211,7 +211,7 @@ func (inl *Inliner) processInstruction(inst hir.Instruction, targetBlock *hir.HI
 		}
 		return i
 	}
-	
+
 	// Default: return unchanged for now (ideally we should walk all Operands deeply)
 	return inst
 }

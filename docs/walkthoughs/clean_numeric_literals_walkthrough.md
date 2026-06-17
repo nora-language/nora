@@ -37,6 +37,6 @@ go test ./pkg/cmd/nora/...
 
 All integration tests successfully build, type-check, compile to C, link, execute, and verify memory leak-free behavior:
 ```text
-ok  	github.com/DwiYI/Project-Nora/pkg/cmd/nora	238.000s
+ok  	github.com/nora-language/nora/pkg/cmd/nora	238.000s
 ```
 Nora's syntax is now cleaner, simpler, and highly consistent!

@@ -45,4 +45,4 @@ Nora defers the monomorphization of struct methods until they are explicitly cal
 ## Validation
 - `pass_generic_interface.nr` now successfully generates dynamic dispatch vtables.
 - `ffi_ownership_test.nr` correctly generates RAII drops and executes custom destructors, yielding `0 bytes leaked`.
-- The complete test suite (`go test -v ./pkg/cmd/nora`) was re-run and passed without regressions (`ok github.com/DwiYI/Project-Nora/pkg/cmd/nora 388.411s`).
+- The complete test suite (`go test -v ./pkg/cmd/nora`) was re-run and passed without regressions (`ok github.com/nora-language/nora/pkg/cmd/nora 388.411s`).

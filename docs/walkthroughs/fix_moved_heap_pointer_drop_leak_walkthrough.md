@@ -56,7 +56,7 @@ go test -v ./pkg/cmd/nora -run TestCompilerWithTestFolder -parallel 4
 Output:
 ```text
 PASS
-ok  	github.com/DwiYI/Project-Nora/pkg/cmd/nora	323.691s
+ok  	github.com/nora-language/nora/pkg/cmd/nora	323.691s
 ```
 
 ---

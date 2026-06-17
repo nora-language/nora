@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/lexer"
-	"github.com/DwiYI/Project-Nora/pkg/parser"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/plugin/api"
+	"github.com/nora-language/nora/pkg/lexer"
+	"github.com/nora-language/nora/pkg/parser"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/plugin/api"
 )
 
 // ProcessMacroForFile invokes WASM plugins for any nodes containing attributes (e.g., [serialize]) in a single file.
@@ -25,7 +25,7 @@ func (m *PluginManager) ProcessMacroForFile(file *ast.File) error {
 				for _, attr := range ts.Attributes {
 					// e.g. [serialize] -> map to "serialize" plugin
 					pluginName := attr.Name
-					
+
 					// Try to process using plugin
 					generated, err := m.processAttribute(pluginName, &attr, ts)
 					if err != nil {
@@ -42,7 +42,7 @@ func (m *PluginManager) ProcessMacroForFile(file *ast.File) error {
 						p := parser.New(l)
 						p.DisableMacros = true // prevent recursive macros!
 						genFile := p.Parse("macro_generated")
-						
+
 						if len(p.Errors()) > 0 {
 							return fmt.Errorf("macro '%s' generated invalid syntax: %v\n---\n%s\n---", pluginName, p.Errors(), generated)
 						}

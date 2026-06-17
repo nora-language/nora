@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/token"
+	"github.com/nora-language/nora/pkg/token"
 )
 
 // Node is the base interface for everything in the AST
@@ -214,7 +214,7 @@ func (a *Attribute) String() string {
 	}
 	return "[" + a.Name + "]"
 }
-func (a *Attribute) Pos() token.Position  { return a.Token.Position }
+func (a *Attribute) Pos() token.Position { return a.Token.Position }
 
 func GetAttribute(attributes []Attribute, name string) *Attribute {
 	for _, attr := range attributes {

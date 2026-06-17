@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DwiYI/Project-Nora/pkg/lexer"
-	"github.com/DwiYI/Project-Nora/pkg/parser"
+	"github.com/nora-language/nora/pkg/lexer"
+	"github.com/nora-language/nora/pkg/parser"
 )
 
 func formatSource(t *testing.T, src string) string {

@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/hir"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/semantic"
-	"github.com/DwiYI/Project-Nora/pkg/types"
+	"github.com/nora-language/nora/pkg/hir"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/types"
 )
 
 func collectAllocas(b *hir.HIRBlock) []*hir.Alloca {
@@ -380,7 +380,7 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 								g.buf = &argBuf1
 								g.emitArgument(idx.Left, st, mt.ReceiverLease)
 								g.buf = oldBuf
-								
+
 								var argBuf2 bytes.Buffer
 								g.buf = &argBuf2
 								g.emitArgument(idx.Indices[0], mt.Params[0], mt.ParamLeases[0])
@@ -445,7 +445,7 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 				g.EnableDebug = oldEnableDebug
 				dropStr := strings.TrimSpace(tempBuf.String())
 				g.buf = oldBuf
-				
+
 				if isVar && varOp.Symbol != nil && g.hasDropFlag(varOp.Symbol) {
 					dfName := g.dropFlagName(varOp.Symbol)
 					g.emit(fmt.Sprintf("    { %s _old = %s; %s = %s; if (%s) { %s } }", g.cType(targetType), destStr, destStr, valStr, dfName, dropStr))
@@ -495,7 +495,7 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 								g.buf = &argBuf1
 								g.emitArgument(idx.Left, st, mt.ReceiverLease)
 								g.buf = oldBuf
-								
+
 								var argBuf2 bytes.Buffer
 								g.buf = &argBuf2
 								g.emitArgument(idx.Indices[0], mt.Params[0], mt.ParamLeases[0])
@@ -678,7 +678,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 
 		cType1 := g.cType(i.Type)
 		cType2 := g.cTypeOfOperand(i.Val)
-		
+
 		if i.Operator == "@" {
 			if strings.Contains(opStr, "({") {
 				return opStr
@@ -1744,5 +1744,3 @@ func (g *Generator) cleanMovedHeapPointers(inst hir.Instruction) {
 		}
 	}
 }
-
-

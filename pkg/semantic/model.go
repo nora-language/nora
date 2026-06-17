@@ -1,8 +1,8 @@
 package semantic
 
 import (
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/types"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/types"
 )
 
 // Visibility defines access levels (Public/Private based on capitalization)
@@ -59,7 +59,7 @@ type Symbol struct {
 
 	WritePerm bool
 
-	IsInline  bool // Indicates if the function is marked for inlining
+	IsInline bool // Indicates if the function is marked for inlining
 
 	// Usage Analysis (Nora)
 	IsUsed        bool
@@ -75,8 +75,8 @@ type Scope struct {
 	Parent      *Scope
 	Kind        ScopeKind
 	Symbols     map[string]*Symbol
-	PackageName string           // Name of the package if Kind == ScopePackage
-	Captures    map[*Symbol]bool // Symbols captured by this scope (if closure/spawn)
+	PackageName string                 // Name of the package if Kind == ScopePackage
+	Captures    map[*Symbol]bool       // Symbols captured by this scope (if closure/spawn)
 	Bounds      map[*Symbol]*VarBounds // Track bounds of variables for BCE
 }
 

@@ -4,16 +4,16 @@ import (
 	"bytes"
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/token"
-	"github.com/DwiYI/Project-Nora/pkg/types"
+	"github.com/nora-language/nora/pkg/token"
+	"github.com/nora-language/nora/pkg/types"
 )
 
 // arr[index] or Map[K, V]
 type IndexExpression struct {
-	Token   token.Token  // '['
-	Left    Expression   // The array/map/generic
-	Indices []Expression // Supports multiple indices for generics: Map[K, V]
-	NoBoundsCheck bool   // True if static analysis proves this access is 100% safe
+	Token         token.Token  // '['
+	Left          Expression   // The array/map/generic
+	Indices       []Expression // Supports multiple indices for generics: Map[K, V]
+	NoBoundsCheck bool         // True if static analysis proves this access is 100% safe
 
 	Type types.NRType
 }

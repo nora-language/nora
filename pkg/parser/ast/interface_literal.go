@@ -3,7 +3,7 @@ package ast
 import (
 	"bytes"
 
-	"github.com/DwiYI/Project-Nora/pkg/token"
+	"github.com/nora-language/nora/pkg/token"
 )
 
 // InterfaceLiteral represents: interface { fn say_hello(self: Greeter) }

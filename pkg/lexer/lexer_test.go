@@ -3,7 +3,7 @@ package lexer
 import (
 	"testing"
 
-	"github.com/DwiYI/Project-Nora/pkg/token"
+	"github.com/nora-language/nora/pkg/token"
 )
 
 func TestNextToken(t *testing.T) {

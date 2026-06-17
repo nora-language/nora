@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/DwiYI/Project-Nora/pkg/diag"
-	"github.com/DwiYI/Project-Nora/pkg/parser/ast"
-	"github.com/DwiYI/Project-Nora/pkg/token"
-	"github.com/DwiYI/Project-Nora/pkg/types"
+	"github.com/nora-language/nora/pkg/diag"
+	"github.com/nora-language/nora/pkg/parser/ast"
+	"github.com/nora-language/nora/pkg/token"
+	"github.com/nora-language/nora/pkg/types"
 )
 
 // SemanticInfo holds the "Side Tables" - the results of analysis.
@@ -75,15 +75,15 @@ type SemanticAnalyzer struct {
 	analyzingTypes map[*Symbol]bool
 
 	// Context for analysis
-	CurrentFunction *ast.FunctionStatement
-	CurrentLambda   *ast.LambdaExpression
-	AllowUnsafe     bool              // <--- Set by compiler flag
-	AllowedUnsafeDirs []string        // <--- Set from Project Manifest
-	PackageScopes   map[string]*Scope // <--- Track scopes by package name
-	LoadedDirs      map[string]bool   // <--- Track loaded directories to avoid recursion
-	ProcessedFiles  map[string]bool   // <--- Prevent duplicate symbol collection
-	AnalyzedFiles   map[string]bool   // <--- Prevent duplicate deep analysis
-	CollectingSymbols bool            // <--- True during CollectSymbols passes
+	CurrentFunction   *ast.FunctionStatement
+	CurrentLambda     *ast.LambdaExpression
+	AllowUnsafe       bool              // <--- Set by compiler flag
+	AllowedUnsafeDirs []string          // <--- Set from Project Manifest
+	PackageScopes     map[string]*Scope // <--- Track scopes by package name
+	LoadedDirs        map[string]bool   // <--- Track loaded directories to avoid recursion
+	ProcessedFiles    map[string]bool   // <--- Prevent duplicate symbol collection
+	AnalyzedFiles     map[string]bool   // <--- Prevent duplicate deep analysis
+	CollectingSymbols bool              // <--- True during CollectSymbols passes
 
 	FuncScopes           map[*ast.FunctionStatement]*Scope // <--- Track original scopes where functions are defined
 	depth                int                               // Recursion depth for infinite loop detection
@@ -191,10 +191,10 @@ func NewAnalyzer() *SemanticAnalyzer {
 
 	// --- Built-in Error Handling: Result[T, E] ---
 	resultType := &types.SumType{
-		TypeName:   "Result",
+		TypeName:      "Result",
 		CoreIntrinsic: "Result",
-		TypeParams: []*types.TypeParam{{Name: "T"}, {Name: "E"}},
-		Variants:   make(map[string]*types.Variant),
+		TypeParams:    []*types.TypeParam{{Name: "T"}, {Name: "E"}},
+		Variants:      make(map[string]*types.Variant),
 	}
 	resultType.Variants["Ok"] = &types.Variant{
 		Name: "Ok",
@@ -231,10 +231,10 @@ func NewAnalyzer() *SemanticAnalyzer {
 
 	// --- Built-in Option: Option[T] ---
 	optionType := &types.SumType{
-		TypeName:   "Option",
+		TypeName:      "Option",
 		CoreIntrinsic: "Option",
-		TypeParams: []*types.TypeParam{{Name: "T"}},
-		Variants:   make(map[string]*types.Variant),
+		TypeParams:    []*types.TypeParam{{Name: "T"}},
+		Variants:      make(map[string]*types.Variant),
 	}
 	optionType.Variants["Some"] = &types.Variant{
 		Name: "Some",
@@ -717,14 +717,14 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 				sym, err := sa.CurrentScope.Define(n.Name.Value, fnType, SymFunc, n)
 				if err != nil {
 					if existing, ok := sa.CurrentScope.Symbols[n.Name.Value]; ok {
-                        if existing.DefNode == n {
-                            sym = existing
-                        } else {
-                            sa.AddError(n.Token.Position, "%s", err.Error())
-                            sa.CurrentScope = prevScope
-                            return
-                        }
-                    } else {
+						if existing.DefNode == n {
+							sym = existing
+						} else {
+							sa.AddError(n.Token.Position, "%s", err.Error())
+							sa.CurrentScope = prevScope
+							return
+						}
+					} else {
 						sa.AddError(n.Token.Position, "%s", err.Error())
 						sa.CurrentScope = prevScope
 						return
@@ -1535,7 +1535,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			// Add TypeParams to temporary scope for field resolution
 			if len(n.TypeParameters) > 0 {
 				sa.CurrentScope = NewScope(sa.CurrentScope, ScopeBlock)
-				
+
 				// Pass 1: Define all TypeParams in the new scope
 				for _, tp := range n.TypeParameters {
 					sym, _ := sa.CurrentScope.Define(tp.Name.Value, &types.GenericType{TypeParam: tp.Name.Value, Constraint: nil}, SymType, tp)
@@ -1543,7 +1543,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 						sa.SemanticInfo.Defs[tp.Name] = sym
 					}
 				}
-				
+
 				// Pass 2: Resolve constraints using the fully populated scope
 				for i, tp := range n.TypeParameters {
 					if i < len(structType.TypeParams) {
@@ -1552,7 +1552,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 							constraint = sa.resolveTypeNode(tp.Constraint)
 						}
 						structType.TypeParams[i].Constraint = constraint
-						
+
 						if sym, found := sa.CurrentScope.Lookup(tp.Name.Value); found {
 							if gt, ok := sym.Type.(*types.GenericType); ok {
 								gt.Constraint = constraint
@@ -1618,7 +1618,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			// Add TypeParams to temporary scope for method resolution
 			if len(n.TypeParameters) > 0 {
 				sa.CurrentScope = NewScope(sa.CurrentScope, ScopeBlock)
-				
+
 				// Pass 1: Define all TypeParams in the new scope
 				for _, tp := range n.TypeParameters {
 					sym, _ := sa.CurrentScope.Define(tp.Name.Value, &types.GenericType{TypeParam: tp.Name.Value, Constraint: nil}, SymType, tp)
@@ -1626,7 +1626,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 						sa.SemanticInfo.Defs[tp.Name] = sym
 					}
 				}
-				
+
 				// Pass 2: Resolve constraints using the fully populated scope
 				for i, tp := range n.TypeParameters {
 					if i < len(protocolType.TypeParams) {
@@ -1635,7 +1635,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 							constraint = sa.resolveTypeNode(tp.Constraint)
 						}
 						protocolType.TypeParams[i].Constraint = constraint
-						
+
 						if sym, found := sa.CurrentScope.Lookup(tp.Name.Value); found {
 							if gt, ok := sym.Type.(*types.GenericType); ok {
 								gt.Constraint = constraint
@@ -1722,7 +1722,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			// Add TypeParams to temporary scope for variant resolution
 			if len(n.TypeParameters) > 0 {
 				sa.CurrentScope = NewScope(sa.CurrentScope, ScopeBlock)
-				
+
 				// Pass 1: Define all TypeParams in the new scope
 				for _, tp := range n.TypeParameters {
 					sym, _ := sa.CurrentScope.Define(tp.Name.Value, &types.GenericType{TypeParam: tp.Name.Value, Constraint: nil}, SymType, tp)
@@ -1730,7 +1730,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 						sa.SemanticInfo.Defs[tp.Name] = sym
 					}
 				}
-				
+
 				// Pass 2: Resolve constraints using the fully populated scope
 				for i, tp := range n.TypeParameters {
 					if i < len(sumType.TypeParams) {
@@ -1739,7 +1739,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 							constraint = sa.resolveTypeNode(tp.Constraint)
 						}
 						sumType.TypeParams[i].Constraint = constraint
-						
+
 						if sym, found := sa.CurrentScope.Lookup(tp.Name.Value); found {
 							if gt, ok := sym.Type.(*types.GenericType); ok {
 								gt.Constraint = constraint
@@ -2698,13 +2698,13 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		sa.Analyze(n.Left)
 		if len(n.Indices) > 0 {
 			sa.Analyze(n.Indices[0])
-			
+
 			// [NEW] BCE Range Analysis check
 			if ident, ok := n.Indices[0].(*ast.Identifier); ok {
 				if sym, exists := sa.CurrentScope.Resolve(ident.Value); exists {
 					if bounds := sa.CurrentScope.GetBounds(sym); bounds != nil && bounds.MinBound >= 0 {
 						syntheticLen := &ast.CallExpression{
-							Function: &ast.Identifier{Value: "len"},
+							Function:  &ast.Identifier{Value: "len"},
 							Arguments: []*ast.ArgumentsExpression{{Value: n.Left}},
 						}
 						if IsSemanticallyEquivalent(bounds.MaxSymbol, syntheticLen) {
@@ -3746,7 +3746,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					}
 					n.NextCall = callExpr
 					sa.Analyze(callExpr)
-					
+
 					if fnType, ok := method.(*types.FunctionType); ok && len(fnType.Params) == 0 {
 						if sumType, ok := fnType.Return.(*types.SumType); ok {
 							baseName := sumType.Name()
@@ -4545,7 +4545,6 @@ func (sa *SemanticAnalyzer) specializeSumType(st *types.SumType, argTypes []type
 		}
 	}
 
-
 	if isIdentity {
 		return st
 	}
@@ -4595,7 +4594,7 @@ func (sa *SemanticAnalyzer) specializeSumType(st *types.SumType, argTypes []type
 			subs[tp.Name] = arg
 		}
 	}
-	
+
 	// Pass 2: Check constraints with fully populated substitutions
 	for i, arg := range argTypes {
 		if i < len(st.TypeParams) {
@@ -4625,12 +4624,12 @@ func (sa *SemanticAnalyzer) specializeSumType(st *types.SumType, argTypes []type
 	}
 
 	specialized := &types.SumType{
-		TypeName:   specialName,
-		Variants:   make(map[string]*types.Variant),
-		TypeParams: []*types.TypeParam{},
-		TypeArgs:   argTypes,
-		BaseType:   st,
-		Methods:    make(map[string]types.NRType),
+		TypeName:      specialName,
+		Variants:      make(map[string]*types.Variant),
+		TypeParams:    []*types.TypeParam{},
+		TypeArgs:      argTypes,
+		BaseType:      st,
+		Methods:       make(map[string]types.NRType),
 		CoreIntrinsic: st.CoreIntrinsic,
 	}
 
@@ -4762,7 +4761,7 @@ func (sa *SemanticAnalyzer) specializeStructType(base *types.StructType, argType
 			subs[tp.Name] = arg
 		}
 	}
-	
+
 	// Pass 2: Check constraints with fully populated substitutions
 	for i, arg := range argTypes {
 		if i < len(base.TypeParams) {
@@ -5651,7 +5650,7 @@ func (sa *SemanticAnalyzer) Monomorphize(fnStmt *ast.FunctionStatement, typeArgs
 			typeArgIdx++
 		}
 	}
-	
+
 	// 2. Implicit type parameters from receiver
 	if fnStmt.Receiver != nil && len(recTypeArgs) > 0 {
 		baseExp := fnStmt.Receiver.Type
@@ -7335,7 +7334,6 @@ func (sa *SemanticAnalyzer) hasRestrictedClosure(t types.NRType, visited map[typ
 	return false
 }
 
-
 func (sa *SemanticAnalyzer) forceAnalyzeType(sym *Symbol) types.NRType {
 	if sym == nil {
 		return types.Void
@@ -7363,4 +7361,3 @@ func (sa *SemanticAnalyzer) forceAnalyzeType(sym *Symbol) types.NRType {
 	}
 	return sym.Type
 }
-

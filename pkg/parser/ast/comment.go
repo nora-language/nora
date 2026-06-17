@@ -1,8 +1,9 @@
 package ast
 
 import (
-	"github.com/DwiYI/Project-Nora/pkg/token"
 	"strings"
+
+	"github.com/nora-language/nora/pkg/token"
 )
 
 // Comment represents a single /// or // comment
