@@ -75,11 +75,6 @@ cd my_app
 nora run --release src/main.nr
 ```
 
-**Build for a specific target:**
-```bash
-nora build --target windows-amd64 --cc gcc
-```
-
 ### The Project Manifest (`nora.yaml`)
 Nora uses a simple YAML-based manifest to handle dependencies, native C integrations, and compiler options cleanly:
 
