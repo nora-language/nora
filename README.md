@@ -60,6 +60,14 @@ pub fn main() {
 
 ---
 
+## Examples
+
+To see more complex and real-world examples of Nora code, check out the following directories:
+- [**`examples/`**](file:///e:/Project/Project%20Chronos/second/examples/): Contains sample projects like a fully functioning ECS game engine (`port_gecs`).
+- [**`pkg/cmd/test/`**](file:///e:/Project/Project%20Chronos/second/pkg/cmd/test/): Contains the integration testing suite, serving as a great reference for syntax and compiler features.
+
+---
+
 ## Getting Started
 
 The Nora compiler comes batteries-included with a modern tooling suite.
