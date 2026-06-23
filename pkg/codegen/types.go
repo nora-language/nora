@@ -441,6 +441,28 @@ func (g *Generator) isGeneratedExpressionPointer(e ast.Expression, t types.NRTyp
 		}
 		return strings.HasSuffix(g.cType(t), "*")
 	}
+
+	if pe, ok := e.(*ast.PrefixExpression); ok && pe.Operator == "@" {
+		tRight := g.SemanticInfo.Types[pe.Right]
+		if tRight == nil {
+			if id, ok := pe.Right.(*ast.Identifier); ok {
+				if sym := g.SemanticInfo.Uses[id]; sym != nil {
+					tRight = sym.Type
+				} else if sym := g.SemanticInfo.Defs[id]; sym != nil {
+					tRight = sym.Type
+				}
+			}
+		}
+		if tRight != nil {
+			if pt, ok := tRight.(*types.PointerType); ok && pt.Leased && pt.Kind != types.LeaseMove {
+				if _, isProto := pt.Base.(*types.ProtocolType); !isProto {
+					tRight = pt.Base
+				}
+			}
+			return strings.HasSuffix(g.cType(tRight), "*")
+		}
+	}
+
 	return g.isPointerInC(e)
 }
 

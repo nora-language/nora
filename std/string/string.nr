@@ -8,6 +8,9 @@ extern fn strcmp(s1: #str, s2: #str) i32
 
 extern fn strncmp(s1: #str, s2: #str, n: i32) i32
 
+pub fn Clone(s: #str) str {
+    return Substring(s, 0, Length(s))
+}
 extern fn strstr(haystack: #str, needle: #str) ptr
 
 fn toupper(c: i32) i32 {

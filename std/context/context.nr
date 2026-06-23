@@ -1,6 +1,7 @@
 package context
 
 import "sync"
+import "string"
 
 [shared]
 pub type Context = struct {
@@ -30,7 +31,7 @@ pub fn (self: #Context) IsCancelled() bool {
 
 pub fn (self: #Context) Err() str {
     if (self.IsCancelled()) {
-        return self.err_msg
+        return string.Clone(#self.err_msg)
     }
     return ""
 }

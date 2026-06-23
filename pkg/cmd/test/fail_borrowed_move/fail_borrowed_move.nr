@@ -14,7 +14,7 @@ pub fn (s: #Sphere[T]) Support[T](dir: #Vector[T]) @Vector[T] {
     // s.radius is accessed via a borrowed struct (`#Sphere[T]`).
     // s.radius has generic type `T`, which is strictly linear.
     // Calling MulScalar[T](s: T) demands ownership of T.
-    // The compiler should throw an error here instead of silently zeroing `s.radius`!
+    // The compiler correctly catches this and throws a topology error.
     return dir.MulScalar[T](s.radius) // ERROR: cannot move out of borrowed context
 }
 

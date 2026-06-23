@@ -71,13 +71,13 @@ fn (self: &HashMap[K, V]) put[K, V](key: K, val: V, hash_fn: fn(#K) i32) {
     self.size = self.size + 1
 }
 
-fn (self: #HashMap[K, V]) get[K, V](key: #K, hash_fn: fn(#K) i32, default_val: V) V {
+fn (self: #HashMap[K, V]) get[K, V](key: #K, hash_fn: fn(#K) i32, default_val: #V) #V {
     var h = hash_fn(key)
     var idx = h % self.capacity
     var curr = #self.buckets[idx]
     while (curr != none) {
         if (curr.key == key) {
-            return curr.value
+            return #curr.value
         }
         curr = #curr.next
     }

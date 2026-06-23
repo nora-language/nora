@@ -580,7 +580,11 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 					break
 				} else if !strings.HasSuffix(retCType, "*") && strings.HasSuffix(valCType, "*") {
 					g.emit("    nr_flush_temps();")
-					g.emit(fmt.Sprintf("    return *%s;", valStr))
+					if strings.Contains(valStr, "({") {
+						g.emit(fmt.Sprintf("    return %s;", valStr))
+					} else {
+						g.emit(fmt.Sprintf("    return *%s;", valStr))
+					}
 					break
 				}
 				g.emit("    nr_flush_temps();")

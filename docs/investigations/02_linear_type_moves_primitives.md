@@ -28,6 +28,9 @@ Therefore, when `s.radius` is passed into `MulScalar[T](s: T)`, the compiler exe
 
 Because `s` was a borrow (`#Sphere[T]`), the compiler incorrectly allowed the move to proceed without emitting a `cannot move out of borrowed context` error (which is an underlying bug in the Lease Solver). Instead, it silently zeroed out the primitive field inside the borrowed struct, leading to catastrophic logic bugs.
 
+## Status
+**Fixed**: The underlying bug in the Lease Solver has been resolved. The solver now accurately flags attempts to move out of borrowed contexts (e.g., passing a primitive field from a borrowed generic struct) and correctly emits a `cannot move out of borrowed context` topology error, rather than silently zeroing out the original memory location.
+
 ## Fix / Workaround
 
 To prevent primitive values from being moved, they must be explicitly cloned using binary operators (which do not consume their operands).

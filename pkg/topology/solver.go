@@ -454,7 +454,7 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 					}
 
 					// Check for partial moves (if not already fully moved)
-					if msg == "" && types.IsOwnedType(sym.Type) {
+					if msg == "" && s.isOwned(sym) {
 						for fieldMove := range lc.FieldMoves {
 							if strings.HasPrefix(fieldMove, sym.Name+".") {
 								msg = fmt.Sprintf("use of partially moved value '%s' (field '%s' was moved)", sym.Name, fieldMove)
@@ -506,9 +506,7 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 			allIdents := s.findAllIdentsInStatement(stmt)
 			for sym, ident := range allIdents {
 				if s.isMoveOperation(stmt, ident) {
-					if isBorrowType(sym.Type) {
-						s.ReportError(ident.Pos(), "cannot move out of borrowed context '%s'", sym.Name)
-					} else if lc, exists := allVisible[sym]; exists {
+					if lc, exists := allVisible[sym]; exists {
 						lc.IsMoved = true
 						lc.MovedBy = stmt // Record the statement that caused the move
 						s.debug("      MOVE DETECTED: %s is now consumed by stmt at line %d", sym.Name, ident.Pos().Line)
@@ -563,7 +561,7 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 				if sym != nil {
 					// RAII: If it's an owned variable and NOT moved, we must drop old value before overwrite
 					if lc, exists := allVisible[sym]; exists {
-						if !lc.IsMoved && types.IsOwnedType(sym.Type) {
+						if !lc.IsMoved && s.isOwned(sym) {
 							s.AssignDrops[assign] = true
 						}
 						s.debug("      RE-ASSIGNMENT: %s resetting IsMoved from %v to false", sym.Name, lc.IsMoved)
@@ -588,7 +586,7 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 				rootSym := s.getRootSymbol(sel)
 				// RAII: Handle field re-assignment for owned types only
 				t := s.SemanticInfo.Types[sel]
-				if types.IsOwnedType(t) {
+				if s.isImplicitMoveType(t) {
 					if rootSym != nil {
 						if lc, ok := allVisible[rootSym]; ok {
 							if lc.FieldMoves == nil || !lc.FieldMoves[selStr] {
@@ -608,7 +606,7 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 			} else if idx, ok := assign.Left.(*ast.IndexExpression); ok {
 				// RAII: Handle array element re-assignment
 				t := s.SemanticInfo.Types[idx]
-				if types.IsOwnedType(t) {
+				if s.isImplicitMoveType(t) {
 					s.AssignDrops[assign] = true
 				}
 			}
@@ -1327,7 +1325,7 @@ func (s *Solver) isMoveOperationForSelector(stmt ast.Statement, target *ast.Sele
 			if s.isSameSelector(assign.Value, target) {
 				targetType := s.SemanticInfo.Types[assign.Left]
 				sourceType := s.SemanticInfo.Types[assign.Value]
-				if types.IsOwnedType(targetType) && types.IsOwnedType(sourceType) {
+				if s.isImplicitMoveType(targetType) && s.isImplicitMoveType(sourceType) {
 					isMove = true
 					return false
 				}
@@ -1347,7 +1345,7 @@ func (s *Solver) isMoveOperationForSelector(stmt ast.Statement, target *ast.Sele
 					// Function returns a lease, do not treat as move
 				} else {
 					sourceType := s.SemanticInfo.Types[ret.ReturnValue]
-					if types.IsOwnedType(sourceType) {
+					if s.isImplicitMoveType(sourceType) {
 						isMove = true
 						return false
 					}
@@ -1366,7 +1364,7 @@ func (s *Solver) isMoveOperationForSelector(stmt ast.Statement, target *ast.Sele
 			// Implicit move if right side is owned
 			if s.isSameSelector(send.Right, target) {
 				t := s.SemanticInfo.Types[target]
-				if types.IsOwnedType(t) {
+				if s.isImplicitMoveType(t) {
 					isMove = true
 					return false
 				}
@@ -1399,7 +1397,7 @@ func (s *Solver) recordMovesInStatement(stmt ast.Statement) {
 					fExpr := field.Value
 					if fExpr != nil {
 						fType := st.Fields[fName]
-						if types.IsOwnedType(fType) {
+						if s.isImplicitMoveType(fType) {
 							if s.isMoveCandidate(fExpr) {
 								s.Moves[fExpr] = true
 							}
@@ -1413,7 +1411,7 @@ func (s *Solver) recordMovesInStatement(stmt ast.Statement) {
 		if arrLit, ok := n.(*ast.ArrayLiteral); ok {
 			arrTypeObj := s.SemanticInfo.Types[arrLit]
 			if arrType, ok := arrTypeObj.(*types.ListType); ok {
-				if types.IsOwnedType(arrType.ElementType) {
+				if s.isImplicitMoveType(arrType.ElementType) {
 					for _, elem := range arrLit.Elements {
 						if s.isMoveCandidate(elem) {
 							s.Moves[elem] = true
@@ -1427,8 +1425,8 @@ func (s *Solver) recordMovesInStatement(stmt ast.Statement) {
 		if mapLit, ok := n.(*ast.MapLiteral); ok {
 			mapTypeObj := s.SemanticInfo.Types[mapLit]
 			if mapType, ok := mapTypeObj.(*types.MapType); ok {
-				isKeyOwned := types.IsOwnedType(mapType.Key)
-				isValueOwned := types.IsOwnedType(mapType.Value)
+				isKeyOwned := s.isImplicitMoveType(mapType.Key)
+				isValueOwned := s.isImplicitMoveType(mapType.Value)
 				for k, v := range mapLit.Pairs {
 					if isKeyOwned && s.isMoveCandidate(k) {
 						s.Moves[k] = true
@@ -1453,7 +1451,7 @@ func (s *Solver) recordMovesInStatement(stmt ast.Statement) {
 				}
 			}
 			sourceType := s.SemanticInfo.Types[assign.Value]
-			if types.IsOwnedType(targetType) && types.IsOwnedType(sourceType) {
+			if s.isImplicitMoveType(targetType) && s.isImplicitMoveType(sourceType) {
 				if s.isMoveCandidate(assign.Value) {
 					s.Moves[assign.Value] = true
 				}
@@ -1464,7 +1462,7 @@ func (s *Solver) recordMovesInStatement(stmt ast.Statement) {
 		if varStmt, ok := n.(*ast.VarStatement); ok && varStmt.Value != nil {
 			sym := s.SemanticInfo.Defs[varStmt.Name]
 			sourceType := s.SemanticInfo.Types[varStmt.Value]
-			if sym != nil && types.IsOwnedType(sym.Type) && types.IsOwnedType(sourceType) {
+			if sym != nil && s.isImplicitMoveType(sym.Type) && s.isImplicitMoveType(sourceType) {
 				if s.isMoveCandidate(varStmt.Value) {
 					s.Moves[varStmt.Value] = true
 				}
@@ -1516,7 +1514,7 @@ func (s *Solver) recordMovesInStatement(stmt ast.Statement) {
 				// Borrow, not a move
 			} else {
 				sourceType := s.SemanticInfo.Types[ret.ReturnValue]
-				if types.IsOwnedType(sourceType) {
+				if s.isImplicitMoveType(sourceType) {
 					if s.isMoveCandidate(ret.ReturnValue) {
 						s.Moves[ret.ReturnValue] = true
 					}
@@ -1528,7 +1526,7 @@ func (s *Solver) recordMovesInStatement(stmt ast.Statement) {
 		if spawn, ok := n.(*ast.SpawnExpression); ok {
 			for _, arg := range spawn.Call.Arguments {
 				t := s.SemanticInfo.Types[arg.Value]
-				if types.IsOwnedType(t) && s.isMoveCandidate(arg.Value) {
+				if s.isImplicitMoveType(t) && s.isMoveCandidate(arg.Value) {
 					s.Moves[arg.Value] = true
 				}
 			}
@@ -1547,7 +1545,7 @@ func (s *Solver) recordMovesInStatement(stmt ast.Statement) {
 		if send, ok := n.(*ast.SendExpression); ok {
 			if pref, ok := send.Right.(*ast.PrefixExpression); ok && pref.Operator == "@" {
 				s.Moves[pref.Right] = true
-			} else if types.IsOwnedType(s.SemanticInfo.Types[send.Right]) {
+			} else if s.isImplicitMoveType(s.SemanticInfo.Types[send.Right]) {
 				if s.isMoveCandidate(send.Right) {
 					s.Moves[send.Right] = true
 				}
@@ -1704,11 +1702,7 @@ func (s *Solver) isImplicitMoveType(t types.NRType) bool {
 	if t == nil {
 		return false
 	}
-	if t.IsLeased() {
-		return false
-	}
-	ut := types.UnwrapLease(t)
-	return types.IsOwnedType(ut)
+	return types.IsOwnedType(t)
 }
 
 func (s *Solver) needsDrop(t types.NRType) bool {
@@ -1813,7 +1807,7 @@ func (s *Solver) isMoveOperation(stmt ast.Statement, target *ast.Identifier) boo
 					fExpr := field.Value
 					if fExpr != nil && isTarget(fExpr) {
 						fType := st.Fields[fName]
-						if types.IsOwnedType(fType) {
+						if s.isImplicitMoveType(fType) {
 							s.debug("        Move detected: Struct Instantiation owned field")
 							isMove = true
 							return false
@@ -1827,7 +1821,7 @@ func (s *Solver) isMoveOperation(stmt ast.Statement, target *ast.Identifier) boo
 		if arrLit, ok := n.(*ast.ArrayLiteral); ok {
 			arrTypeObj := s.SemanticInfo.Types[arrLit]
 			if arrType, ok := arrTypeObj.(*types.ListType); ok {
-				if types.IsOwnedType(arrType.ElementType) {
+				if s.isImplicitMoveType(arrType.ElementType) {
 					for _, elem := range arrLit.Elements {
 						if isTarget(elem) {
 							s.debug("        Move detected: Array Literal owned element")
@@ -1843,8 +1837,8 @@ func (s *Solver) isMoveOperation(stmt ast.Statement, target *ast.Identifier) boo
 		if mapLit, ok := n.(*ast.MapLiteral); ok {
 			mapTypeObj := s.SemanticInfo.Types[mapLit]
 			if mapType, ok := mapTypeObj.(*types.MapType); ok {
-				isKeyOwned := types.IsOwnedType(mapType.Key)
-				isValueOwned := types.IsOwnedType(mapType.Value)
+				isKeyOwned := s.isImplicitMoveType(mapType.Key)
+				isValueOwned := s.isImplicitMoveType(mapType.Value)
 				for k, v := range mapLit.Pairs {
 					if isKeyOwned && isTarget(k) {
 						s.debug("        Move detected: Map Literal owned key")
@@ -1962,7 +1956,7 @@ func (s *Solver) isMoveOperation(stmt ast.Statement, target *ast.Identifier) boo
 								if i < len(matchedVariant.FieldNames) {
 									fName := matchedVariant.FieldNames[i]
 									fType := matchedVariant.Fields[fName]
-									isOwned := types.IsOwnedType(fType)
+									isOwned := s.isImplicitMoveType(fType)
 									if isOwned {
 										s.debug("        Move detected: Passing owned type to variant constructor")
 										isMove = true
@@ -2008,7 +2002,7 @@ func (s *Solver) isMoveOperation(stmt ast.Statement, target *ast.Identifier) boo
 			for _, arg := range spawn.Call.Arguments {
 				if isTarget(arg.Value) {
 					t := s.SemanticInfo.Types[arg.Value]
-					if types.IsOwnedType(t) {
+					if s.isImplicitMoveType(t) {
 						isMove = true
 						return false
 					}
@@ -2031,7 +2025,7 @@ func (s *Solver) isMoveOperation(stmt ast.Statement, target *ast.Identifier) boo
 			if isTarget(assign.Value) {
 				// Assume move if source is owned, regardless of target type
 				sourceType := s.SemanticInfo.Types[assign.Value]
-				if types.IsOwnedType(sourceType) {
+				if s.isImplicitMoveType(sourceType) {
 					isMove = true
 					return false
 				}
@@ -2052,7 +2046,7 @@ func (s *Solver) isMoveOperation(stmt ast.Statement, target *ast.Identifier) boo
 					// Function returns a lease, do not treat as move
 				} else {
 					t := s.SemanticInfo.Types[ret.ReturnValue]
-					if types.IsOwnedType(t) {
+					if s.isImplicitMoveType(t) {
 						s.debug("        Move detected: Return of owned target")
 						isMove = true
 						return false
@@ -2065,7 +2059,7 @@ func (s *Solver) isMoveOperation(stmt ast.Statement, target *ast.Identifier) boo
 		if send, ok := n.(*ast.SendExpression); ok {
 			if isTarget(send.Right) {
 				t := s.SemanticInfo.Types[send.Right]
-				if types.IsOwnedType(t) {
+				if s.isImplicitMoveType(t) {
 					isMove = true
 					return false
 				}
@@ -2182,3 +2176,5 @@ func isBorrowType(t types.NRType) bool {
 	}
 	return false
 }
+
+

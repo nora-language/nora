@@ -4419,6 +4419,7 @@ func (sa *SemanticAnalyzer) resolveTypeNode(n ast.TypeNode) types.NRType {
 
 				specFn := &types.FunctionType{
 					Params: newParams,
+					ParamLeases: ft.ParamLeases,
 					Return: specRet,
 				}
 				sa.SemanticInfo.Types[n] = specFn
@@ -7376,3 +7377,4 @@ func (sa *SemanticAnalyzer) forceAnalyzeType(sym *Symbol) types.NRType {
 	}
 	return sym.Type
 }
+

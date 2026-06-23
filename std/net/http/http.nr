@@ -46,7 +46,7 @@ pub fn (self: #Request) GetHeader(key: #str) str {
         var hk_lower = string.ToLower(h.key)
         var k_lower = string.ToLower(key)
         if (string.Equals(hk_lower, k_lower)) {
-            return h.value
+            return string.Clone(#h.value)
         }
         i = i + 1
     }
@@ -68,7 +68,7 @@ pub fn (self: #Response) GetHeader(key: #str) str {
         var hk_lower = string.ToLower(h.key)
         var k_lower = string.ToLower(key)
         if (string.Equals(hk_lower, k_lower)) {
-            return h.value
+            return string.Clone(#h.value)
         }
         i = i + 1
     }

@@ -29,7 +29,7 @@ pub type ValueProvider[T] = struct {
     val: T
 }
 
-pub fn (v: #ValueProvider[T]) Get() T {
+pub fn (v: @ValueProvider[T]) Get() T {
     return v.val
 }
 

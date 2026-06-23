@@ -1,5 +1,7 @@
 package nursery
 
+import "string"
+
 [shared]
 pub type Context = struct {
     task_count: i32,
@@ -39,7 +41,7 @@ pub fn (self: &Context) wait() Result[bool, str] {
     }
 
     if (has_error) {
-        return Err[bool, str](self.first_err)
+        return Err[bool, str](string.Clone(#self.first_err))
     }
     return Ok[bool, str](true)
 }

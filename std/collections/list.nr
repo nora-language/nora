@@ -4,14 +4,14 @@ import "io"
 
 type ListNode[T] = struct {
     value: T,
-    prev: #ListNode[T],
+    prev: &ListNode[T],
     next: @ListNode[T]
 }
 
 [core_intrinsic("Collection")]
 pub type LinkedList[T] = struct {
     head: @ListNode[T],
-    tail: #ListNode[T],
+    tail: &ListNode[T],
     size: i32
 }
 
