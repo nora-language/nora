@@ -49,6 +49,7 @@ type Solver struct {
 	InSecondPass   bool // Track if we are in the second pass of a loop analysis
 	DebugMode      bool
 	LoopParentVars []map[*semantic.Symbol]bool
+	CurrentFunction *types.FunctionType
 }
 
 func NewSolver(sem *semantic.SemanticInfo) *Solver {
@@ -125,6 +126,12 @@ func (s *Solver) Solve(node ast.Node) {
 			return
 		}
 		if n.Body != nil {
+			oldFn := s.CurrentFunction
+			if sym := s.SemanticInfo.Defs[n.Name]; sym != nil {
+				if fnT, ok := sym.Type.(*types.FunctionType); ok {
+					s.CurrentFunction = fnT
+				}
+			}
 			s.debug(">>> STARTING FUNCTION: %s", n.Name.Value)
 			params := make(map[*semantic.Symbol]*Lifecycle)
 			if n.Receiver != nil {
@@ -177,6 +184,7 @@ func (s *Solver) Solve(node ast.Node) {
 					}
 				}
 			}
+			s.CurrentFunction = oldFn
 		}
 	case *ast.LambdaExpression:
 		if n.Body != nil {
@@ -498,7 +506,9 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 			allIdents := s.findAllIdentsInStatement(stmt)
 			for sym, ident := range allIdents {
 				if s.isMoveOperation(stmt, ident) {
-					if lc, exists := allVisible[sym]; exists {
+					if isBorrowType(sym.Type) {
+						s.ReportError(ident.Pos(), "cannot move out of borrowed context '%s'", sym.Name)
+					} else if lc, exists := allVisible[sym]; exists {
 						lc.IsMoved = true
 						lc.MovedBy = stmt // Record the statement that caused the move
 						s.debug("      MOVE DETECTED: %s is now consumed by stmt at line %d", sym.Name, ident.Pos().Line)
@@ -519,7 +529,9 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 					selStr := s.stringifySelector(sel)
 					rootSym := s.getRootSymbol(sel)
 					if rootSym != nil {
-						if lc, exists := allVisible[rootSym]; exists {
+						if isBorrowType(rootSym.Type) {
+							s.ReportError(sel.Pos(), "cannot move out of borrowed context '%s'", rootSym.Name)
+						} else if lc, exists := allVisible[rootSym]; exists {
 							if lc.FieldMoves == nil {
 								lc.FieldMoves = make(map[string]bool)
 							}
@@ -1331,10 +1343,14 @@ func (s *Solver) isMoveOperationForSelector(stmt ast.Statement, target *ast.Sele
 				}
 			}
 			if s.isSameSelector(ret.ReturnValue, target) {
-				sourceType := s.SemanticInfo.Types[ret.ReturnValue]
-				if types.IsOwnedType(sourceType) {
-					isMove = true
-					return false
+				if s.CurrentFunction != nil && s.CurrentFunction.Return != nil && s.CurrentFunction.Return.IsLeased() {
+					// Function returns a lease, do not treat as move
+				} else {
+					sourceType := s.SemanticInfo.Types[ret.ReturnValue]
+					if types.IsOwnedType(sourceType) {
+						isMove = true
+						return false
+					}
 				}
 			}
 		}
@@ -1496,10 +1512,14 @@ func (s *Solver) recordMovesInStatement(stmt ast.Statement) {
 
 		// 5. Implicit moves in return: return y
 		if ret, ok := n.(*ast.ReturnStatement); ok && ret.ReturnValue != nil {
-			sourceType := s.SemanticInfo.Types[ret.ReturnValue]
-			if types.IsOwnedType(sourceType) {
-				if s.isMoveCandidate(ret.ReturnValue) {
-					s.Moves[ret.ReturnValue] = true
+			if s.CurrentFunction != nil && s.CurrentFunction.Return != nil && s.CurrentFunction.Return.IsLeased() {
+				// Borrow, not a move
+			} else {
+				sourceType := s.SemanticInfo.Types[ret.ReturnValue]
+				if types.IsOwnedType(sourceType) {
+					if s.isMoveCandidate(ret.ReturnValue) {
+						s.Moves[ret.ReturnValue] = true
+					}
 				}
 			}
 		}
@@ -2028,11 +2048,15 @@ func (s *Solver) isMoveOperation(stmt ast.Statement, target *ast.Identifier) boo
 		// 4. Return
 		if ret, ok := n.(*ast.ReturnStatement); ok && ret.ReturnValue != nil {
 			if isTarget(ret.ReturnValue) {
-				t := s.SemanticInfo.Types[ret.ReturnValue]
-				if types.IsOwnedType(t) {
-					s.debug("        Move detected: Return of owned target")
-					isMove = true
-					return false
+				if s.CurrentFunction != nil && s.CurrentFunction.Return != nil && s.CurrentFunction.Return.IsLeased() {
+					// Function returns a lease, do not treat as move
+				} else {
+					t := s.SemanticInfo.Types[ret.ReturnValue]
+					if types.IsOwnedType(t) {
+						s.debug("        Move detected: Return of owned target")
+						isMove = true
+						return false
+					}
 				}
 			}
 		}
@@ -2150,4 +2174,11 @@ func (s *Solver) analyzePattern(pattern ast.Expression, visible map[*semantic.Sy
 		return true
 	})
 	return born
+}
+
+func isBorrowType(t types.NRType) bool {
+	if pt, ok := t.(*types.PointerType); ok && pt.Leased {
+		return pt.Kind == types.LeaseRead || pt.Kind == types.LeaseWrite
+	}
+	return false
 }
