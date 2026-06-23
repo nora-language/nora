@@ -2178,7 +2178,7 @@ func (s *Solver) analyzePattern(pattern ast.Expression, visible map[*semantic.Sy
 
 func isBorrowType(t types.NRType) bool {
 	if pt, ok := t.(*types.PointerType); ok && pt.Leased {
-		return pt.Kind == types.LeaseRead || pt.Kind == types.LeaseWrite
+		return pt.Kind == types.LeaseRead
 	}
 	return false
 }
