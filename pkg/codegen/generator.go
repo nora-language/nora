@@ -198,10 +198,11 @@ func (g *Generator) Generate() (string, error) {
 			continue
 		}
 		if hf, ok := hirFuncs[name]; ok {
-			// fmt.Printf("[DEBUG] Generator: compiling %s via HIR\n", name)
 			g.genHIRFunction(hf)
 		} else {
-			// fmt.Printf("[DEBUG] Generator: compiling %s via LEGACY\n", name)
+			if strings.Contains(name, "ParMap") || strings.Contains(name, "GetMut") {
+				fmt.Printf("[GEN-ROUTE] LEGACY path for: %s\n", name)
+			}
 			g.genFunction(sym, fn)
 		}
 	}
@@ -287,6 +288,14 @@ func (g *Generator) eraseType(t types.NRType) types.NRType {
 		if sum, ok := erasedBase.(*types.SumType); ok && sum.BaseType != nil {
 			return &types.PointerType{
 				Base:    erasedBase,
+				IsArray: pt.IsArray,
+				Leased:  pt.Leased,
+				Kind:    pt.Kind,
+			}
+		}
+		if fn, ok := erasedBase.(*types.FunctionType); ok {
+			return &types.PointerType{
+				Base:    fn,
 				IsArray: pt.IsArray,
 				Leased:  pt.Leased,
 				Kind:    pt.Kind,
@@ -646,6 +655,8 @@ func (g *Generator) collectDefinitions() {
 									// Keep structure pointer
 								} else if _, ok := pt.Base.(*types.SumType); ok {
 									// Keep sum type pointer
+								} else if _, ok := pt.Base.(*types.FunctionType); ok {
+									// Keep function type lease
 								} else {
 									erasedParam = types.Ptr
 								}
@@ -662,6 +673,8 @@ func (g *Generator) collectDefinitions() {
 								// Keep structure pointer
 							} else if _, ok := pt.Base.(*types.SumType); ok {
 								// Keep sum type pointer
+							} else if _, ok := pt.Base.(*types.FunctionType); ok {
+								// Keep function type lease
 							} else {
 								erasedReturn = types.Ptr
 							}

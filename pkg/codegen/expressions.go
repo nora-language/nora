@@ -1156,6 +1156,9 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 			if i < len(ft.ParamLeases) {
 				lease = ft.ParamLeases[i]
 			}
+			if isVariableCall && targetType != nil {
+				g.buf.WriteString(fmt.Sprintf("(%s)", g.cParamType(targetType, lease)))
+			}
 		}
 		g.emitArgument(arg.Value, targetType, lease)
 	}
@@ -1843,6 +1846,10 @@ func (g *Generator) genSpawnExpression(e *ast.SpawnExpression) {
 	g.InCallExpression = oldInCall
 	fnName := g.buf.String()
 	g.buf = oldBuf
+	// For generic spawned functions, look up the correct monomorphized name
+	if monoName, ok := g.SemanticInfo.MonomorphizedNames[e.Call]; ok && monoName != "" {
+		fnName = monoName
+	}
 
 	var ft *types.FunctionType
 	if t, ok := g.SemanticInfo.Types[e.Call.Function].(*types.FunctionType); ok {
@@ -1896,13 +1903,34 @@ func (g *Generator) genSpawnExpression(e *ast.SpawnExpression) {
 			if i < len(ft.ParamLeases) {
 				lease = ft.ParamLeases[i]
 			}
-			paramCType = g.cParamType(ft.Params[i], lease)
+			erasedParam := g.eraseType(ft.Params[i])
+			if types.IsPointerLike(ft.Params[i]) {
+				if pt, ok := erasedParam.(*types.PointerType); ok {
+					if _, ok := pt.Base.(*types.StructType); ok {
+					} else if _, ok := pt.Base.(*types.SumType); ok {
+					} else if _, ok := pt.Base.(*types.FunctionType); ok {
+					} else {
+						erasedParam = types.Ptr
+					}
+				} else {
+					erasedParam = types.Ptr
+				}
+			}
+			paramCType = g.cParamType(erasedParam, lease)
 		}
 		memberCType := g.cType(unwrapped)
 		if strings.HasSuffix(paramCType, "*") && !strings.HasSuffix(memberCType, "*") {
 			sb.WriteString(fmt.Sprintf("&args->arg%d", i))
 		} else {
-			sb.WriteString(fmt.Sprintf("args->arg%d", i))
+			if paramCType != "" && paramCType != memberCType {
+				if strings.HasSuffix(paramCType, "*") && strings.HasSuffix(memberCType, "*") {
+					sb.WriteString(fmt.Sprintf("(void*)args->arg%d", i))
+				} else {
+					sb.WriteString(fmt.Sprintf("(%s)args->arg%d", paramCType, i))
+				}
+			} else {
+				sb.WriteString(fmt.Sprintf("args->arg%d", i))
+			}
 		}
 	}
 	sb.WriteString(");\n")

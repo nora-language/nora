@@ -3240,11 +3240,13 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 						}
 					}
 
-					if lease == types.LeaseWrite && ft.Params[i] != nil && ft.Params[i].IsLeased() {
-						sa.AddError(argPos, "cannot pass mutable lease (write) across fiber boundary")
-					} else if lease == types.LeaseRead && ft.Params[i] != nil && ft.Params[i].IsLeased() {
-						if !isExempt {
-							sa.AddError(argPos, "cannot pass read lease across fiber boundary")
+					if !sa.hasUnsafeAttr() {
+						if lease == types.LeaseWrite && ft.Params[i] != nil && ft.Params[i].IsLeased() {
+							sa.AddError(argPos, "cannot pass mutable lease (write) across fiber boundary")
+						} else if lease == types.LeaseRead && ft.Params[i] != nil && ft.Params[i].IsLeased() {
+							if !isExempt {
+								sa.AddError(argPos, "cannot pass read lease across fiber boundary")
+							}
 						}
 					}
 				}
@@ -3278,11 +3280,13 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					}
 				}
 
-				if ft.ReceiverLease == types.LeaseWrite && isReceiverLeased {
-					sa.AddError(n.Call.Function.Pos(), "cannot pass mutable lease (write) across fiber boundary")
-				} else if ft.ReceiverLease == types.LeaseRead && isReceiverLeased {
-					if !isExempt {
-						sa.AddError(n.Call.Function.Pos(), "cannot call method on read lease across fiber boundary")
+				if !sa.hasUnsafeAttr() {
+					if ft.ReceiverLease == types.LeaseWrite && isReceiverLeased {
+						sa.AddError(n.Call.Function.Pos(), "cannot pass mutable lease (write) across fiber boundary")
+					} else if ft.ReceiverLease == types.LeaseRead && isReceiverLeased {
+						if !isExempt {
+							sa.AddError(n.Call.Function.Pos(), "cannot call method on read lease across fiber boundary")
+						}
 					}
 				}
 			}
@@ -5563,6 +5567,9 @@ func (sa *SemanticAnalyzer) handleGenericCall(n *ast.CallExpression, fnStmt *ast
 	} else {
 		fnName = sanitizeCIdentifier(fnName)
 	}
+	if strings.Contains(fnStmt.Name.Value, "GetMut") {
+		fmt.Printf("[MONO-NAME] storing MonomorphizedNames[%p] = %s (fnStmt=%s)\n", n, fnName, fnStmt.Name.Value)
+	}
 	sa.SemanticInfo.MonomorphizedNames[n] = fnName
 
 	// Type of the call is the return type of the specialized function
@@ -6220,6 +6227,25 @@ func (sa *SemanticAnalyzer) cloneAndSubstituteHelper(node ast.Node, mapping map[
 		}
 		if n.ReturnType != nil {
 			res.ReturnType = sa.cloneAndSubstitute(n.ReturnType, mapping).(ast.TypeNode)
+		}
+		if n.Body != nil {
+			res.Body = sa.cloneAndSubstitute(n.Body, mapping).(*ast.BlockStatement)
+		}
+		return res
+
+	case *ast.ScopeExpression:
+		res := &ast.ScopeExpression{
+			Token: n.Token,
+		}
+		if n.Body != nil {
+			res.Body = sa.cloneAndSubstitute(n.Body, mapping).(*ast.BlockStatement)
+		}
+		return res
+
+	case *ast.ParallelExpression:
+		res := &ast.ParallelExpression{
+			Token: n.Token,
+			Type:  n.Type,
 		}
 		if n.Body != nil {
 			res.Body = sa.cloneAndSubstitute(n.Body, mapping).(*ast.BlockStatement)

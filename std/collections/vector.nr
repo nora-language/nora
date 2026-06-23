@@ -205,6 +205,23 @@ pub fn (v: #Vector[T]) Iter[T]() VectorIterator[T] {
     }
 }
 
+[unsafe]
+fn run_par_map_worker[T](val: &T, f: #fn(&T)) {
+    f(val)
+}
+
+[unsafe]
+pub fn (v: &Vector[T]) ParMap[T](f: fn(&T)) {
+    scope {
+        var i = 0
+        while i < v.size {
+            var ref = v.GetMut[T](i)
+            spawn run_par_map_worker[T](ref, #f)
+            i = i + 1
+        }
+    }
+}
+
 
 
 
