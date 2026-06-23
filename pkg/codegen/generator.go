@@ -200,8 +200,8 @@ func (g *Generator) Generate() (string, error) {
 		if hf, ok := hirFuncs[name]; ok {
 			g.genHIRFunction(hf)
 		} else {
-			if strings.Contains(name, "ParMap") || strings.Contains(name, "GetMut") {
-				fmt.Printf("[GEN-ROUTE] LEGACY path for: %s\n", name)
+			if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok && len(fnStmt.TypeParameters) > 0 {
+				// 
 			}
 			g.genFunction(sym, fn)
 		}

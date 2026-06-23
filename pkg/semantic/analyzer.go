@@ -2314,14 +2314,6 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			if _, ok := expectedType.(*types.ProtocolType); ok {
 				sa.checkInterfaceCompatibility(n.ReturnValue, expectedType)
 			} else {
-				fmt.Fprintf(os.Stderr, "[DEBUG ReturnStatement] Mismatch in func: %s, CurrentFunction.ReturnType AST: %#v\n", funcName, sa.CurrentFunction.ReturnType)
-				if idx, ok := sa.CurrentFunction.ReturnType.(*ast.IndexExpression); ok {
-					fmt.Fprintf(os.Stderr, "  Left: %#v, Indices: %#v\n", idx.Left, idx.Indices)
-					if len(idx.Indices) > 0 {
-						fmt.Fprintf(os.Stderr, "  Index 0: %#v\n", idx.Indices[0])
-					}
-				}
-				fmt.Fprintf(os.Stderr, "[DEBUG ReturnStatement] expectedType: %s (%T), returnType: %s (%T)\n", expectedType.Name(), expectedType, returnType.Name(), returnType)
 				sa.AddError(n.Token.Position, "cannot return value of type %s from function returning %s", returnType.Name(), expectedType.Name())
 			}
 		}
@@ -5566,9 +5558,6 @@ func (sa *SemanticAnalyzer) handleGenericCall(n *ast.CallExpression, fnStmt *ast
 		fnName = sa.getMangledSerializationFuncName(fnStmt.Name.Value, typeArgs[0])
 	} else {
 		fnName = sanitizeCIdentifier(fnName)
-	}
-	if strings.Contains(fnStmt.Name.Value, "GetMut") {
-		fmt.Printf("[MONO-NAME] storing MonomorphizedNames[%p] = %s (fnStmt=%s)\n", n, fnName, fnStmt.Name.Value)
 	}
 	sa.SemanticInfo.MonomorphizedNames[n] = fnName
 

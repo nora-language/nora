@@ -881,12 +881,6 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 			} else if i.FuncSymbol != nil {
 				name = g.mangleName(i.FuncSymbol)
 			}
-			if strings.Contains(name, "GetMut") || (i.FuncSymbol != nil && strings.Contains(i.FuncSymbol.Name, "GetMut")) {
-				_, inMap := g.SemanticInfo.MonomorphizedNames[i.ASTNode]
-				symName := ""
-				if i.FuncSymbol != nil { symName = i.FuncSymbol.Name }
-				fmt.Printf("[HIR-CALL] GetMut: ASTNode=%p inMap=%v name=%s sym=%s\n", i.ASTNode, inMap, name, symName)
-			}
 
 			if strings.Contains(name, "Take") {
 				_, ok := g.SemanticInfo.MonomorphizedNames[i.ASTNode]
