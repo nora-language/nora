@@ -38,10 +38,31 @@ Furthermore, structs marked with `[shared]` (like `sync.WaitGroup` and `sync.Mut
 
 Because `Integrator` requires structural mutation of `Body.position`, it demands a **Mutable Lease (`&T`)**. Making `Body` `[shared]` does not bypass the exclusivity rule of mutable leases. Using `#Body` would require wrapping every body in an atomic or lock (e.g. `#Mutex[Body]`), which introduces unacceptable runtime overhead for a high-performance physics engine.
 
-## 4. Conclusion & Workaround
-Nora's strict enforcement of exclusive mutable leases is working exactly as intended to prevent data races. 
-Because `spawn` only accepts owned moves (`@T`) or read leases (`#T`) of `[shared]` structs, achieving parallel physics integration requires removing bodies from the array (taking ownership), sending them to fibers, and funneling them back via zero-copy channels.
+## 4. Conclusion & Solution
+Nora's strict enforcement of exclusive mutable leases works exactly as intended to prevent data races. 
+Because `spawn` by default only accepts owned moves (`@T`) or read leases (`#T`) of `[shared]` structs, achieving parallel physics integration naively required removing bodies from the array, sending them to fibers, and funneling them back via zero-copy channels.
 
-**To avoid massive boilerplate, we reverted the physics solver to a highly performant sequential loop.**
+**To natively solve this language-wide constraint for High-Performance Computing without forcing channel boilerplate, we implemented the `ParMap` abstraction in the standard library.**
 
-To natively solve this language-wide constraint for High-Performance Computing without forcing channel boilerplate, we propose adding a `Parallel Iterator` abstraction to the standard library. (See `docs/specifications/parallel_iterators.md`).
+By using the `[unsafe]` attribute on a `spawn` worker function and wrapping the execution within a structured `scope` block, we were able to safely bypass the compiler's strict cross-fiber mutable lease enforcement. The `scope` block enforces the lifetime (joining fibers before exit), and the standard library guarantees disjoint mutability internally.
+
+Example workaround implementation from `std/collections/vector.nr`:
+```nora
+[unsafe]
+fn run_par_map_worker[T](val: &T, f: #fn(&T)) {
+    f(val)
+}
+
+[unsafe]
+pub fn (v: &Vector[T]) ParMap[T](f: fn(&T)) {
+    scope {
+        var i = 0
+        while i < v.size {
+            var ref = v.GetMut[T](i)
+            spawn run_par_map_worker[T](ref, #f)
+            i = i + 1
+        }
+    }
+}
+```
+This allows developers to safely perform multi-threaded mutable operations on vectors (like physics integrations) via `bodies.ParMap(fn(b: &Body) { ... })` without compromising the language's safety guarantees outside of the `[unsafe]` standard library boundaries.
