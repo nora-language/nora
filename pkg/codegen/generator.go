@@ -557,6 +557,8 @@ func (g *Generator) collectDefinitions() {
 					g.requestAutoDrop(sum)
 				}
 			}
+		} else if proto, ok := t.(*types.ProtocolType); ok {
+			g.Protocols[mangled] = proto
 		}
 	}
 

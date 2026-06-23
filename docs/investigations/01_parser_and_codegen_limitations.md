@@ -32,5 +32,8 @@ These limitations specifically surround how the compiler handles polymorphism, i
 **Error:** `undefined type: 'SupportFunc'`
 **Details:** Generic type aliases are either entirely unsupported or bugged in the current semantic pass.
 
-## Resolution & Workaround
-To preserve the `f32/f64` generic architecture requested by the user, we will utilize the `native` C-interop block in `nora.yaml`. We can manually define the missing generic interface structs (e.g., `shape_Shape_536804a2`) inside a custom C-header (`hack.h`) and link it during compilation. This cleanly patches the codegen omission without polluting the pure Nora `.nr` source code!
+## Resolution
+The compiler has been fixed natively:
+1. **Generic Interface Codegen:** Fixed in `pkg/codegen/generator.go` by explicitly registering instantiated `*types.ProtocolType` variants in `g.Protocols` during monomorphization.
+2. **Generic Type Aliases and Inline Function Pointers:** Fixed in `pkg/parser/parser.go` by routing `type A = fn(...)` statements to `parseFunctionType()` instead of `parseExpression()`. (Note: Nora does not support named parameters within function type definitions natively, only parameter types).
+3. **Strict Semantic Method Resolution:** This is an intentional design choice to enforce interface bounds on generics rather than structural duck-typing.

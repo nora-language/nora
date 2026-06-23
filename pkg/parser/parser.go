@@ -2046,7 +2046,11 @@ func (p *Parser) parseTypeStatement() *ast.TypeStatement {
 	p.nextToken()
 
 	// This parses the StructLiteral, SumTypeLiteral, or just an Identifier
-	stmt.Value = p.parseExpression(LOWEST)
+	if p.curTokenIs(token.FN) {
+		stmt.Value = p.parseFunctionType()
+	} else {
+		stmt.Value = p.parseExpression(LOWEST)
+	}
 
 	if p.peekTokenIs(token.SEMICOLON) {
 		p.nextToken()
