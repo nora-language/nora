@@ -227,7 +227,7 @@ func (g *Generator) mangledTypeName(t types.NRType) string {
 
 	// 1. Check Structs
 	for mangled, st := range g.Structs {
-		if st == t {
+		if types.Equals(st, t) {
 			return mangled
 		}
 	}
@@ -242,7 +242,7 @@ func (g *Generator) mangledTypeName(t types.NRType) string {
 
 	// 2. Check SumTypes
 	for mangled, sum := range g.SumTypes {
-		if sum == t {
+		if types.Equals(sum, t) {
 			return mangled
 		}
 	}
@@ -257,7 +257,7 @@ func (g *Generator) mangledTypeName(t types.NRType) string {
 
 	// 3. Check Protocols
 	for mangled, proto := range g.Protocols {
-		if proto == t {
+		if types.Equals(proto, t) {
 			return mangled
 		}
 	}

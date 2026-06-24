@@ -869,13 +869,34 @@ func (g *Generator) isGeneric(t types.NRType) bool {
 	if pt, ok := t.(*types.PointerType); ok {
 		return g.isGeneric(pt.Base)
 	}
+	if ft, ok := t.(*types.FunctionType); ok {
+		if g.isGeneric(ft.Return) {
+			return true
+		}
+		if ft.Receiver != nil && g.isGeneric(ft.Receiver) {
+			return true
+		}
+		for _, param := range ft.Params {
+			if g.isGeneric(param) {
+				return true
+			}
+		}
+	}
 	return false
 }
 
 func (g *Generator) genFunction(sym *semantic.Symbol, fn *ast.FunctionStatement) {
-	ft := sym.Type.(*types.FunctionType)
-	retType := g.cType(ft.Return)
 	name := g.mangleName(sym)
+	ft := sym.Type.(*types.FunctionType)
+	
+	// Use type-erased signature if this is a shared generic monomorphization
+	if declSym, ok := g.Functions[name]; ok && declSym.Type != nil {
+		if declFT, ok := declSym.Type.(*types.FunctionType); ok {
+			ft = declFT
+		}
+	}
+	
+	retType := g.cType(ft.Return)
 
 	var params string
 	if !fn.IsExport {
@@ -1727,6 +1748,9 @@ func (g *Generator) GeneratePackageCode(pkgName string) (string, error) {
 	// Compile lowered lambda functions belonging to this package
 	for _, hf := range hirProg.Functions {
 		if hf.LambdaExpr != nil {
+			if hf.FuncSymbol != nil && g.isGeneric(hf.FuncSymbol.Type) {
+				continue
+			}
 			if g.getHIRFunctionPackage(hf) == pkgName {
 				g.genHIRFunction(hf)
 			}
@@ -2057,6 +2081,9 @@ func (g *Generator) emitLambdaEnvDefs() {
 	}
 	for _, hf := range g.hirProg.Functions {
 		if hf.LambdaExpr != nil {
+			if hf.FuncSymbol != nil && g.isGeneric(hf.FuncSymbol.Type) {
+				continue
+			}
 			fnName := hf.Name
 			envStructName := fnName + "_env_t"
 			scope := g.SemanticInfo.Scopes[hf.LambdaExpr]
@@ -2091,6 +2118,9 @@ func (g *Generator) emitLambdaEnvDrops() {
 	}
 	for _, hf := range g.hirProg.Functions {
 		if hf.LambdaExpr != nil {
+			if hf.FuncSymbol != nil && g.isGeneric(hf.FuncSymbol.Type) {
+				continue
+			}
 			fnName := hf.Name
 			envStructName := fnName + "_env_t"
 			scope := g.SemanticInfo.Scopes[hf.LambdaExpr]
@@ -2130,6 +2160,9 @@ func (g *Generator) emitPackageLambdaEnvDrops(pkgName string) {
 	}
 	for _, hf := range g.hirProg.Functions {
 		if hf.LambdaExpr != nil && g.getHIRFunctionPackage(hf) == pkgName {
+			if hf.FuncSymbol != nil && g.isGeneric(hf.FuncSymbol.Type) {
+				continue
+			}
 			fnName := hf.Name
 			envStructName := fnName + "_env_t"
 			scope := g.SemanticInfo.Scopes[hf.LambdaExpr]

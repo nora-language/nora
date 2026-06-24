@@ -69,6 +69,10 @@ func (g *Generator) emitPrototypes() {
 		if !ok {
 			continue
 		}
+		
+		if fn.IsGenericTemplate || len(fn.TypeParameters) > 0 {
+			continue
+		}
 
 		ft := sym.Type.(*types.FunctionType)
 		retType := g.cType(ft.Return)
@@ -114,6 +118,9 @@ func (g *Generator) emitPrototypes() {
 		g.emit("// --- HIR LAMBDA PROTOTYPES ---")
 		for _, hf := range g.hirProg.Functions {
 			if hf.LambdaExpr != nil {
+				if hf.FuncSymbol != nil && g.isGeneric(hf.FuncSymbol.Type) {
+					continue
+				}
 				ft := hf.FuncSymbol.Type.(*types.FunctionType)
 				retType := g.cType(ft.Return)
 				name := hf.Name

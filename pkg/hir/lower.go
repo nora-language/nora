@@ -100,6 +100,22 @@ func (l *Lowerer) LowerProgram(prog *ast.Program) *Program {
 			}
 		}
 	}
+
+	for _, instMap := range l.SemanticInfo.Instances {
+		for _, inst := range instMap {
+			sym := l.SemanticInfo.Defs[inst.Name]
+			if sym == nil {
+				// Fallback just in case
+				sym = &semantic.Symbol{Name: inst.Name.Value, DefNode: inst}
+			}
+			if l.shouldSkipHIR(sym, inst) {
+				continue
+			}
+			hirFn := l.lowerFunction(sym, inst)
+			hirProg.Functions = append(hirProg.Functions, hirFn)
+		}
+	}
+
 	hirProg.Functions = append(hirProg.Functions, l.lambdaFuncs...)
 	return hirProg
 }
@@ -803,7 +819,7 @@ func (l *Lowerer) lowerExpression(expr ast.Expression) Operand {
 		}
 
 		if sel, ok := e.Function.(*ast.SelectorExpression); ok {
-			if sel.Field.Value == "unchecked_get" {
+			if sel.Field.Value == "unchecked_get" || sel.Field.Value == "unchecked_set" {
 				actualType := l.getType(sel.Left)
 				if actualType != nil {
 					unwrapped := types.UnwrapLease(actualType)
@@ -813,15 +829,34 @@ func (l *Lowerer) lowerExpression(expr ast.Expression) Operand {
 					} else if pt, isPtr := unwrapped.(*types.PointerType); isPtr && pt.IsArray {
 						isCollection = true
 					}
-					if isCollection && len(e.Arguments) == 1 {
-						idxOp := l.lowerExpression(e.Arguments[0])
-						baseOp := l.lowerExpression(sel.Left)
-						return &InstOperand{Inst: &IndexAccess{
-							Base:          baseOp,
-							Index:         idxOp,
-							Type:          t,
-							NoBoundsCheck: true,
-						}}
+					if isCollection {
+						if sel.Field.Value == "unchecked_get" && len(e.Arguments) == 1 {
+							idxOp := l.lowerExpression(e.Arguments[0])
+							baseOp := l.lowerExpression(sel.Left)
+							return &InstOperand{Inst: &IndexAccess{
+								Base:          baseOp,
+								Index:         idxOp,
+								Type:          t,
+								NoBoundsCheck: true,
+							}}
+						} else if sel.Field.Value == "unchecked_set" && len(e.Arguments) == 2 {
+							idxOp := l.lowerExpression(e.Arguments[0])
+							valOp := l.lowerExpression(e.Arguments[1])
+							baseOp := l.lowerExpression(sel.Left)
+
+							idxAcc := &IndexAccess{
+								Base:          baseOp,
+								Index:         idxOp,
+								Type:          valOp.GetType(),
+								NoBoundsCheck: true,
+							}
+
+							return &InstOperand{Inst: &Store{
+								Dest:         &InstOperand{Inst: idxAcc},
+								Val:          valOp,
+								NeedsOldDrop: false, // Array values are uninitialized or we manually drop them
+							}}
+						}
 					}
 				}
 			}

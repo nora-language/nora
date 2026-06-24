@@ -2,8 +2,11 @@ package codegen
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -1170,7 +1173,20 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 }
 
 func (g *Generator) genLambdaExpression(e *ast.LambdaExpression) {
-	fnName := g.generateLambdaFunction(e)
+	t := g.SemanticInfo.Types[e]
+	ft, _ := t.(*types.FunctionType)
+
+	h := sha256.New()
+	h.Write([]byte(filepath.Base(e.Pos().Filename)))
+	h.Write([]byte(fmt.Sprintf(":%d:%d", e.Pos().Line, e.Pos().Column)))
+	if ft != nil {
+		h.Write([]byte(fmt.Sprintf("%v", ft)))
+	}
+	if g.CurrentFunc != nil {
+		h.Write([]byte(g.CurrentFunc.Name))
+	}
+	hashVal := hex.EncodeToString(h.Sum(nil))[:8]
+	fnName := fmt.Sprintf("nr_lambda_%s", hashVal)
 
 	envStructName := fnName + "_env_t"
 
@@ -1183,7 +1199,25 @@ func (g *Generator) genLambdaExpression(e *ast.LambdaExpression) {
 	g.buf.WriteString("({ nr_closure_t _c; ")
 	if hasCaptures {
 		g.buf.WriteString(fmt.Sprintf("%s* _env_local = nr_malloc(sizeof(%s)); ", envStructName, envStructName))
-		g.populateLambdaEnv(e, scope)
+		var captures []*semantic.Symbol
+		for sym := range scope.Captures {
+			captures = append(captures, sym)
+		}
+		sort.Slice(captures, func(i, j int) bool {
+			return captures[i].Name < captures[j].Name
+		})
+
+		for _, cap := range captures {
+			name := g.mangleName(cap)
+			rhs := name
+			if g.CurrentLambda != nil {
+				parentScope := g.SemanticInfo.Scopes[g.CurrentLambda]
+				if parentScope != nil && parentScope.Captures != nil && parentScope.Captures[cap] {
+					rhs = fmt.Sprintf("_env->%s", name)
+				}
+			}
+			g.buf.WriteString(fmt.Sprintf("_env_local->%s = %s; ", name, rhs))
+		}
 		g.buf.WriteString("_c.env = _env_local; ")
 		g.buf.WriteString(fmt.Sprintf("_c.drop_fn = %s_env_drop; ", fnName))
 	} else {

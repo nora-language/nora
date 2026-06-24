@@ -54,9 +54,18 @@ func (g *Generator) genHIRFunction(hf *hir.Function) {
 	}()
 
 	// Print signature
+	name := g.mangleName(hf.FuncSymbol)
 	ft := hf.FuncSymbol.Type.(*types.FunctionType)
+	
+	// Use type-erased signature if this is a shared generic monomorphization
+	if declSym, ok := g.Functions[name]; ok && declSym.Type != nil {
+		if declFT, ok := declSym.Type.(*types.FunctionType); ok {
+			ft = declFT
+		}
+	}
+	
 	retType := g.cType(ft.Return)
-	mangledName := g.mangleName(hf.FuncSymbol)
+	mangledName := name
 
 	var params string
 	fn, hasFn := hf.FuncSymbol.DefNode.(*ast.FunctionStatement)
@@ -580,11 +589,7 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 					break
 				} else if !strings.HasSuffix(retCType, "*") && strings.HasSuffix(valCType, "*") {
 					g.emit("    nr_flush_temps();")
-					if strings.Contains(valStr, "({") {
-						g.emit(fmt.Sprintf("    return %s;", valStr))
-					} else {
-						g.emit(fmt.Sprintf("    return *%s;", valStr))
-					}
+					g.emit(fmt.Sprintf("    return *%s;", valStr))
 					break
 				}
 				g.emit("    nr_flush_temps();")
@@ -692,16 +697,20 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				dfName := g.dropFlagName(varOp.Symbol)
 				return fmt.Sprintf("({ %s _tmp = %s; %s = false; _tmp; })", cType2, opStr, dfName)
 			} else if instOp, ok := i.Val.(*hir.InstOperand); ok {
-				isIndex := false
+				needsNullify := false
 				if _, ok := instOp.Inst.(*hir.IndexAccess); ok {
-					isIndex = true
+					needsNullify = true
+				} else if _, ok := instOp.Inst.(*hir.FieldAccess); ok {
+					needsNullify = true
 				} else if astExpr, ok := instOp.Inst.(*hir.ASTExpr); ok {
 					if _, ok := astExpr.ASTNode.(*ast.IndexExpression); ok {
-						isIndex = true
+						needsNullify = true
+					} else if _, ok := astExpr.ASTNode.(*ast.SelectorExpression); ok {
+						needsNullify = true
 					}
 				}
 
-				if isIndex {
+				if needsNullify {
 					nullifyStr := ""
 					if strings.HasSuffix(cType2, "*") {
 						nullifyStr = fmt.Sprintf("%s = NULL; ", opStr)
@@ -828,8 +837,9 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 
 		var ft *types.FunctionType
 		if i.ASTNode != nil {
-			if t, ok := g.SemanticInfo.Types[i.ASTNode.Function].(*types.FunctionType); ok {
-				ft = t
+			t := types.UnwrapLease(g.SemanticInfo.Types[i.ASTNode.Function])
+			if ftType, ok := t.(*types.FunctionType); ok {
+				ft = ftType
 			}
 		}
 		if ft == nil && i.FuncSymbol != nil {
