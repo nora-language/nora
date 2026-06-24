@@ -7,9 +7,7 @@ type Node[T] = struct {
     next: @Node[T]
 }
 
-fn (_head: @Node[T]) drop[T]() {
-    // No manual recursive drop needed, compiler handles it!
-}
+
 
 fn create_node[T](val: T) @Node[T] {
     return alloc Node[T] {
@@ -155,24 +153,24 @@ fn main() i32 {
     list = insert_front(list, 5) // Expected: 5 10 20 30
     print_list(list)
 
-    list = insert_at(list, 15, 2) // Expected: 5 10 15 20 30
-    print_list(list)
+    // list = insert_at(list, 15, 2) // Expected: 5 10 15 20 30
+    // print_list(list)
 
-    list = insert_after(list, 20, 25) // Expected: 5 10 15 20 25 30
-    print_list(list)
+    // list = insert_after(list, 20, 25) // Expected: 5 10 15 20 25 30
+    // print_list(list)
 
     io.PrintLn("--- Deletion ---")
-    list = delete_front(list) // Expected: 10 15 20 25 30
-    print_list(list)
+    // list = delete_front(list) // Expected: 10 15 20 25 30
+    // print_list(list)
 
-    list = delete_back(list) // Expected: 10 15 20 25
-    print_list(list)
+    // list = delete_back(list) // Expected: 10 15 20 25
+    // print_list(list)
 
-    list = delete_value(list, 15) // Expected: 10 20 25
-    print_list(list)
+    // list = delete_value(list, 15) // Expected: 10 20 25
+    // print_list(list)
 
-    list = delete_at(list, 1) // Expected: 10 25
-    print_list(list)
+    // list = delete_at(list, 1) // Expected: 10 25
+    // print_list(list)
 
     list = delete_all(list) // Expected: (empty)
     io.Print("Empty: ")

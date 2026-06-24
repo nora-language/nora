@@ -31,7 +31,7 @@ fn (head: #Node[T]) print_list[T]() {
     io.PrintLn("")
 }
 
-fn (head: @Node[T]) drop[T]() {}
+
 
 fn main() i32 {
     io.PrintLn("--- Generic Method Test ---")
@@ -42,6 +42,6 @@ fn main() i32 {
     io.Print("List: ")
     list.print_list()
 
-    list.drop()
+
     return 0
 }
