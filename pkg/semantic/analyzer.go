@@ -2901,6 +2901,24 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				castType = sa.specializeSumType(st, argTypes, n.Pos())
 			}
 			if prim, isPrim := castType.(*types.PrimitiveType); isPrim {
+				unwrapped := types.UnwrapLease(argType)
+				if _, isProto := unwrapped.(*types.ProtocolType); isProto {
+					kind := types.LeaseRead
+					if pt, ok := argType.(*types.PointerType); ok {
+						if pt.Kind == types.LeaseWrite || pt.Kind == types.LeaseMove {
+							kind = types.LeaseWrite
+						}
+					} else if !argType.IsLeased() {
+						kind = types.LeaseWrite
+					}
+					sa.SemanticInfo.Types[n] = &types.PointerType{
+						Base:   prim,
+						Leased: true,
+						Kind:   kind,
+					}
+					return
+				}
+
 				// Ensure argument is also a primitive or pointer-like type that can be casted
 				_, isArgPrim := argType.(*types.PrimitiveType)
 				_, isArgPtr := argType.(*types.PointerType)

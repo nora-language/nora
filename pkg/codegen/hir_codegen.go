@@ -580,13 +580,19 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 				retCType := g.cType(ft.Return)
 				valCType := g.cType(i.Val.GetType())
 				if strings.HasSuffix(retCType, "*") && !strings.HasSuffix(valCType, "*") && valStr != "NULL" {
-					// We must heap-allocate the return value because the caller owns it (move lease return)
-					ct := strings.TrimSuffix(retCType, "*")
-					g.emit(fmt.Sprintf("    %s* _ret_heap = nr_malloc(sizeof(%s));", ct, ct))
-					g.emit(fmt.Sprintf("    *_ret_heap = %s;", valStr))
-					g.emit("    nr_flush_temps();")
-					g.emit("    return _ret_heap;")
-					break
+					if pt, isPtr := ft.Return.(*types.PointerType); isPtr && pt.Leased && (pt.Kind == types.LeaseRead || pt.Kind == types.LeaseWrite) {
+						g.emit("    nr_flush_temps();")
+						g.emit(fmt.Sprintf("    return &(%s);", valStr))
+						break
+					} else {
+						// We must heap-allocate the return value because the caller owns it (move lease return)
+						ct := strings.TrimSuffix(retCType, "*")
+						g.emit(fmt.Sprintf("    %s* _ret_heap = nr_malloc(sizeof(%s));", ct, ct))
+						g.emit(fmt.Sprintf("    *_ret_heap = %s;", valStr))
+						g.emit("    nr_flush_temps();")
+						g.emit("    return _ret_heap;")
+						break
+					}
 				} else if !strings.HasSuffix(retCType, "*") && strings.HasSuffix(valCType, "*") {
 					g.emit("    nr_flush_temps();")
 					g.emit(fmt.Sprintf("    return *%s;", valStr))

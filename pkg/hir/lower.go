@@ -834,10 +834,13 @@ func (l *Lowerer) lowerExpression(expr ast.Expression) Operand {
 				if actualType != nil {
 					unwrapped := types.UnwrapLease(actualType)
 					isCollection := false
-					if _, isList := unwrapped.(*types.ListType); isList {
+					var elemType types.NRType
+					if lt, isList := unwrapped.(*types.ListType); isList {
 						isCollection = true
+						elemType = lt.ElementType
 					} else if pt, isPtr := unwrapped.(*types.PointerType); isPtr && pt.IsArray {
 						isCollection = true
+						elemType = pt.Base
 					}
 					if isCollection {
 						if sel.Field.Value == "unchecked_get" && len(e.Arguments) == 1 {
@@ -857,7 +860,7 @@ func (l *Lowerer) lowerExpression(expr ast.Expression) Operand {
 							idxAcc := &IndexAccess{
 								Base:          baseOp,
 								Index:         idxOp,
-								Type:          valOp.GetType(),
+								Type:          elemType,
 								NoBoundsCheck: true,
 							}
 
@@ -1540,7 +1543,10 @@ func (l *Lowerer) lowerLambdaFunction(e *ast.LambdaExpression) *Function {
 	}
 
 	if e.Body != nil {
+		oldFunc := l.CurrentFunc
+		l.CurrentFunc = hirFn.FuncSymbol
 		hirFn.Body = l.lowerBlock(e.Body)
+		l.CurrentFunc = oldFunc
 	}
 
 	if len(l.activeDefers) > 0 {
