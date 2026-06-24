@@ -5573,8 +5573,8 @@ func (sa *SemanticAnalyzer) handleGenericCall(n *ast.CallExpression, fnStmt *ast
 			}
 		}
 	}
-	if fnStmt.Name.Value == "nr_serialize_json" || fnStmt.Name.Value == "nr_deserialize_json" {
-		fnName = sa.getMangledSerializationFuncName(fnStmt.Name.Value, typeArgs[0])
+	if ast.GetAttribute(fnStmt.Attributes, "plugin_override") != nil {
+		fnName = sa.getMangledPluginFuncName(fnStmt, typeArgs[0])
 	} else {
 		fnName = sanitizeCIdentifier(fnName)
 	}
@@ -7156,7 +7156,20 @@ func (sa *SemanticAnalyzer) hasGeneric(t types.NRType) bool {
 	return t.GetKind() == types.KindGeneric
 }
 
-func (sa *SemanticAnalyzer) getMangledSerializationFuncName(funcName string, t types.NRType) string {
+func (sa *SemanticAnalyzer) getMangledPluginFuncName(fnStmt *ast.FunctionStatement, t types.NRType) string {
+	funcName := fnStmt.Name.Value
+	
+	// Default generic package is the package where the generic function is defined
+	genericPkg := "main"
+	for name, scope := range sa.PackageScopes {
+		if sym, exists := scope.Symbols[funcName]; exists {
+			if sym.DefNode == fnStmt {
+				genericPkg = name
+				break
+			}
+		}
+	}
+
 	t = types.UnwrapLease(t)
 	for {
 		if pt, ok := t.(*types.PointerType); ok {
@@ -7169,8 +7182,8 @@ func (sa *SemanticAnalyzer) getMangledSerializationFuncName(funcName string, t t
 	tName := t.Name()
 	st, ok := t.(*types.StructType)
 	if !ok {
-		// Primitives are in the serialize package
-		return sanitizeCIdentifier("serialize_" + funcName + "_" + tName)
+		// Primitives belong to the generic function's package
+		return sanitizeCIdentifier(genericPkg + "_" + funcName + "_" + tName)
 	}
 
 	pkgName := ""

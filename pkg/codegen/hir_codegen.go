@@ -877,7 +877,9 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 			if i.FuncSymbol != nil {
 				sym := i.FuncSymbol
 				if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok && fnStmt.IsExtern {
-					isExtern = true
+					if ast.GetAttribute(fnStmt.Attributes, "plugin_override") == nil {
+						isExtern = true
+					}
 				} else if _, ok := sym.DefNode.(*ast.ExternStatement); ok {
 					isExtern = true
 				} else if sym.DefNode == nil && sym.Kind == semantic.SymFunc {
@@ -886,9 +888,6 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				
 				if cStdlibFunctions[sym.Name] && sym.Name == g.mangleName(sym) {
 					isExtern = true
-				}
-				if strings.HasPrefix(sym.Name, "nr_serialize_json") || strings.HasPrefix(sym.Name, "nr_deserialize_json") {
-					isExtern = false
 				}
 
 
@@ -1191,14 +1190,11 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 		if i.Call != nil && i.Call.FuncSymbol != nil {
 			sym := i.Call.FuncSymbol
 			if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok && (fnStmt.IsExtern || fnStmt.IsExport) {
-				isExtern = true
-			
-			
+				if ast.GetAttribute(fnStmt.Attributes, "plugin_override") == nil {
+					isExtern = true
+				}
 			} else if _, ok := sym.DefNode.(*ast.ExternStatement); ok {
 				isExtern = true
-			}
-			if strings.HasPrefix(sym.Name, "nr_serialize_json") || strings.HasPrefix(sym.Name, "nr_deserialize_json") {
-				isExtern = false
 			}
 
 
@@ -1417,24 +1413,16 @@ func (g *Generator) hirOperandStr(op hir.Operand) string {
 		if sym != nil && sym.Kind == semantic.SymFunc {
 			isExtern := false
 			if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok && (fnStmt.IsExtern || fnStmt.IsExport) {
-				isExtern = true
-			
-			
+				if ast.GetAttribute(fnStmt.Attributes, "plugin_override") == nil {
+					isExtern = true
+				}
 			} else if _, ok := sym.DefNode.(*ast.ExternStatement); ok {
 				isExtern = true
 			}
-			if strings.HasPrefix(sym.Name, "nr_serialize_json") || strings.HasPrefix(sym.Name, "nr_deserialize_json") {
-				isExtern = false
-			}
-
-
 			
-				if cStdlibFunctions[sym.Name] && sym.Name == g.mangleName(sym) {
-					isExtern = true
-				}
-				if strings.HasPrefix(sym.Name, "nr_serialize_json") || strings.HasPrefix(sym.Name, "nr_deserialize_json") {
-					isExtern = false
-				}
+			if cStdlibFunctions[sym.Name] && sym.Name == g.mangleName(sym) {
+				isExtern = true
+			}
 
 
 			if isExtern {

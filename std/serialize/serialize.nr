@@ -14,7 +14,10 @@ pub fn FromJSON[T](data: str) T {
 }
 
 // Built-in extern intrinsics
+[plugin_override]
 extern fn nr_serialize_json[T](val: #T) str
+
+[plugin_override]
 extern fn nr_deserialize_json[T](data: str) T
 
 // --- Primitive Serialization Helpers ---
