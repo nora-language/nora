@@ -303,6 +303,7 @@ type Drop struct {
 	Symbol *semantic.Symbol
 	Field  ast.Expression
 	Index  ast.Expression
+	Lambda *ast.LambdaExpression
 }
 
 func (d *Drop) GetInstructionKind() InstructionKind { return InstDrop }

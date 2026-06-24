@@ -28,6 +28,7 @@ type Lowerer struct {
 	lambdaFuncs         []*Function
 	lambdaCounter       int
 	activeDefers        []ast.Expression
+	LambdaTemps         map[ast.Node]*semantic.Symbol
 }
 
 func NewLowerer(sem *semantic.SemanticInfo, solver *topology.Solver) *Lowerer {
@@ -36,6 +37,7 @@ func NewLowerer(sem *semantic.SemanticInfo, solver *topology.Solver) *Lowerer {
 		Solver:       solver,
 		tempCounter:  0,
 		lambdaFuncs:  []*Function{},
+		LambdaTemps:  make(map[ast.Node]*semantic.Symbol),
 	}
 }
 
@@ -120,6 +122,14 @@ func (l *Lowerer) LowerProgram(prog *ast.Program) *Program {
 	return hirProg
 }
 
+func (l *Lowerer) emitDrop(d topology.DropInfo, field ast.Expression, index ast.Expression) {
+	if d.Lambda != nil && l.LambdaTemps[d.Lambda] != nil {
+		l.CurrentBlock.AddInst(&Drop{Symbol: l.LambdaTemps[d.Lambda], Lambda: d.Lambda})
+	} else {
+		l.CurrentBlock.AddInst(&Drop{Symbol: d.Symbol, Field: field, Index: index, Lambda: d.Lambda})
+	}
+}
+
 func (l *Lowerer) lowerFunction(sym *semantic.Symbol, fn *ast.FunctionStatement) *Function {
 	prevFunc := l.CurrentFunc
 	l.CurrentFunc = sym
@@ -189,7 +199,7 @@ func (l *Lowerer) lowerBlock(block *ast.BlockStatement) *HIRBlock {
 			if d.Index != nil {
 				index = d.Index
 			}
-			l.CurrentBlock.AddInst(&Drop{Symbol: d.Symbol, Field: field, Index: index})
+			l.emitDrop(d, field, index)
 		}
 	}
 
@@ -208,7 +218,7 @@ func (l *Lowerer) lowerBlock(block *ast.BlockStatement) *HIRBlock {
 					if d.Index != nil {
 						index = d.Index
 					}
-					l.CurrentBlock.AddInst(&Drop{Symbol: d.Symbol, Field: field, Index: index})
+					l.emitDrop(d, field, index)
 				}
 			}
 		}
@@ -227,7 +237,7 @@ func (l *Lowerer) lowerBlock(block *ast.BlockStatement) *HIRBlock {
 				if d.Index != nil {
 					index = d.Index
 				}
-				l.CurrentBlock.AddInst(&Drop{Symbol: d.Symbol, Field: field, Index: index})
+				l.emitDrop(d, field, index)
 			}
 		}
 	}
@@ -244,7 +254,7 @@ func (l *Lowerer) lowerBlock(block *ast.BlockStatement) *HIRBlock {
 			if d.Index != nil {
 				index = d.Index
 			}
-			l.CurrentBlock.AddInst(&Drop{Symbol: d.Symbol, Field: field, Index: index})
+			l.emitDrop(d, field, index)
 		}
 	}
 
@@ -266,7 +276,7 @@ func (l *Lowerer) emitPreDrops() {
 			if d.Index != nil {
 				index = d.Index
 			}
-			l.CurrentBlock.AddInst(&Drop{Symbol: d.Symbol, Field: field, Index: index})
+			l.emitDrop(d, field, index)
 		}
 	}
 }
@@ -1245,13 +1255,21 @@ func (l *Lowerer) lowerExpression(expr ast.Expression) Operand {
 		return &InstOperand{Inst: recv}
 
 	case *ast.LambdaExpression:
-		hirFn := l.lowerLambdaFunction(e)
-		l.lambdaFuncs = append(l.lambdaFuncs, hirFn)
-		return &InstOperand{Inst: &Lambda{
-			FuncName: hirFn.Name,
-			ASTNode:  e,
-			Type:     t,
-		}}
+		tempName := fmt.Sprintf("nr_lambda_tmp_%d", l.lambdaCounter)
+		l.lambdaCounter++
+		sym := &semantic.Symbol{Name: tempName, Type: t, Kind: semantic.SymVar}
+		l.LambdaTemps[e] = sym
+		
+		l.CurrentBlock.AddInst(&Alloca{Symbol: sym, Type: t})
+		l.CurrentBlock.AddInst(&Store{
+			Dest: &VarOperand{Name: tempName, Type: t, Symbol: sym},
+			Val:  &InstOperand{Inst: &ASTExpr{ASTNode: e, Type: t}},
+		})
+
+		lf := l.lowerLambdaFunction(e)
+		l.lambdaFuncs = append(l.lambdaFuncs, lf)
+
+		return &VarOperand{Name: tempName, Type: t, Symbol: sym}
 
 	default:
 		astExpr := &ASTExpr{ASTNode: expr, Type: t}
@@ -1280,7 +1298,7 @@ func (l *Lowerer) lowerStatementsWithDrops(block *ast.BlockStatement, tempOp Ope
 			if d.Index != nil {
 				index = d.Index
 			}
-			l.CurrentBlock.AddInst(&Drop{Symbol: d.Symbol, Field: field, Index: index})
+			l.emitDrop(d, field, index)
 		}
 	}
 
@@ -1299,7 +1317,7 @@ func (l *Lowerer) lowerStatementsWithDrops(block *ast.BlockStatement, tempOp Ope
 				if d.Index != nil {
 					index = d.Index
 				}
-				l.CurrentBlock.AddInst(&Drop{Symbol: d.Symbol, Field: field, Index: index})
+				l.emitDrop(d, field, index)
 			}
 		}
 
@@ -1321,7 +1339,7 @@ func (l *Lowerer) lowerStatementsWithDrops(block *ast.BlockStatement, tempOp Ope
 						if d.Index != nil {
 							index = d.Index
 						}
-						l.CurrentBlock.AddInst(&Drop{Symbol: d.Symbol, Field: field, Index: index})
+						l.emitDrop(d, field, index)
 					}
 				}
 				continue
@@ -1341,7 +1359,7 @@ func (l *Lowerer) lowerStatementsWithDrops(block *ast.BlockStatement, tempOp Ope
 				if d.Index != nil {
 					index = d.Index
 				}
-				l.CurrentBlock.AddInst(&Drop{Symbol: d.Symbol, Field: field, Index: index})
+				l.emitDrop(d, field, index)
 			}
 		}
 	}
@@ -1358,7 +1376,7 @@ func (l *Lowerer) lowerStatementsWithDrops(block *ast.BlockStatement, tempOp Ope
 			if d.Index != nil {
 				index = d.Index
 			}
-			l.CurrentBlock.AddInst(&Drop{Symbol: d.Symbol, Field: field, Index: index})
+			l.emitDrop(d, field, index)
 		}
 	}
 
@@ -1471,6 +1489,9 @@ func isUnsupportedType(t types.NRType) bool {
 }
 
 func (l *Lowerer) shouldSkipHIR(sym *semantic.Symbol, fn *ast.FunctionStatement) bool {
+	if fn.IsGenericTemplate || len(fn.TypeParameters) > 0 {
+		return true
+	}
 	return false
 }
 

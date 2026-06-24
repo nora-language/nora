@@ -21,6 +21,7 @@ type DropInfo struct {
 	Symbol *semantic.Symbol
 	Field  *ast.SelectorExpression
 	Index  *ast.IndexExpression
+	Lambda *ast.LambdaExpression
 }
 
 type Lifecycle struct {
@@ -647,6 +648,18 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 				excludeParents = s.LoopParentVars[len(s.LoopParentVars)-1]
 			}
 			s.registerScopeDrops(block, i, allVisible, "TERMINAL ("+branch.Token.Literal+")", nil, excludeParents)
+		}
+
+		// [NEW] E. ANONYMOUS R-VALUE DROPS (Closures)
+		if !s.InSecondPass {
+			unconsumed := s.findUnconsumedLambdas(stmt)
+			for _, lambda := range unconsumed {
+				if s.Drops[block] == nil {
+					s.Drops[block] = make(map[int][]DropInfo)
+				}
+				s.Drops[block][i+1] = append(s.Drops[block][i+1], DropInfo{Lambda: lambda})
+				s.debug("      Scheduled temporary drop for inline Lambda at Index %d", i)
+			}
 		}
 
 		// F. RECURSIVE BLOCKS (If, While, For, Pin, etc.)
@@ -2177,4 +2190,84 @@ func isBorrowType(t types.NRType) bool {
 	return false
 }
 
+func (s *Solver) findUnconsumedLambdas(stmt ast.Statement) []*ast.LambdaExpression {
+	var lambdas []*ast.LambdaExpression
+	s.walkUnconsumedLambdas(stmt, false, &lambdas)
+	return lambdas
+}
 
+func (s *Solver) walkUnconsumedLambdas(node ast.Node, isConsumed bool, out *[]*ast.LambdaExpression) {
+	if node == nil {
+		return
+	}
+	switch n := node.(type) {
+	case *ast.LambdaExpression:
+		if !isConsumed {
+			*out = append(*out, n)
+		}
+		return
+	case *ast.ReturnStatement:
+		s.walkUnconsumedLambdas(n.ReturnValue, true, out)
+	case *ast.VarStatement:
+		s.walkUnconsumedLambdas(n.Value, true, out)
+	case *ast.AssignmentStatement:
+		s.walkUnconsumedLambdas(n.Left, false, out)
+		s.walkUnconsumedLambdas(n.Value, true, out)
+	case *ast.CallExpression:
+		s.walkUnconsumedLambdas(n.Function, false, out)
+		fnTypeObj := s.SemanticInfo.Types[n.Function]
+		if ft, ok := fnTypeObj.(*types.FunctionType); ok {
+			for i, arg := range n.Arguments {
+				argConsumed := false
+				if i < len(ft.ParamLeases) {
+					if ft.ParamLeases[i] == types.LeaseMove {
+						argConsumed = true
+					}
+				} else if i < len(ft.Params) {
+					if s.isImplicitMoveType(ft.Params[i]) {
+						argConsumed = true
+					}
+				}
+				s.walkUnconsumedLambdas(arg, argConsumed, out)
+			}
+		} else {
+			for _, arg := range n.Arguments {
+				s.walkUnconsumedLambdas(arg, false, out)
+			}
+		}
+	case *ast.SpawnExpression:
+		s.walkUnconsumedLambdas(n.Call, true, out)
+	case *ast.StructInstantiation:
+		for _, arg := range n.Fields {
+			s.walkUnconsumedLambdas(arg, true, out)
+		}
+	case *ast.ArrayLiteral:
+		for _, arg := range n.Elements {
+			s.walkUnconsumedLambdas(arg, true, out)
+		}
+	case *ast.IndexExpression:
+		s.walkUnconsumedLambdas(n.Left, isConsumed, out)
+		for _, idx := range n.Indices {
+			s.walkUnconsumedLambdas(idx, false, out)
+		}
+	case *ast.SelectorExpression:
+		s.walkUnconsumedLambdas(n.Left, isConsumed, out)
+	case *ast.IfExpression:
+		s.walkUnconsumedLambdas(n.Condition, false, out)
+		s.walkUnconsumedLambdas(n.Consequence, isConsumed, out)
+		s.walkUnconsumedLambdas(n.Alternative, isConsumed, out)
+	case *ast.MatchExpression:
+		s.walkUnconsumedLambdas(n.Target, false, out)
+	case *ast.TryExpression:
+		s.walkUnconsumedLambdas(n.Value, isConsumed, out)
+	case *ast.PrefixExpression:
+		s.walkUnconsumedLambdas(n.Right, isConsumed, out)
+	case *ast.InfixExpression:
+		s.walkUnconsumedLambdas(n.Left, isConsumed, out)
+		s.walkUnconsumedLambdas(n.Right, isConsumed, out)
+	case *ast.ExpressionStatement:
+		s.walkUnconsumedLambdas(n.Expression, isConsumed, out)
+	case *ast.ArgumentsExpression:
+		s.walkUnconsumedLambdas(n.Value, isConsumed, out)
+	}
+}
