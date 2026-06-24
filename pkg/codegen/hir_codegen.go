@@ -578,7 +578,7 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 					break
 				}
 				retCType := g.cType(ft.Return)
-				valCType := g.cType(i.Val.GetType())
+				valCType := g.cTypeOfOperand(i.Val)
 				if strings.HasSuffix(retCType, "*") && !strings.HasSuffix(valCType, "*") && valStr != "NULL" {
 					if pt, isPtr := ft.Return.(*types.PointerType); isPtr && pt.Leased && (pt.Kind == types.LeaseRead || pt.Kind == types.LeaseWrite) {
 						g.emit("    nr_flush_temps();")

@@ -147,6 +147,9 @@ func (l *Lowerer) lowerFunction(sym *semantic.Symbol, fn *ast.FunctionStatement)
 		Body:       NewHIRBlock(),
 	}
 
+	if fn.Receiver != nil {
+		hirFn.Params = append(hirFn.Params, fn.Receiver.Name.Value)
+	}
 	for _, p := range fn.Parameters {
 		hirFn.Params = append(hirFn.Params, p.Name.Value)
 	}
@@ -1275,9 +1278,28 @@ func (l *Lowerer) lowerExpression(expr ast.Expression) Operand {
 		return &VarOperand{Name: tempName, Type: t, Symbol: sym}
 
 	default:
+		l.collectHiddenLambdas(expr)
 		astExpr := &ASTExpr{ASTNode: expr, Type: t}
 		return &InstOperand{Inst: astExpr}
 	}
+}
+
+func (l *Lowerer) collectHiddenLambdas(node ast.Node) {
+	ast.Inspect(node, func(n ast.Node) bool {
+		if lambdaExpr, ok := n.(*ast.LambdaExpression); ok {
+			tempName := fmt.Sprintf("nr_lambda_tmp_%d", l.lambdaCounter)
+			l.lambdaCounter++
+			
+			t := l.getType(lambdaExpr)
+			sym := &semantic.Symbol{Name: tempName, Type: t, Kind: semantic.SymVar}
+			l.LambdaTemps[lambdaExpr] = sym
+
+			lf := l.lowerLambdaFunction(lambdaExpr)
+			l.lambdaFuncs = append(l.lambdaFuncs, lf)
+			return false // Do not traverse inside, as lowerLambdaFunction handles it
+		}
+		return true
+	})
 }
 
 func (l *Lowerer) lowerStatementsWithDrops(block *ast.BlockStatement, tempOp Operand) *HIRBlock {
