@@ -877,9 +877,15 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				} else if sym.DefNode == nil && sym.Kind == semantic.SymFunc {
 					isExtern = true
 				}
+				
 				if cStdlibFunctions[sym.Name] && sym.Name == g.mangleName(sym) {
 					isExtern = true
 				}
+				if strings.HasPrefix(sym.Name, "nr_serialize_json") || strings.HasPrefix(sym.Name, "nr_deserialize_json") {
+					isExtern = false
+				}
+
+
 			}
 			if !isExtern {
 				argsStr = append(argsStr, "_env_ptr")
@@ -1180,9 +1186,16 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 			sym := i.Call.FuncSymbol
 			if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok && (fnStmt.IsExtern || fnStmt.IsExport) {
 				isExtern = true
+			
+			
 			} else if _, ok := sym.DefNode.(*ast.ExternStatement); ok {
 				isExtern = true
 			}
+			if strings.HasPrefix(sym.Name, "nr_serialize_json") || strings.HasPrefix(sym.Name, "nr_deserialize_json") {
+				isExtern = false
+			}
+
+
 		}
 		funcName := "anonymous"
 		if i.Call != nil {
@@ -1399,12 +1412,25 @@ func (g *Generator) hirOperandStr(op hir.Operand) string {
 			isExtern := false
 			if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok && (fnStmt.IsExtern || fnStmt.IsExport) {
 				isExtern = true
+			
+			
 			} else if _, ok := sym.DefNode.(*ast.ExternStatement); ok {
 				isExtern = true
 			}
-			if cStdlibFunctions[sym.Name] && sym.Name == g.mangleName(sym) {
-				isExtern = true
+			if strings.HasPrefix(sym.Name, "nr_serialize_json") || strings.HasPrefix(sym.Name, "nr_deserialize_json") {
+				isExtern = false
 			}
+
+
+			
+				if cStdlibFunctions[sym.Name] && sym.Name == g.mangleName(sym) {
+					isExtern = true
+				}
+				if strings.HasPrefix(sym.Name, "nr_serialize_json") || strings.HasPrefix(sym.Name, "nr_deserialize_json") {
+					isExtern = false
+				}
+
+
 			if isExtern {
 				return g.mangleName(sym)
 			}
