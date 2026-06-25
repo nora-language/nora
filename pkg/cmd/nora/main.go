@@ -1039,7 +1039,11 @@ func runRun(args []string) {
 
 	var nativeConfig NativeConfig
 
+	var outExe string
+	consumedArgForFile := false
+
 	if *exampleFlag != "" {
+		outExe = *exampleFlag
 		candidate1 := filepath.Join("examples", *exampleFlag+".nr")
 		candidate2 := filepath.Join("examples", *exampleFlag, "main.nr")
 		if _, err := os.Stat(candidate1); err == nil {
@@ -1067,7 +1071,14 @@ func runRun(args []string) {
 		}
 
 		if runFlags.NArg() >= 1 {
-			inputFile = runFlags.Arg(0)
+			arg0 := runFlags.Arg(0)
+			if _, statErr := os.Stat(arg0); statErr == nil || strings.HasSuffix(arg0, ".nr") {
+				inputFile = arg0
+				consumedArgForFile = true
+			} else if config == nil {
+				inputFile = arg0
+				consumedArgForFile = true
+			}
 		} else {
 			if err != nil {
 				fmt.Println("Error: no input file specified and nora.yaml not found")
@@ -1078,15 +1089,13 @@ func runRun(args []string) {
 				fmt.Printf("Warning: project requires language version %s, but current version is %s. Execution may fail.\n", config.Language, LanguageVersion)
 			}
 		}
-
-		if *pluginFlag != "" {
-			pluginPaths = append(pluginPaths, strings.Split(*pluginFlag, ",")...)
-		}
 	}
 
 	if *pluginFlag != "" {
 		pluginPaths = append(pluginPaths, strings.Split(*pluginFlag, ",")...)
 	}
+
+
 
 	var cliCFlags []string
 	if *cflagsFlag != "" {
@@ -1110,7 +1119,7 @@ func runRun(args []string) {
 		CFlags:           cliCFlags,
 		Verbose:          *verboseFlag,
 	}
-	_, exeName, err := compile(inputFile, "", pluginPaths, dependencies, opts)
+	_, exeName, err := compile(inputFile, outExe, pluginPaths, dependencies, opts)
 	if err != nil {
 		fmt.Printf("Run Failed: %v\n", err)
 		os.Exit(1)
@@ -1122,7 +1131,7 @@ func runRun(args []string) {
 	}
 
 	var runArgs []string
-	if runFlags.NArg() > 0 {
+	if consumedArgForFile && runFlags.NArg() > 0 {
 		runArgs = runFlags.Args()[1:]
 	} else {
 		runArgs = runFlags.Args()
