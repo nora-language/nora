@@ -78,7 +78,7 @@ pub fn (v: &Vector[T]) Pop[T]() T {
 [unsafe]
 pub fn (v: &Vector[T]) Set[T](index: i32, val: T) {
     if (index >= 0 && index < v.size) {
-        v.data[index] = val
+        v.data.unchecked_set(index, @val)
     }
 }
 
