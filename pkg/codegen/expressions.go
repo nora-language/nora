@@ -396,6 +396,23 @@ func (g *Generator) genInfixExpression(e *ast.InfixExpression) {
 		}
 	}
 
+	if e.Operator == "/" || e.Operator == "%" {
+		isFloat := false
+		if pt, ok := types.UnwrapLease(lt).(*types.PrimitiveType); ok {
+			if pt.Name() == "f32" || pt.Name() == "f64" {
+				isFloat = true
+			}
+		}
+		if !isFloat {
+			g.buf.WriteString("({ __auto_type _left = ")
+			g.genValueExpression(e.Left)
+			g.buf.WriteString("; __auto_type _right = ")
+			g.genValueExpression(e.Right)
+			g.buf.WriteString(fmt.Sprintf("; if (_right == 0) nr_panic(\"division by zero\", \"\", 0); _left %s _right; })", e.Operator))
+			return
+		}
+	}
+
 	g.buf.WriteString("(")
 	g.genValueExpression(e.Left)
 	g.buf.WriteString(" " + e.Operator + " ")

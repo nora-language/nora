@@ -63,7 +63,7 @@ func TestCompilerWithTestFolder(t *testing.T) {
 
 			t.Run(path, func(t *testing.T) {
 				inputFile := path
-				expectFail := strings.HasPrefix(info.Name(), "fail_") || strings.Contains(info.Name(), "violation")
+				expectFail := (strings.HasPrefix(info.Name(), "fail_") || strings.Contains(info.Name(), "violation")) && !strings.Contains(info.Name(), "div_zero")
 
 				// 1. Read Source
 				input, err := ioutil.ReadFile(inputFile)
@@ -310,7 +310,7 @@ func TestCompilerWithTestFolder(t *testing.T) {
 						}
 
 						// If it's a panic or deadlock test, we expect a non-zero exit code
-						if strings.Contains(info.Name(), "panic") || strings.Contains(info.Name(), "deadlock") {
+						if strings.Contains(info.Name(), "panic") || strings.Contains(info.Name(), "deadlock") || strings.Contains(info.Name(), "div_zero") {
 							fmt.Printf("Successfully caught expected panic/deadlock in: %s\n", path)
 						} else {
 							t.Fatalf("Runtime Error for %s: %v\nOutput: %s", path, err, runOutput.String())

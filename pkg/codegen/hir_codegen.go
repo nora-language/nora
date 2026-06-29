@@ -1032,6 +1032,19 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				}
 			}
 		}
+
+		if i.Op == "/" || i.Op == "%" {
+			isFloat := false
+			if pt, ok := types.UnwrapLease(i.Type).(*types.PrimitiveType); ok {
+				if pt.Name() == "f32" || pt.Name() == "f64" {
+					isFloat = true
+				}
+			}
+			if !isFloat {
+				return fmt.Sprintf("({ __auto_type _left = %s; __auto_type _right = %s; if (_right == 0) nr_panic(\"division by zero\", \"\", 0); _left %s _right; })", leftStr, rightStr, i.Op)
+			}
+		}
+
 		return fmt.Sprintf("(%s %s %s)", leftStr, i.Op, rightStr)
 	case *hir.UnOp:
 		return fmt.Sprintf("(%s%s)", i.Op, g.hirOperandStr(i.Val))

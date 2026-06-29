@@ -1173,7 +1173,13 @@ func runRun(args []string) {
 	runCmd.Stdout = os.Stdout
 	runCmd.Stderr = os.Stderr
 	runCmd.Stdin = os.Stdin
-	runCmd.Run()
+	err = runCmd.Run()
+	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitError.ExitCode())
+		}
+		os.Exit(1)
+	}
 }
 
 func compile(inputFile string, exeName string, pluginPaths []string, dependencies map[string]Dependency, opts BuildOptions) (string, string, error) {
