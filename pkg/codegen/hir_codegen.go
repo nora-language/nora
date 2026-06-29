@@ -1373,6 +1373,15 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 						rhs = fmt.Sprintf("_env->%s", name)
 					}
 				}
+
+				if rhs == name {
+					if cap.Kind == semantic.SymParam {
+						if g.shouldPassByPointer(cap.Type, cap.LeaseKind) && !g.isPointerTypeInC(cap.Type) {
+							rhs = "*" + rhs
+						}
+					}
+				}
+
 				sb.WriteString(fmt.Sprintf("_env_local->%s = %s; ", name, rhs))
 			}
 

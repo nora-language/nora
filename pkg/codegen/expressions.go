@@ -319,15 +319,13 @@ func (g *Generator) genInfixExpression(e *ast.InfixExpression) {
 			if g.isPointerInC(e.Left) {
 				g.genExpression(e.Left)
 			} else {
-				g.buf.WriteString("&")
-				g.genExpression(e.Left)
+				g.genAddressOf(e.Left, utL, types.LeaseRead)
 			}
 			g.buf.WriteString(", ")
 			if g.isPointerInC(e.Right) {
 				g.genExpression(e.Right)
 			} else {
-				g.buf.WriteString("&")
-				g.genExpression(e.Right)
+				g.genAddressOf(e.Right, utR, types.LeaseRead)
 			}
 			g.buf.WriteString(")")
 			return
@@ -600,6 +598,31 @@ func (g *Generator) genPrefixExpression(e *ast.PrefixExpression) {
 		}
 
 		if writeAddrOf {
+			isRValue := false
+			switch ue := e.Right.(type) {
+			case *ast.InfixExpression, *ast.CallExpression:
+				isRValue = true
+			case *ast.PrefixExpression:
+				if ue.Operator != "*" {
+					isRValue = true
+				}
+			case *ast.GroupedExpression:
+				switch ue2 := ue.Expression.(type) {
+				case *ast.InfixExpression, *ast.CallExpression:
+					isRValue = true
+				case *ast.PrefixExpression:
+					if ue2.Operator != "*" {
+						isRValue = true
+					}
+				}
+			}
+			
+			if isRValue {
+				g.buf.WriteString(fmt.Sprintf("((%s[]){ ", cTypeRight))
+				g.genExpression(e.Right)
+				g.buf.WriteString(" })")
+				return
+			}
 			g.buf.WriteString("&")
 		}
 		g.genExpression(e.Right)
@@ -1216,6 +1239,15 @@ func (g *Generator) genLambdaExpression(e *ast.LambdaExpression) {
 					rhs = fmt.Sprintf("_env->%s", name)
 				}
 			}
+
+			if rhs == name {
+				if cap.Kind == semantic.SymParam {
+					if g.shouldPassByPointer(cap.Type, cap.LeaseKind) && !g.isPointerTypeInC(cap.Type) {
+						rhs = "*" + rhs
+					}
+				}
+			}
+
 			g.buf.WriteString(fmt.Sprintf("_env_local->%s = %s; ", name, rhs))
 		}
 		g.buf.WriteString("_c.env = _env_local; ")

@@ -143,7 +143,7 @@ func (g *Generator) isPointerInC(e ast.Expression) bool {
 		if sym == nil {
 			sym = g.findSymbolByName(ident.Value)
 		}
-		if sym != nil && sym.Kind == semantic.SymParam {
+		if sym != nil && sym.Kind == semantic.SymParam && !g.isCaptured(sym) {
 			if _, ok := ut.(*types.StructType); ok || ut.GetKind() == types.KindSum || ut.GetKind() == types.KindProtocol {
 				return true
 			}
@@ -164,6 +164,20 @@ func (g *Generator) isPointerInC(e ast.Expression) bool {
 	return false
 }
 
+func (g *Generator) isCaptured(sym *semantic.Symbol) bool {
+	if sym == nil {
+		return false
+	}
+	if g.CurrentLambda != nil && (sym.Kind == semantic.SymVar || sym.Kind == semantic.SymParam) {
+		scope := g.SemanticInfo.Scopes[g.CurrentLambda]
+		if scope != nil && scope.Captures != nil && scope.Captures[sym] {
+			return true
+		}
+	}
+	return false
+}
+
+// targetCType returns the C type string used to type-cast variables correctly during parameter passing or assignment.
 func (g *Generator) cPointerLevel(t types.NRType, isValue bool) int {
 	if t == nil {
 		return 0
