@@ -52,7 +52,7 @@ pub fn (v: &Vector[T]) Push[T](val: T) {
 
 pub fn (v: #Vector[T]) Get[T](index: i32) #T {
     if (index < 0 || index >= v.size) {
-        io.PrintLn("Error: Index ${index} out of bounds (size ${v.size})")
+        io.PrintLn("Error: Index ${index} out of bounds (size ${v.size}) in Get")
     }
     return v.data.unchecked_get(index)
 }
@@ -60,7 +60,7 @@ pub fn (v: #Vector[T]) Get[T](index: i32) #T {
 [unsafe]
 pub fn (v: &Vector[T]) GetMut[T](index: i32) &T {
     if (index < 0 || index >= v.size) {
-        io.PrintLn("Error: Index ${index} out of bounds (size ${v.size})")
+        io.PrintLn("Error: Index ${index} out of bounds (size ${v.size}) in GetMut")
     }
     return &v.data.unchecked_get(index)
 }
@@ -85,7 +85,7 @@ pub fn (v: &Vector[T]) Set[T](index: i32, val: T) {
 [unsafe]
 pub fn (v: &Vector[T]) Remove[T](index: i32) T {
     if (index < 0 || index >= v.size) {
-        io.PrintLn("Error: Index ${index} out of bounds (size ${v.size})")
+        io.PrintLn("Error: Index ${index} out of bounds (size ${v.size}) in Set")
     }
     var val: T = @v.data.unchecked_get(index)
     var i = index
