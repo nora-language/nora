@@ -1,5 +1,7 @@
 # Investigation: C Compiler RValue Reference Error
 
+**Status:** Completed
+
 ## Problem
 When compiling physics engine code containing mathematical expressions within comparisons (e.g., `if (bA.mass == (dt - dt))`), the Nora compiler generates C code that attempts to take the address of an rvalue struct returned by a function call:
 `&fixed64_Fixed64_sub(NULL, dt, dt)`
@@ -33,10 +35,18 @@ The root cause lies in how generic operator overloading is translated.
 5. However, the codegen failed to wrap the function call in a C99 compound literal `((struct ...[]){ ... })` before prepending the `&` operator (or in some paths directly outputs `&fn()`), leading to invalid C.
 
 ## Fix
-Currently investigating the exact line in `hir_codegen.go` or `lower.go` responsible for the unhandled rvalue reference. The fix involves ensuring that whenever a pointer to an rvalue expression is required (e.g., `#expr`), it is wrapped in a block-scoped C99 compound literal before its address is taken.
+In `pkg/codegen/expressions.go`, when handling `hir.AddressOf` on an rvalue expression, the generator now explicitly wraps the evaluated C expression in a C99 array compound literal `(%s[]){ ... }`:
+```go
+// RValue: use C99 array compound literal to safely get its address with block-scope lifetime
+t := g.SemanticInfo.Types[expr]
+if pt, ok := t.(*types.PointerType); ok && pt.Leased && !pt.IsArray {
+    t = pt.Base
+}
+ct := g.cType(t)
+g.buf.WriteString(fmt.Sprintf("(%s[]){ ", ct))
+```
+This ensures that whenever a pointer to an rvalue is required (such as borrowing `#expr`), it creates a safe block-scoped temporary in C.
 
 ## Validation
-1. Verify that `nora run` on `repro_rvalue_address.nr` fails on the current compiler.
-2. Apply fix.
-3. Verify `repro_rvalue_address.nr` compiles and runs successfully.
-4. Verify `nora run --example phase8_determinism` successfully compiles the physics engine.
+- Verified that `repro_rvalue_address.nr` compiles without C compiler rvalue errors and executes cleanly.
+- Verified that the physics engine (`phase8_determinism`) compiles and runs successfully.

@@ -1,5 +1,7 @@
 # Investigation: Type-Erased Closures Capturing Generic Primitive Structs
 
+**Status:** Completed
+
 ## Problem
 When a closure captures a generic struct containing primitive types (e.g., `&Vector3[T]`) and is passed to a type-erased higher-order function (e.g., `ParMap[BodyPtr[T]]`), the C code generation fails with:
 `error: unknown type name 'Vector3'`
@@ -32,5 +34,8 @@ If `T=f64`, `BodyPtr[f64]` is pointer-like, causing `DoMap` to be type-erased. T
    `g.cType` is called on the generic `cap.Type` (e.g., `&Vector3[TypeParam]`). Because this is a generic type, `mangledTypeName` fails to find it in `g.Structs` (which only stores monomorphized concrete types) and falls back to `t.Name()`, printing the literal string `"Vector3*"`.
 3. **No Explicit Cast Back to Concrete Types**: Inside the lambda body, if the lambda captures are erased to `void*`, they would need to be safely cast back to the specific concrete type (e.g., `(vector_Vector3_f64*)_env->gravity`) for the operations inside the lambda body to succeed.
 
-## Proposed Solution (See Implementation Plan)
-The lambda must be emitted as an erased function where all pointer-like arguments and captures are properly passed through `g.eraseType()`. When compiling the body of the lambda, the generator must inject explicit casts to allow the erased `void*` fields to be correctly utilized as their intended concrete types. Alternatively, the compiler needs to clone lambdas alongside their monomorphized parent functions.
+## Fix
+In `pkg/codegen/generator.go` and `pkg/hir/lower.go`, generic templates are skipped during direct HIR lowering (`shouldSkipHIR`), and lambda environment structures capturing generic parameters are properly monomorphized alongside their specialized parent instances, ensuring all captured pointer fields generate valid concrete C types (e.g., `Vector3_b296169e* gravity`).
+
+## Validation
+- Verified that `pkg/cmd/test/pass_closure_capture_generic/main.nr` compiles without any Clang type errors and runs successfully.
