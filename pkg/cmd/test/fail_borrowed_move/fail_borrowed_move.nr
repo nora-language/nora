@@ -19,7 +19,7 @@ pub fn (s: #Sphere[T]) Support[T](dir: #Vector[T]) @Vector[T] {
 }
 
 pub fn main() {
-    var sphere = alloc Sphere[f64] { radius: 5.0 }
-    var dir = alloc Vector[f64] { val: 1.0 }
-    var res = sphere.Support[f64](dir)
+    var sphere = alloc Sphere[str] { radius: "test" }
+    var dir = alloc Vector[str] { val: "test" }
+    var res = sphere.Support[str](dir)
 }
