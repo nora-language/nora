@@ -65,6 +65,8 @@ type packageCacheEntry struct {
 	Defs            map[*ast.Identifier]*semantic.Symbol
 	Uses            map[*ast.Identifier]*semantic.Symbol
 	Types           map[ast.Node]types.NRType
+	SpecTypes       map[string]types.NRType
+	Instances       map[*ast.FunctionStatement]map[string]*ast.FunctionStatement
 }
 
 func NewHandler() *Handler {
@@ -213,6 +215,7 @@ func (h *Handler) analyze(ctx context.Context, conn *jsonrpc2.Conn, doc *Documen
 		Dependencies: make(map[string]Dependency),
 	}
 	if projRoot := findProjectRoot(path); projRoot != "" {
+		loader.ProjectRoot = projRoot
 		loader.loadManifest(projRoot)
 	}
 
@@ -2607,6 +2610,7 @@ type LSPFileLoader struct {
 	Analyzer     *semantic.SemanticAnalyzer
 	Program      *ast.Program
 	StdDir       string
+	ProjectRoot  string
 	Plugins      []string
 	addedFiles   map[string]bool
 	loadingPkgs  map[string]bool
@@ -2731,6 +2735,9 @@ func (f *LSPFileLoader) Load(importPath string) (*semantic.Scope, error) {
 		} else {
 			// If not in core/ or std/, check if it exists locally, otherwise fallback to std/ just in case
 			localCandidate := filepath.Join(root, importPath)
+			if f.ProjectRoot != "" {
+				localCandidate = filepath.Join(f.ProjectRoot, importPath)
+			}
 			if _, err := os.Stat(localCandidate); err != nil {
 				if _, err := os.Stat(localCandidate + ".nr"); err != nil {
 					importPath = "std/" + importPath
@@ -2745,6 +2752,9 @@ func (f *LSPFileLoader) Load(importPath string) (*semantic.Scope, error) {
 		// Project root is parent of std
 		root := filepath.Dir(f.StdDir)
 		candidate := filepath.Join(root, importPath)
+		if f.ProjectRoot != "" && !strings.HasPrefix(importPath, "std/") && !strings.HasPrefix(importPath, "core/") {
+			candidate = filepath.Join(f.ProjectRoot, importPath)
+		}
 		if _, err := os.Stat(candidate); err == nil {
 			fullPath = normalizePath(candidate)
 		} else {
@@ -2822,6 +2832,20 @@ func (f *LSPFileLoader) Load(importPath string) (*semantic.Scope, error) {
 					f.Analyzer.SemanticInfo.FieldSymbols = make(map[*types.StructType]map[string]*semantic.Symbol)
 				}
 				f.Analyzer.SemanticInfo.FieldSymbols[k] = v
+			}
+
+			// Restore SpecTypes and Instances
+			for k, v := range e.SpecTypes {
+				if f.Analyzer.SemanticInfo.SpecTypes == nil {
+					f.Analyzer.SemanticInfo.SpecTypes = make(map[string]types.NRType)
+				}
+				f.Analyzer.SemanticInfo.SpecTypes[k] = v
+			}
+			for k, v := range e.Instances {
+				if f.Analyzer.SemanticInfo.Instances == nil {
+					f.Analyzer.SemanticInfo.Instances = make(map[*ast.FunctionStatement]map[string]*ast.FunctionStatement)
+				}
+				f.Analyzer.SemanticInfo.Instances[k] = v
 			}
 
 			// Restore cached FuncScopes
@@ -3197,6 +3221,16 @@ func (f *LSPFileLoader) Load(importPath string) (*semantic.Scope, error) {
 			}
 		}
 
+		capturedSpecTypes := make(map[string]types.NRType)
+		for k, v := range f.Analyzer.SemanticInfo.SpecTypes {
+			capturedSpecTypes[k] = v
+		}
+
+		capturedInstances := make(map[*ast.FunctionStatement]map[string]*ast.FunctionStatement)
+		for k, v := range f.Analyzer.SemanticInfo.Instances {
+			capturedInstances[k] = v
+		}
+
 		// Save to Global Cache
 		f.Handler.packageCache.Store(fullPath, &packageCacheEntry{
 			Scope:         pkgScope,
@@ -3210,6 +3244,8 @@ func (f *LSPFileLoader) Load(importPath string) (*semantic.Scope, error) {
 			Defs:          capturedDefs,
 			Uses:          capturedUses,
 			Types:         capturedTypes,
+			SpecTypes:     capturedSpecTypes,
+			Instances:     capturedInstances,
 		})
 
 		return pkgScope, nil

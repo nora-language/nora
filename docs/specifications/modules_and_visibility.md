@@ -59,10 +59,22 @@ pub type User = struct {
 
 ## Resolution Semantics
 
-When the compiler resolves an `import "x"`, it checks in this order:
-1.  **Dependencies:** Checks `nora.yaml` to see if `"x"` is explicitly mapped to a local or remote dependency.
-2.  **Standard Library:** Checks the `std/` fallback path for core libraries (like `io`, `net/http`).
-3.  **Local Directory:** Checks if it's a valid relative path within the workspace.
+The `import` string strictly represents a **file system path** or an alias, independent of the `package` name declared inside the file. 
+
+When the compiler resolves an `import "x"`, it checks in this exact order:
+1.  **Dependencies (nora.yaml):** Checks the `dependencies` block in `nora.yaml` to see if `"x"` is mapped to a specific path (e.g., `import "physics"` mapped to `src/features/physics`).
+2.  **Standard Library:** Checks the `core/` and `std/` fallback paths for standard modules (like `io`, `net/http`).
+3.  **Local Relative Path:** Checks if `"x"` is a valid file system path relative to the current workspace root.
+
+### Folder vs. File Resolution
+
+Once the compiler resolves the path's location, it behaves differently depending on what it finds:
+*   **If the path is a Directory:** The compiler automatically finds and parses **all `.nr` files** inside that directory. All files within that folder must declare the exact same `package` name, and they are merged into a single package scope.
+*   **If the path is a File (or if the folder doesn't exist):** The compiler automatically appends `.nr` and attempts to load it as a single file (e.g., `src/math/vector.nr`).
+
+### Path vs. Namespace
+The `import` string tells the compiler *where* to find the code, but the `package` statement inside those files dictates *what you call it* in your code. 
+For example, if you `import "src/math/vector"`, but `vector.nr` declares `package vec3d`, you must use `vec3d` to access its contents (e.g., `vec3d.New()`). By convention, the folder or file name should match the package name to avoid confusion.
 
 ## Errors & Diagnostics
 
