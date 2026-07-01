@@ -3556,11 +3556,11 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				return
 			}
 
-			keys := make([]string, 0, len(t.Methods))
-			for k := range t.Methods {
-				keys = append(keys, k)
+			structName := t.Name()
+			if t.BaseType != nil {
+				structName = t.BaseType.Name()
 			}
-			sa.AddError(n.Field.Pos(), "struct '%s' (ptr: %p) has no field or method '%s'. Methods: %v", t.Name(), t, n.Field.Value, keys)
+			sa.AddError(n.Field.Pos(), "struct '%s' has no field or method '%s'", structName, n.Field.Value)
 			sa.SemanticInfo.Types[n] = types.ErrorType
 			return
 		// CASE C: Error handling
@@ -3612,9 +3612,13 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					}
 				}
 			}
+			sumName := t.Name()
+			if t.BaseType != nil {
+				sumName = t.BaseType.Name()
+			}
 			variant, exists := t.Variants[n.Field.Value]
 			if !exists {
-				sa.AddError(n.Field.Pos(), "sum type %s has no variant or method %s", t.Name(), n.Field.Value)
+				sa.AddError(n.Field.Pos(), "sum type '%s' has no variant or method '%s'", sumName, n.Field.Value)
 				sa.SemanticInfo.Types[n] = types.ErrorType
 				return
 			}
@@ -3663,7 +3667,10 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 								sa.SemanticInfo.Uses[n.Field] = sym
 							}
 						}
+						return
 					}
+					sa.AddError(n.Field.Pos(), "interface constraint '%s' for type parameter '%s' has no method '%s'", proto.Name(), t.TypeParam, n.Field.Value)
+					sa.SemanticInfo.Types[n] = types.ErrorType
 					return
 				}
 			}
@@ -5697,7 +5704,7 @@ func (sa *SemanticAnalyzer) Monomorphize(fnStmt *ast.FunctionStatement, typeArgs
 	sa.CurrentFunction = nil
 	sa.CurrentLambda = nil
 
-	if !specializedFn.IsGenericTemplate {
+	if !specializedFn.IsGenericTemplate && !sa.Diagnostics.HasErrors() {
 		// Concrete monomorphization: Define in the generic template's original definition scope to resolve package-level types correctly.
 		pkgScope := sa.FuncScopes[fnStmt]
 		if pkgScope == nil {
@@ -6926,6 +6933,9 @@ func (sa *SemanticAnalyzer) AnalyzeFileTypes(file *ast.File) {
 }
 
 func (sa *SemanticAnalyzer) ensureMethodsSpecialized(t types.NRType) {
+	if sa.Diagnostics.HasErrors() {
+		return
+	}
 	if st, ok := t.(*types.SumType); ok && st.BaseType != nil {
 		hasGenericArgs := false
 		for _, arg := range st.TypeArgs {
