@@ -1,1 +1,0 @@
-Hello Nora Stdlib I/O! This is a static helper test.

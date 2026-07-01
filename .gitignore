@@ -5,3 +5,6 @@ glfw-3.4.bin.WIN64/
 gecs-main-go/
 scratch/
 old_docs/
+test_io_raii_methods.txt
+test_io_static_helper.txt
+test_scanner_file.txt
