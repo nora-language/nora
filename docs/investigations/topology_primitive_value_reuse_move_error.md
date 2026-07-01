@@ -1,9 +1,7 @@
-# Investigation: Topological Lease Solver Move Errors on Value Re-use
+# Investigation 4 (Phase 4): Topology Primitive Value Reuse Move Error
 
 ## Status
-Workaround Applied (Pending Compiler Fix)
-
-**Date:** June 27, 2026
+**Status**: Completed
 **Component:** `pkg/topology` (Topological Lease Solver)
 
 ## Problem

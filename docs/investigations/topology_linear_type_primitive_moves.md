@@ -1,7 +1,7 @@
-# Linear Type System Moves Primitives (Zeroing Memory)
+# Investigation 5 (Phase 3): Topology Linear Type Primitive Moves
 
 ## Status
-**Workaround Applied (Pending Compiler Fix)**: The underlying silent zeroing bug in the Lease Solver was resolved (it now emits a error), but preventing primitive moves in generics still requires explicit math cloning workarounds.
+**Status**: Completed
 
 ## Problem
 

@@ -284,7 +284,15 @@ func IsOwnedType(t NRType) bool {
 		return false
 	}
 	kind := t.GetKind()
-	if kind == KindStruct || kind == KindSum || kind == KindList || kind == KindMap || kind == KindChan || kind == KindGeneric || kind == KindProtocol || kind == KindFunction {
+	if kind == KindStruct || kind == KindSum || kind == KindList || kind == KindMap || kind == KindChan || kind == KindProtocol || kind == KindFunction {
+		return true
+	}
+	if kind == KindGeneric {
+		if gType, ok := t.(*GenericType); ok && gType.Constraint != nil {
+			if gType.Constraint.Name() == "Copy" {
+				return false // [T: Copy] is not an owned linear type
+			}
+		}
 		return true
 	}
 	// Strings are primitive but owned in Nora

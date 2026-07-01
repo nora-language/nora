@@ -5374,7 +5374,9 @@ func (sa *SemanticAnalyzer) verifyCallArguments(n *ast.CallExpression, functionT
 						sa.AddError(arg.Pos(), "use of moved value '%s'", argSym.Name)
 					}
 				}
-				sa.SemanticInfo.Kill(argSym, n)
+				if types.IsOwnedType(argSym.Type) {
+					sa.SemanticInfo.Kill(argSym, n)
+				}
 			}
 		case types.LeaseRead:
 			if argSym != nil {
@@ -6711,6 +6713,15 @@ func (sa *SemanticAnalyzer) checkConstraint(t types.NRType, constraint types.NRT
 				gt.Constraint = proto
 				return true
 			}
+		}
+
+		// SPECIAL CASE: Copy constraint
+		if proto.ProtocolName == "Copy" {
+			if types.IsOwnedType(t) {
+				sa.AddError(pos, "type '%s' is an owned type and cannot satisfy the 'Copy' constraint", t.Name())
+				return false
+			}
+			return true
 		}
 
 		if !sa.implements(t, proto) {

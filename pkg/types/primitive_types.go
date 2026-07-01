@@ -39,6 +39,11 @@ var (
 		ProtocolName: "any",
 		Methods:      make(map[string]*FunctionType),
 	}
+
+	Copy = &ProtocolType{
+		ProtocolName: "Copy",
+		Methods:      make(map[string]*FunctionType),
+	}
 )
 
 // LookupPrimitive checks if a string name is a built-in type
@@ -46,6 +51,8 @@ func LookupPrimitive(name string) (NRType, bool) {
 	switch name {
 	case "any":
 		return Any, true
+	case "Copy":
+		return Copy, true
 	case "int":
 		return Int, true
 	case "i32":

@@ -718,7 +718,7 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 							for i, arg := range call.Arguments {
 								isMove := false
 								if i < len(fn.ParamLeases) {
-									if fn.ParamLeases[i] == types.LeaseMove {
+									if fn.ParamLeases[i] == types.LeaseMove && i < len(fn.Params) && s.isImplicitMoveType(fn.Params[i]) {
 										isMove = true
 									}
 								} else if i < len(fn.Params) && s.isImplicitMoveType(fn.Params[i]) && !s.isExternCall(call) {
@@ -1282,7 +1282,7 @@ func (s *Solver) isMoveOperationForSelector(stmt ast.Statement, target *ast.Sele
 					}
 					if s.isSameSelector(arg.Value, target) {
 						isArgMove := false
-						if i < len(fn.ParamLeases) && fn.ParamLeases[i] == types.LeaseMove {
+						if i < len(fn.ParamLeases) && fn.ParamLeases[i] == types.LeaseMove && i < len(fn.Params) && s.isImplicitMoveType(fn.Params[i]) {
 							isArgMove = true
 						} else if i < len(fn.Params) && s.isImplicitMoveType(fn.Params[i]) && !s.isExternCall(call) {
 							isArgMove = true
@@ -1294,7 +1294,7 @@ func (s *Solver) isMoveOperationForSelector(stmt ast.Statement, target *ast.Sele
 					}
 				}
 				// Handle method receiver move
-				if fn.IsMethod && (fn.ReceiverLease == types.LeaseMove || s.isImplicitMoveReceiver(fn.Receiver)) {
+				if fn.IsMethod && ((fn.ReceiverLease == types.LeaseMove && s.isImplicitMoveType(fn.Receiver)) || s.isImplicitMoveReceiver(fn.Receiver)) {
 					if sel, ok := call.Function.(*ast.SelectorExpression); ok {
 						if s.isSameSelector(sel.Left, target) {
 							isMove = true
@@ -1494,7 +1494,7 @@ func (s *Solver) recordMovesInStatement(stmt ast.Statement) {
 				for i, arg := range call.Arguments {
 					isMove := false
 					if i < len(fn.ParamLeases) {
-						if fn.ParamLeases[i] == types.LeaseMove {
+						if fn.ParamLeases[i] == types.LeaseMove && i < len(fn.Params) && s.isImplicitMoveType(fn.Params[i]) {
 							isMove = true
 						}
 					} else if i < len(fn.Params) && s.isImplicitMoveType(fn.Params[i]) && !s.isExternCall(call) {
@@ -1507,7 +1507,7 @@ func (s *Solver) recordMovesInStatement(stmt ast.Statement) {
 					}
 				}
 				// Handle method receiver move
-				if fn.IsMethod && (fn.ReceiverLease == types.LeaseMove || s.isImplicitMoveReceiver(fn.Receiver)) {
+				if fn.IsMethod && ((fn.ReceiverLease == types.LeaseMove && s.isImplicitMoveType(fn.Receiver)) || s.isImplicitMoveReceiver(fn.Receiver)) {
 					if sel, ok := call.Function.(*ast.SelectorExpression); ok {
 						if s.isMoveCandidate(sel.Left) {
 							s.Moves[sel.Left] = true
@@ -1624,7 +1624,7 @@ func (s *Solver) isSelectorMovedIn(expr ast.Expression, target *ast.SelectorExpr
 					if s.isSameSelector(arg.Value, target) {
 						isArgMove := false
 						if i < len(fn.ParamLeases) {
-							if fn.ParamLeases[i] == types.LeaseMove {
+							if fn.ParamLeases[i] == types.LeaseMove && i < len(fn.Params) && s.isImplicitMoveType(fn.Params[i]) {
 								isArgMove = true
 							}
 						} else if i < len(fn.Params) && s.isImplicitMoveType(fn.Params[i]) && !s.isExternCall(call) {
@@ -1913,7 +1913,7 @@ func (s *Solver) isMoveOperation(stmt ast.Statement, target *ast.Identifier) boo
 					if isTarget(arg.Value) {
 						isArgMove := false
 						if i < len(fn.ParamLeases) {
-							if fn.ParamLeases[i] == types.LeaseMove {
+							if fn.ParamLeases[i] == types.LeaseMove && i < len(fn.Params) && s.isImplicitMoveType(fn.Params[i]) {
 								isArgMove = true
 							}
 						} else if i < len(fn.Params) && s.isImplicitMoveType(fn.Params[i]) && !s.isExternCall(call) {
@@ -1927,7 +1927,7 @@ func (s *Solver) isMoveOperation(stmt ast.Statement, target *ast.Identifier) boo
 					}
 				}
 				// Handle method receiver move
-				if fn.IsMethod && (fn.ReceiverLease == types.LeaseMove || s.isImplicitMoveReceiver(fn.Receiver)) {
+				if fn.IsMethod && ((fn.ReceiverLease == types.LeaseMove && s.isImplicitMoveType(fn.Receiver)) || s.isImplicitMoveReceiver(fn.Receiver)) {
 					if sel, ok := call.Function.(*ast.SelectorExpression); ok {
 						if isTarget(sel.Left) {
 							isMove = true
@@ -2249,7 +2249,7 @@ func (s *Solver) walkUnconsumedRValues(node ast.Node, isConsumed bool, out *[]as
 		recvConsumed := false
 		fnTypeObj := s.SemanticInfo.Types[n.Function]
 		if ft, ok := fnTypeObj.(*types.FunctionType); ok && ft.IsMethod {
-			if ft.ReceiverLease == types.LeaseMove || s.isImplicitMoveReceiver(ft.Receiver) {
+			if (ft.ReceiverLease == types.LeaseMove && s.isImplicitMoveType(ft.Receiver)) || s.isImplicitMoveReceiver(ft.Receiver) {
 				recvConsumed = true
 			}
 		}
@@ -2258,7 +2258,7 @@ func (s *Solver) walkUnconsumedRValues(node ast.Node, isConsumed bool, out *[]as
 			for i, arg := range n.Arguments {
 				argConsumed := false
 				if i < len(ft.ParamLeases) {
-					if ft.ParamLeases[i] == types.LeaseMove {
+					if ft.ParamLeases[i] == types.LeaseMove && i < len(ft.Params) && s.isImplicitMoveType(ft.Params[i]) {
 						argConsumed = true
 					}
 				} else if i < len(ft.Params) {

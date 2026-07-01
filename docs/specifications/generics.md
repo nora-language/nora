@@ -46,6 +46,8 @@ pub fn (v: &Vector[T]) Push[T](val: T) {
 
 You can restrict generic types to only those that implement a specific interface by using the syntax `[T: InterfaceName]`. This ensures type safety and method availability at compile time without relying on runtime dynamic dispatch.
 
+#### Interface Constraints
+
 ```nora
 pub type Printable = interface {
     fn custom_print() void
@@ -56,6 +58,21 @@ pub fn print_it[T: Printable](x: T) {
 }
 ```
 
+#### The `Copy` Protocol
+
+By default, the Nora compiler considers all generic variables `T` as owned, linear types. This means that passing a generic `T` variable to another function or performing arithmetic operations on it will consume (move) the value.
+
+To explicitly declare that a generic type `T` is trivially copyable (e.g., primitives like `f64` or `i32`) and should not be consumed by value, use the built-in `Copy` protocol constraint:
+
+```nora
+pub fn SupportArithmetic[T: Copy](a: T, b: T) T {
+    var offset = a - b
+    var offset2 = a + b // Safe: 'a' and 'b' are copied, not moved
+    return offset2
+}
+```
+
+Attempting to pass an owned type (like a `str` or an `@Vector`) into a `[T: Copy]` constrained function will trigger a semantic error.
 ## Semantics & Type-Erased Monomorphization
 
 At compile time, Nora's `pkg/codegen` evaluates generic instantiations. 
