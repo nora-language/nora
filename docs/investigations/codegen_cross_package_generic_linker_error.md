@@ -1,6 +1,8 @@
 # Investigation: Cross-Package Generic Monomorphization Linker Errors
 
-**Status:** Completed
+## Status
+Workaround Applied (Pending Compiler Fix)
+
 **Date:** June 27, 2026
 **Component:** `pkg/codegen` (Type-Erased Shared Monomorphization)
 

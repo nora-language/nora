@@ -1,5 +1,8 @@
 # Investigation: Generic Primitive Consumption ("Moved Value" on `T`)
 
+## Status
+Workaround Applied (Pending Compiler Fix)
+
 ## Problem
 During the implementation of Phase 3 constraints (Hinge and Slider) in `nora_physics`, we encountered recurring `use of moved value` compilation errors when performing arithmetic operations (e.g. `-`, `+`, `/`) or assignments (`var b = a`) on primitive values like floating-point numbers (`f64`). 
 

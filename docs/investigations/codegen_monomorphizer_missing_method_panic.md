@@ -1,5 +1,8 @@
 # Compiler Investigation: Monomorphizer Silent Panic on Missing Method
 
+## Status
+Unimplemented
+
 ## Problem
 When a generic struct is called with a method that does not exist (e.g., `v1.Clone[T]()` on a 3D vector where `Clone` is not defined), the Nora compiler fails to emit a standard semantic error ("undefined method"). Instead, it crashes silently during the compilation process.
 

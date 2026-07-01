@@ -185,7 +185,7 @@ Required Sections: **Status**, **Context**, **Decision**, **Alternatives Conside
 
 ### D. Compiler Investigations (`docs/investigations/`)
 Every complex bug, memory leak, or compiler crash must be documented.
-Required Sections: **Problem**, **Reproduction**, **Root Cause**, **Fix**, **Validation**.
+Required Sections: **Status**, **Problem**, **Reproduction**, **Root Cause**, **Fix**, **Validation**.
 
 ---
 

@@ -1,5 +1,8 @@
 # Linear Type System Moves Primitives (Zeroing Memory)
 
+## Status
+**Workaround Applied (Pending Compiler Fix)**: The underlying silent zeroing bug in the Lease Solver was resolved (it now emits a error), but preventing primitive moves in generics still requires explicit math cloning workarounds.
+
 ## Problem
 
 When building `nora_physics`, we encountered a bizarre issue where passing a structural primitive field (e.g., `s.radius` of type `T` which is a `f64`) into a generic function argument (e.g., `norm_dir.MulScalar[T](s.radius)`) caused the memory of the original struct to be silently corrupted or evaluated as `0.0`. 
@@ -27,9 +30,6 @@ Nora's strictly linear type system treats ALL generic type parameters `T` as lin
 Therefore, when `s.radius` is passed into `MulScalar[T](s: T)`, the compiler executes a **Move**. In Nora, a move transfers ownership and **zeroes out the original memory location** to prevent use-after-free and aliasing, even if it's just a `f64`.
 
 Because `s` was a borrow (`#Sphere[T]`), the compiler incorrectly allowed the move to proceed without emitting a `cannot move out of borrowed context` error (which is an underlying bug in the Lease Solver). Instead, it silently zeroed out the primitive field inside the borrowed struct, leading to catastrophic logic bugs.
-
-## Status
-**Fixed**: The underlying bug in the Lease Solver has been resolved. The solver now accurately flags attempts to move out of borrowed contexts (e.g., passing a primitive field from a borrowed generic struct) and correctly emits a `cannot move out of borrowed context` topology error, rather than silently zeroing out the original memory location.
 
 ## Fix / Workaround
 

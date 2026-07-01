@@ -1,5 +1,8 @@
 # Compiler Investigation: Topological Solver Fails to Drop Anonymous Temporaries
 
+## Status
+Unimplemented
+
 ## Problem
 When a function returns an owned heap-allocated value (e.g., `@AABB[T]`) and the caller immediately chains a method or field access on the returned value without assigning it to a named variable (e.g., `func().Method()`), the Nora compiler's Topological Lease Solver fails to track the anonymous temporary variable. As a result, it fails to insert the necessary `Drop` instruction, causing a memory leak.
 

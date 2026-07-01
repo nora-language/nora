@@ -1,6 +1,7 @@
 # Compiler Investigation: Topological Solver Leaks on Implicit Deref to Value Fields
 
-**Status:** Completed (Workaround Validated)
+## Status
+Workaround Applied (Pending Compiler Fix)
 
 ## Problem
 When a generic function returning an owned pointer (e.g., `collections.NewVector[T]()` returning `@Vector[T]`) is assigned directly to a struct field of a value type (e.g., `Vector[T]`), the Nora compiler generates an implicit dereference (value copy). However, the Topological Lease Solver fails to insert a `Drop` for the original anonymous heap-allocated pointer wrapper (the `@Vector` itself), resulting in a leak of exactly 16 bytes per call.

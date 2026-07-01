@@ -1,6 +1,8 @@
 # Investigation: Topological Lease Solver Move Errors on Value Re-use
 
-**Status:** Completed
+## Status
+Workaround Applied (Pending Compiler Fix)
+
 **Date:** June 27, 2026
 **Component:** `pkg/topology` (Topological Lease Solver)
 
