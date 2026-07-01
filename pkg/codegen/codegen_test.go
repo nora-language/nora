@@ -61,7 +61,7 @@ func TestEndToEndGeneration(t *testing.T) {
 	solver.Solve(prog)
 
 	// 5. GENERATE C
-	gen := codegen.NewGenerator(prog, &analyzer.SemanticInfo, solver, nil, nil)
+	gen := codegen.NewGenerator(prog, &analyzer.SemanticInfo, solver, nil, []string{"runtime.h"})
 	code, err := gen.Generate()
 	if err != nil {
 		t.Fatalf("Codegen Failed: %v", err)

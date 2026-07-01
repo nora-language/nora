@@ -1,9 +1,9 @@
 # Investigation: Cross-Package Generic Monomorphization Linker Errors
 
 ## Status
-Workaround Applied (Pending Compiler Fix)
+Completed
 
-**Date:** June 27, 2026
+**Date:** June 27, 2026 (Fixed July 2026)
 **Component:** `pkg/codegen` (Type-Erased Shared Monomorphization)
 
 ## Problem
@@ -25,10 +25,11 @@ The Nora compiler employs Type-Erased Shared Monomorphization in `pkg/codegen`. 
 
 However, when a generic collection is instantiated with a **value layout configuration** (a concrete struct), a specific concrete monomorphized variant must be generated. Due to an incremental compilation/caching bug in `pkg/codegen` across package boundaries, if the standard library `collections` package wasn't fully processed with this new concrete value type during its own compilation phase, the code generator fails to emit the concrete C functions (e.g., `collections_NewVector_a948419e`) into the calling package's output or `out_globals.c`. Consequently, the generated caller C code references a function that was never emitted.
 
-## Fix (Workaround Applied)
-To bypass this compiler linker bug in `nora_physics`:
-1. Re-architected the affected generic collection to hold **pointers** instead of **values**. By changing the type from `Vector[wheel.WheelInfo[T]]` to an internally specialized array wrapper (`WheelVector[T]`) holding `@(@wheel.WheelInfo[T])[]`, we forced the code to bypass the cross-package generic `collections.Vector` boundary and avoid the missing linker symbols. 
-2. Another workaround is clearing the runtime cache (`build\debug\runtime_cache`) to ensure the compiler doesn't blindly link a stale `collections.o` object file that lacks the necessary concrete methods.
+## Fix / Implementation
+1. **Track Monomorphized Functions**: Added a `MonomorphizedFuncs` map to the `Generator` state in `generator.go`. During Step 2 (`CollectDefinitions`), any concrete generic functions created (like `collections_NewVector_a948419e`) are now registered in this map.
+2. **Prevent Caching Bugs**: In `GeneratePackageCode`, added a check to skip generating these monomorphized functions into their generic template's source file (`out_pkg_collections.c`). This prevents the functions from being lost when the incremental compiler loads a previously cached `.o` object for library packages.
+3. **Emit in Shared Globals**: Implemented `g.emitMonomorphizedFunctions()` and called it inside `GenerateSharedGlobals`. Because `out_globals.c` is dynamically constructed and hashed on every build, the C compiler will now correctly link every single monomorphized function without disrupting any package caches.
 
 ## Validation
-By implementing the localized array wrapper `WheelVector` inside the caller package and using explicit pointer references, the transpiler correctly resolved the symbols within the package scope. The C linker phase passed successfully without missing external dependencies, validating that the bug is localized to cross-package monomorphization emission for value structs.
+- The internal `pkg/codegen` unit tests verify `MonomorphizedFuncs` properly buffer static arrays, spawn wrappers, string literals, and generic methods cleanly in `out_globals.c`.
+- Full compiler integration tests successfully re-route generic linker dependencies through `out_globals.c` across packages without stale cache failures.

@@ -63,9 +63,10 @@ type Generator struct {
 	CurrentBlock     *ast.BlockStatement
 	CurrentStmtIndex int
 
-	eraseCache       map[string]types.NRType
-	NativeHeaders    []string
-	GeneratedLambdas map[string]bool
+	eraseCache         map[string]types.NRType
+	NativeHeaders      []string
+	GeneratedLambdas   map[string]bool
+	MonomorphizedFuncs map[string]bool
 
 	// String Literals
 	StringLiterals map[string]string // maps string content to global variable name
@@ -93,10 +94,11 @@ func NewGenerator(prog *ast.Program, sem *semantic.SemanticInfo, solver *topolog
 		AutoDropMethods:  make(map[string]types.NRType),
 		AutoEqMethods:    make(map[string]types.NRType),
 		VTables:          make(map[string]VTableInstance),
-		eraseCache:       make(map[string]types.NRType),
-		NativeHeaders:    nativeHeaders,
-		StringLiterals:   make(map[string]string),
-		GeneratedLambdas: make(map[string]bool),
+		eraseCache:         make(map[string]types.NRType),
+		NativeHeaders:      nativeHeaders,
+		StringLiterals:     make(map[string]string),
+		GeneratedLambdas:   make(map[string]bool),
+		MonomorphizedFuncs: make(map[string]bool),
 	}
 }
 
@@ -694,9 +696,12 @@ func (g *Generator) collectDefinitions() {
 						DefScope: sym.DefScope,
 					}
 					g.Functions[erasedName] = erasedSym
+					g.MonomorphizedFuncs[erasedName] = true
 				}
 			} else {
-				g.Functions[g.mangleName(sym)] = sym
+				name := g.mangleName(sym)
+				g.Functions[name] = sym
+				g.MonomorphizedFuncs[name] = true
 			}
 		}
 	}
@@ -1729,6 +1734,12 @@ func (g *Generator) GeneratePackageCode(pkgName string) (string, error) {
 			continue
 		}
 
+		// Skip monomorphized generic function instances when generating individual packages in MultiFileMode.
+		// They will be emitted into shared globals (out_globals.c) to prevent incremental caching bugs across package boundaries.
+		if g.MonomorphizedFuncs[name] {
+			continue
+		}
+
 		// Check package name
 		if g.getSymbolPackage(sym) != pkgName {
 			continue
@@ -1835,11 +1846,36 @@ func (g *Generator) GenerateSharedGlobals() (string, error) {
 	g.emit("#include \"out.h\"")
 	g.emit("")
 
+	// Generate functions into a temporary buffer first so static literals and spawn wrappers can be emitted above them
+	funcBuf := new(bytes.Buffer)
+	mainBuf := g.buf
+	g.buf = funcBuf
+
+	// Emit Monomorphized Generic Functions
+	g.emitMonomorphizedFunctions()
+
 	// Emit Auto-Generated Drop Methods
 	g.emitAutoDropMethods()
 
 	// Emit Auto-Generated Equality Methods
 	g.emitAutoEqMethods()
+
+	// Restore main buffer
+	g.buf = mainBuf
+
+	// Emit static string literals (now populated!)
+	g.emitStringLiterals()
+
+	// Emit static spawn structs & wrappers (now populated!)
+	for _, s := range g.SpawnStructs {
+		g.emit(s)
+	}
+	for _, s := range g.SpawnWrappers {
+		g.emit(s)
+	}
+
+	// Append compiled function bodies
+	g.buf.Write(funcBuf.Bytes())
 
 	// Emit Global Initializers
 	g.emitGlobalInits()
@@ -2192,6 +2228,38 @@ func (g *Generator) emitPackageLambdaEnvDrops(pkgName string) {
 				g.emit("}")
 				g.emit("")
 			}
+		}
+	}
+}
+
+func (g *Generator) emitMonomorphizedFunctions() {
+	if len(g.MonomorphizedFuncs) == 0 {
+		return
+	}
+	g.emit("// --- MONOMORPHIZED GENERIC FUNCTIONS ---")
+	hirProg := g.hirProg
+	hirFuncs := make(map[string]*hir.Function)
+	if hirProg != nil {
+		for _, hf := range hirProg.Functions {
+			hirFuncs[g.mangleName(hf.FuncSymbol)] = hf
+		}
+	}
+	for _, name := range g.sortedFunctionNames() {
+		if !g.MonomorphizedFuncs[name] {
+			continue
+		}
+		sym := g.Functions[name]
+		if sym == nil || sym.DefNode == nil {
+			continue
+		}
+		fn, ok := sym.DefNode.(*ast.FunctionStatement)
+		if !ok || ast.GetAttribute(fn.Attributes, "macro") != nil || fn.Body == nil {
+			continue
+		}
+		if hf, ok := hirFuncs[name]; ok {
+			g.genHIRFunction(hf)
+		} else {
+			g.genFunction(sym, fn)
 		}
 	}
 }
