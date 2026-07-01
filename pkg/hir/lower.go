@@ -29,16 +29,41 @@ type Lowerer struct {
 	lambdaCounter       int
 	activeDefers        []ast.Expression
 	LambdaTemps         map[ast.Node]*semantic.Symbol
+	ExprTemps           map[ast.Expression]*semantic.Symbol
+	UnconsumedTemps     map[ast.Expression]bool
 }
 
 func NewLowerer(sem *semantic.SemanticInfo, solver *topology.Solver) *Lowerer {
-	return &Lowerer{
-		SemanticInfo: sem,
-		Solver:       solver,
-		tempCounter:  0,
-		lambdaFuncs:  []*Function{},
-		LambdaTemps:  make(map[ast.Node]*semantic.Symbol),
+	l := &Lowerer{
+		SemanticInfo:    sem,
+		Solver:          solver,
+		tempCounter:     0,
+		lambdaFuncs:     []*Function{},
+		LambdaTemps:     make(map[ast.Node]*semantic.Symbol),
+		ExprTemps:       make(map[ast.Expression]*semantic.Symbol),
+		UnconsumedTemps: make(map[ast.Expression]bool),
 	}
+	if solver != nil {
+		for _, dropsMap := range solver.Drops {
+			for _, dropsList := range dropsMap {
+				for _, d := range dropsList {
+					if d.Expr != nil {
+						l.UnconsumedTemps[d.Expr] = true
+					}
+				}
+			}
+		}
+		for _, dropsMap := range solver.PreDrops {
+			for _, dropsList := range dropsMap {
+				for _, d := range dropsList {
+					if d.Expr != nil {
+						l.UnconsumedTemps[d.Expr] = true
+					}
+				}
+			}
+		}
+	}
+	return l
 }
 
 func (l *Lowerer) makeTempName() string {
@@ -125,6 +150,8 @@ func (l *Lowerer) LowerProgram(prog *ast.Program) *Program {
 func (l *Lowerer) emitDrop(d topology.DropInfo, field ast.Expression, index ast.Expression) {
 	if d.Lambda != nil && l.LambdaTemps[d.Lambda] != nil {
 		l.CurrentBlock.AddInst(&Drop{Symbol: l.LambdaTemps[d.Lambda], Lambda: d.Lambda})
+	} else if d.Expr != nil && l.ExprTemps[d.Expr] != nil {
+		l.CurrentBlock.AddInst(&Drop{Symbol: l.ExprTemps[d.Expr], Expr: d.Expr})
 	} else {
 		l.CurrentBlock.AddInst(&Drop{Symbol: d.Symbol, Field: field, Index: index, Lambda: d.Lambda})
 	}
@@ -719,6 +746,25 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 }
 
 func (l *Lowerer) lowerExpression(expr ast.Expression) Operand {
+	op := l.lowerExpressionRaw(expr)
+	if expr != nil && l.UnconsumedTemps[expr] {
+		if _, isLambda := expr.(*ast.LambdaExpression); !isLambda {
+			tempName := l.makeTempName()
+			t := l.getType(expr)
+			sym := &semantic.Symbol{Name: tempName, Type: t, Kind: semantic.SymVar}
+			l.ExprTemps[expr] = sym
+			l.CurrentBlock.AddInst(&Alloca{Symbol: sym, Type: t})
+			l.CurrentBlock.AddInst(&Store{
+				Dest: &VarOperand{Name: tempName, Type: t, Symbol: sym},
+				Val:  op,
+			})
+			return &VarOperand{Name: tempName, Type: t, Symbol: sym}
+		}
+	}
+	return op
+}
+
+func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 	if expr == nil {
 		return &LiteralOperand{Value: "none", Type: types.ErrorType}
 	}

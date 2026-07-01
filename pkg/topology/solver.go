@@ -22,6 +22,7 @@ type DropInfo struct {
 	Field  *ast.SelectorExpression
 	Index  *ast.IndexExpression
 	Lambda *ast.LambdaExpression
+	Expr   ast.Expression
 }
 
 type Lifecycle struct {
@@ -650,15 +651,19 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 			s.registerScopeDrops(block, i, allVisible, "TERMINAL ("+branch.Token.Literal+")", nil, excludeParents)
 		}
 
-		// [NEW] E. ANONYMOUS R-VALUE DROPS (Closures)
+		// [NEW] E. ANONYMOUS R-VALUE DROPS (Closures & Temporaries)
 		if !s.InSecondPass {
-			unconsumed := s.findUnconsumedLambdas(stmt)
-			for _, lambda := range unconsumed {
+			unconsumed := s.findUnconsumedRValues(stmt)
+			for _, expr := range unconsumed {
 				if s.Drops[block] == nil {
 					s.Drops[block] = make(map[int][]DropInfo)
 				}
-				s.Drops[block][i+1] = append(s.Drops[block][i+1], DropInfo{Lambda: lambda})
-				s.debug("      Scheduled temporary drop for inline Lambda at Index %d", i)
+				if lambda, ok := expr.(*ast.LambdaExpression); ok {
+					s.Drops[block][i+1] = append(s.Drops[block][i+1], DropInfo{Lambda: lambda, Expr: lambda})
+				} else {
+					s.Drops[block][i+1] = append(s.Drops[block][i+1], DropInfo{Expr: expr})
+				}
+				s.debug("      Scheduled temporary drop for inline RValue at Index %d (%T)", i, expr)
 			}
 		}
 
@@ -2190,13 +2195,35 @@ func isBorrowType(t types.NRType) bool {
 	return false
 }
 
+func (s *Solver) isOwnedRValueType(t types.NRType) bool {
+	if t == nil {
+		return false
+	}
+	if pt, ok := t.(*types.PointerType); ok && pt.Leased {
+		if pt.Kind == types.LeaseRead || pt.Kind == types.LeaseWrite {
+			return false
+		}
+	}
+	return types.IsOwnedType(t)
+}
+
 func (s *Solver) findUnconsumedLambdas(stmt ast.Statement) []*ast.LambdaExpression {
 	var lambdas []*ast.LambdaExpression
-	s.walkUnconsumedLambdas(stmt, false, &lambdas)
+	for _, expr := range s.findUnconsumedRValues(stmt) {
+		if l, ok := expr.(*ast.LambdaExpression); ok {
+			lambdas = append(lambdas, l)
+		}
+	}
 	return lambdas
 }
 
-func (s *Solver) walkUnconsumedLambdas(node ast.Node, isConsumed bool, out *[]*ast.LambdaExpression) {
+func (s *Solver) findUnconsumedRValues(stmt ast.Statement) []ast.Expression {
+	var rvalues []ast.Expression
+	s.walkUnconsumedRValues(stmt, false, &rvalues)
+	return rvalues
+}
+
+func (s *Solver) walkUnconsumedRValues(node ast.Node, isConsumed bool, out *[]ast.Expression) {
 	if node == nil {
 		return
 	}
@@ -2207,15 +2234,26 @@ func (s *Solver) walkUnconsumedLambdas(node ast.Node, isConsumed bool, out *[]*a
 		}
 		return
 	case *ast.ReturnStatement:
-		s.walkUnconsumedLambdas(n.ReturnValue, true, out)
+		s.walkUnconsumedRValues(n.ReturnValue, true, out)
 	case *ast.VarStatement:
-		s.walkUnconsumedLambdas(n.Value, true, out)
+		s.walkUnconsumedRValues(n.Value, true, out)
 	case *ast.AssignmentStatement:
-		s.walkUnconsumedLambdas(n.Left, false, out)
-		s.walkUnconsumedLambdas(n.Value, true, out)
+		s.walkUnconsumedRValues(n.Left, false, out)
+		s.walkUnconsumedRValues(n.Value, true, out)
 	case *ast.CallExpression:
-		s.walkUnconsumedLambdas(n.Function, false, out)
+		if !isConsumed {
+			if t := s.SemanticInfo.Types[n]; t != nil && s.isOwnedRValueType(t) {
+				*out = append(*out, n)
+			}
+		}
+		recvConsumed := false
 		fnTypeObj := s.SemanticInfo.Types[n.Function]
+		if ft, ok := fnTypeObj.(*types.FunctionType); ok && ft.IsMethod {
+			if ft.ReceiverLease == types.LeaseMove || s.isImplicitMoveReceiver(ft.Receiver) {
+				recvConsumed = true
+			}
+		}
+		s.walkUnconsumedRValues(n.Function, recvConsumed, out)
 		if ft, ok := fnTypeObj.(*types.FunctionType); ok {
 			for i, arg := range n.Arguments {
 				argConsumed := false
@@ -2228,46 +2266,56 @@ func (s *Solver) walkUnconsumedLambdas(node ast.Node, isConsumed bool, out *[]*a
 						argConsumed = true
 					}
 				}
-				s.walkUnconsumedLambdas(arg, argConsumed, out)
+				s.walkUnconsumedRValues(arg, argConsumed, out)
 			}
 		} else {
 			for _, arg := range n.Arguments {
-				s.walkUnconsumedLambdas(arg, false, out)
+				s.walkUnconsumedRValues(arg, false, out)
 			}
 		}
 	case *ast.SpawnExpression:
-		s.walkUnconsumedLambdas(n.Call, true, out)
+		s.walkUnconsumedRValues(n.Call, true, out)
 	case *ast.StructInstantiation:
+		if !isConsumed {
+			if t := s.SemanticInfo.Types[n]; t != nil && s.isOwnedRValueType(t) {
+				*out = append(*out, n)
+			}
+		}
 		for _, arg := range n.Fields {
-			s.walkUnconsumedLambdas(arg, true, out)
+			s.walkUnconsumedRValues(arg, true, out)
 		}
 	case *ast.ArrayLiteral:
+		if !isConsumed {
+			if t := s.SemanticInfo.Types[n]; t != nil && s.isOwnedRValueType(t) {
+				*out = append(*out, n)
+			}
+		}
 		for _, arg := range n.Elements {
-			s.walkUnconsumedLambdas(arg, true, out)
+			s.walkUnconsumedRValues(arg, true, out)
 		}
 	case *ast.IndexExpression:
-		s.walkUnconsumedLambdas(n.Left, isConsumed, out)
+		s.walkUnconsumedRValues(n.Left, isConsumed, out)
 		for _, idx := range n.Indices {
-			s.walkUnconsumedLambdas(idx, false, out)
+			s.walkUnconsumedRValues(idx, false, out)
 		}
 	case *ast.SelectorExpression:
-		s.walkUnconsumedLambdas(n.Left, isConsumed, out)
+		s.walkUnconsumedRValues(n.Left, isConsumed, out)
 	case *ast.IfExpression:
-		s.walkUnconsumedLambdas(n.Condition, false, out)
-		s.walkUnconsumedLambdas(n.Consequence, isConsumed, out)
-		s.walkUnconsumedLambdas(n.Alternative, isConsumed, out)
+		s.walkUnconsumedRValues(n.Condition, false, out)
+		s.walkUnconsumedRValues(n.Consequence, isConsumed, out)
+		s.walkUnconsumedRValues(n.Alternative, isConsumed, out)
 	case *ast.MatchExpression:
-		s.walkUnconsumedLambdas(n.Target, false, out)
+		s.walkUnconsumedRValues(n.Target, false, out)
 	case *ast.TryExpression:
-		s.walkUnconsumedLambdas(n.Value, isConsumed, out)
+		s.walkUnconsumedRValues(n.Value, isConsumed, out)
 	case *ast.PrefixExpression:
-		s.walkUnconsumedLambdas(n.Right, isConsumed, out)
+		s.walkUnconsumedRValues(n.Right, isConsumed, out)
 	case *ast.InfixExpression:
-		s.walkUnconsumedLambdas(n.Left, isConsumed, out)
-		s.walkUnconsumedLambdas(n.Right, isConsumed, out)
+		s.walkUnconsumedRValues(n.Left, isConsumed, out)
+		s.walkUnconsumedRValues(n.Right, isConsumed, out)
 	case *ast.ExpressionStatement:
-		s.walkUnconsumedLambdas(n.Expression, isConsumed, out)
+		s.walkUnconsumedRValues(n.Expression, isConsumed, out)
 	case *ast.ArgumentsExpression:
-		s.walkUnconsumedLambdas(n.Value, isConsumed, out)
+		s.walkUnconsumedRValues(n.Value, isConsumed, out)
 	}
 }

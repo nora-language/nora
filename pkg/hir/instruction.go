@@ -304,6 +304,7 @@ type Drop struct {
 	Field  ast.Expression
 	Index  ast.Expression
 	Lambda *ast.LambdaExpression
+	Expr   ast.Expression
 }
 
 func (d *Drop) GetInstructionKind() InstructionKind { return InstDrop }
@@ -317,6 +318,9 @@ func (d *Drop) String() string {
 	}
 	if d.Index != nil {
 		return "drop index " + d.Index.String()
+	}
+	if d.Expr != nil {
+		return "drop expr " + d.Expr.String()
 	}
 	return "drop unknown"
 }
