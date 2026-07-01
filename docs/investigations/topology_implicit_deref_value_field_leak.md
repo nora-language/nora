@@ -1,7 +1,7 @@
 # Compiler Investigation: Topological Solver Leaks on Implicit Deref to Value Fields
 
 ## Status
-Workaround Applied (Pending Compiler Fix)
+Completed
 
 ## Problem
 When a generic function returning an owned pointer (e.g., `collections.NewVector[T]()` returning `@Vector[T]`) is assigned directly to a struct field of a value type (e.g., `Vector[T]`), the Nora compiler generates an implicit dereference (value copy). However, the Topological Lease Solver fails to insert a `Drop` for the original anonymous heap-allocated pointer wrapper (the `@Vector` itself), resulting in a leak of exactly 16 bytes per call.
@@ -33,9 +33,10 @@ When an `@T` (pointer) is assigned to a `T` (value type) struct field, the seman
 
 ## Fix / Workaround
 1. **Physics Engine & Library Workaround (Applied):** All structures containing vectors or allocated structs (e.g. `PhysicsSystem.islands` and `IslandBatch.pairs`) have been updated to use `@collections.Vector` (pointer fields) instead of value types to prevent triggering implicit dereferencing moves.
-2. **Future Compiler Enhancement:** The Semantic Analyzer should explicitly reject assignments of `@T` to `T` as a Type Mismatch, rather than allowing an implicit deref, forcing explicit copies or pointer fields.
+2. **Compiler Enhancement (Implemented):** Updated `pkg/semantic/analyzer.go` to explicitly check struct literal field initialization types via `checkInterfaceCompatibility`, ensuring assignments of `@T` (move leases) to `T` (value struct fields) are rejected during semantic analysis.
+3. **Topological Solver Fix (Implemented):** Corrected AST node recognition in `walkUnconsumedRValues` (`pkg/topology/solver.go`) from `StructInstantiation` to `StructLiteral` and added support for `FieldDefinition` nodes.
 
 ## Validation
+- Created regression test `pkg/cmd/test/fail_repro_implicit_deref_leak_struct_literal/fail_repro_implicit_deref_leak_struct_literal.nr` verifying that assigning `@Vector` to a value struct field is rejected by semantic analysis.
 - Verified with regression test `pkg/cmd/test/repro_implicit_deref_leak/repro.nr` running under `--debug-memory` that passing values by reference/pointer avoids leaks (`0 bytes leaked`).
-- Modified `system.nr` to use `@collections.Vector` for all `IslandBatch` arrays.
-- Re-ran `phase6_sleep` and `phase7_destruction` examples, validating that the memory leak counter successfully dropped from 7 active allocations to exactly 0 leaks.
+- Verified tests pass with `go test -v ./pkg/cmd/nora -run TestCompilerWithTestFolder/repro_implicit_deref_leak` and `go test -v ./pkg/cmd/nora -run TestCompilerWithTestFolder/fail_repro_implicit_deref_leak_struct_literal`.

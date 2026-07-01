@@ -2275,7 +2275,7 @@ func (s *Solver) walkUnconsumedRValues(node ast.Node, isConsumed bool, out *[]as
 		}
 	case *ast.SpawnExpression:
 		s.walkUnconsumedRValues(n.Call, true, out)
-	case *ast.StructInstantiation:
+	case *ast.StructLiteral:
 		if !isConsumed {
 			if t := s.SemanticInfo.Types[n]; t != nil && s.isOwnedRValueType(t) {
 				*out = append(*out, n)
@@ -2283,6 +2283,10 @@ func (s *Solver) walkUnconsumedRValues(node ast.Node, isConsumed bool, out *[]as
 		}
 		for _, arg := range n.Fields {
 			s.walkUnconsumedRValues(arg, true, out)
+		}
+	case *ast.FieldDefinition:
+		if n.Value != nil {
+			s.walkUnconsumedRValues(n.Value, isConsumed, out)
 		}
 	case *ast.ArrayLiteral:
 		if !isConsumed {

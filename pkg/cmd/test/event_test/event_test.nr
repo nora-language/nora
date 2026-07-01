@@ -11,9 +11,9 @@ type SharedPool = struct {
     fiber3: ptr,
     fiber4: ptr,
     fiber5: ptr,
-    registered: sync.AtomicInt,
-    should_wake: sync.AtomicInt,
-    finished: sync.AtomicInt
+    registered: @sync.AtomicInt,
+    should_wake: @sync.AtomicInt,
+    finished: @sync.AtomicInt
 }
 
 fn worker(id: i32, pool: #SharedPool) {

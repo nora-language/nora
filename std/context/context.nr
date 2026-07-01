@@ -5,7 +5,7 @@ import "string"
 
 [shared]
 pub type Context = struct {
-    cancelled: sync.AtomicBool,
+    cancelled: @sync.AtomicBool,
     done_chan: chan[bool],
     err_msg: str
 }

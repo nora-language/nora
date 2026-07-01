@@ -1382,11 +1382,16 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			}
 		}
 
-		// 3. Enforce all fields are initialized (Pathway B)
+		// 3. Enforce all fields are initialized and check field types (Pathway B)
 		if stType, ok := sa.SemanticInfo.Types[n].(*types.StructType); ok {
 			providedFields := make(map[string]bool)
 			for _, field := range n.Fields {
 				providedFields[field.Name.Value] = true
+				if expectedType, exists := stType.Fields[field.Name.Value]; exists {
+					if field.Value != nil {
+						sa.checkInterfaceCompatibility(field.Value, expectedType)
+					}
+				}
 			}
 			for fieldName := range stType.Fields {
 				if !providedFields[fieldName] {
