@@ -1,6 +1,6 @@
 #include "runtime.h"
 
-#define NR_FIBER_STACK_SIZE (8 * 1024 * 1024)
+#define NR_FIBER_STACK_SIZE (1 * 1024 * 1024)
 
 // Debugger hook for fiber start
 #ifdef _WIN32
