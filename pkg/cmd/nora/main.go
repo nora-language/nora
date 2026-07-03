@@ -422,9 +422,17 @@ func (f *FileLoader) Load(path string) (*semantic.Scope, error) {
 	} else if !filepath.IsAbs(path) &&
 		!strings.HasPrefix(path, "./") &&
 		!strings.HasPrefix(path, "../") {
-		// 2. Check if it exists in core/
-		coreCandidate := filepath.Join(CorePath, path)
-		stdCandidate := filepath.Join(StdPath, path)
+		var corePathSuffix = path
+		slashPath := filepath.ToSlash(path)
+		if strings.HasPrefix(slashPath, "core/") {
+			corePathSuffix = strings.TrimPrefix(slashPath, "core/")
+		}
+		var stdPathSuffix = path
+		if strings.HasPrefix(slashPath, "std/") {
+			stdPathSuffix = strings.TrimPrefix(slashPath, "std/")
+		}
+		coreCandidate := filepath.Join(CorePath, corePathSuffix)
+		stdCandidate := filepath.Join(StdPath, stdPathSuffix)
 
 		if _, err := os.Stat(coreCandidate); err == nil {
 			path = coreCandidate

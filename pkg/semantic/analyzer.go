@@ -422,7 +422,6 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 
 		modType := &ModuleType{Ident: name, Exports: pkgScope}
 
-		// --- FIX: Change SymModule to SymPackage to match your test ---
 		sym, err := sa.CurrentScope.Define(name, modType, SymPackage, n)
 		if err != nil {
 			if existing, found := sa.CurrentScope.Resolve(name); found && existing.Kind == SymPackage {

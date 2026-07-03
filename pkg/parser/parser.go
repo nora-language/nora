@@ -922,8 +922,13 @@ func (p *Parser) parsePublicStatement() ast.Statement {
 		if fn, ok := stmt.(*ast.FunctionStatement); ok && fn != nil {
 			fn.IsPublic = true
 		}
+	case token.EXTERN:
+		stmt = p.parseExternStatement()
+		if fn, ok := stmt.(*ast.FunctionStatement); ok && fn != nil {
+			fn.IsPublic = true
+		}
 	default:
-		p.ReportError(p.curToken.Position, "expected 'fn', 'type', 'var', or 'export' after 'pub', got %s", p.curToken.Type)
+		p.ReportError(p.curToken.Position, "expected 'fn', 'type', 'var', 'export', or 'extern' after 'pub', got %s", p.curToken.Type)
 		return nil
 	}
 	return stmt

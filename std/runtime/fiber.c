@@ -1,5 +1,7 @@
 #include "runtime.h"
 
+#define NR_FIBER_STACK_SIZE (8 * 1024 * 1024)
+
 // Debugger hook for fiber start
 #ifdef _WIN32
 __declspec(noinline) void __nora_fiber_started(void* parent) {
@@ -668,7 +670,7 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
     spawn_data_t* data = (spawn_data_t*)(info + 1);
     data->fn = fn;
     data->arg = arg;
-    info->handle = CreateFiber(0, (LPFIBER_START_ROUTINE)fiber_wrapper, info);
+    info->handle = CreateFiber(NR_FIBER_STACK_SIZE, (LPFIBER_START_ROUTINE)fiber_wrapper, info);
     int id = worker_id;
     if (id >= 0 && id < num_workers && num_workers > 1) {
         deque_push(&g_local_queues[id], info);
@@ -1577,7 +1579,7 @@ void fiber_wrapper() {
 
 void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char* file, int line) {
     size_t info_size = (sizeof(fiber_info_t) + sizeof(spawn_data_t) + 15) & ~15;
-    fiber_info_t* info = (fiber_info_t*)malloc(info_size + 1024 * 1024);
+    fiber_info_t* info = (fiber_info_t*)malloc(info_size + NR_FIBER_STACK_SIZE);
     if (!info) {
         fprintf(stderr, "FATAL: scheduler_spawn failed to allocate fiber\n");
         exit(1);
@@ -1612,7 +1614,7 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
 
     getcontext(&info->context);
     info->context.uc_stack.ss_sp = info->stack;
-    info->context.uc_stack.ss_size = 1024 * 1024;
+    info->context.uc_stack.ss_size = NR_FIBER_STACK_SIZE;
     info->context.uc_link = NULL;
     makecontext(&info->context, fiber_wrapper, 0);
 

@@ -23,6 +23,16 @@ pub fn IntoRaw[T](val: @T) ptr {
     return val
 }
 
+// BorrowToRaw takes a read-only borrow and returns a raw ptr.
+pub fn BorrowToRaw[T](val: #T) ptr {
+    return val
+}
+
+// MutBorrowToRaw takes a mutable borrow and returns a raw ptr.
+pub fn MutBorrowToRaw[T](val: &T) ptr {
+    return val
+}
+
 // FromRaw takes a raw ptr and reclaims ownership, wrapping it in a managed @T lease.
 pub fn FromRaw[T](p: ptr) @T {
     return p
