@@ -4,6 +4,7 @@ import "bytes"
 
 type StructType struct {
 	TypeName   string
+	PackageName string
 	Fields     map[string]NRType // Resolved field types
 	FieldNames []string          // Keys of Fields map in definition order
 	Methods    map[string]NRType // Resolved method types (FunctionType)

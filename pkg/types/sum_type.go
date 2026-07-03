@@ -2,6 +2,7 @@ package types
 
 type SumType struct {
 	TypeName   string
+	PackageName string
 	TypeParams []*TypeParam // For generics: Option[T]
 	TypeArgs   []NRType
 	BaseType   *SumType

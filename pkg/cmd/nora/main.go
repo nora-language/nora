@@ -382,10 +382,13 @@ func (f *FileLoader) loadManifest(dirPath string) {
 	}
 }
 
-func (f *FileLoader) Load(path string) (*semantic.Scope, error) {
+func (f *FileLoader) Load(path string, basePath string) (*semantic.Scope, error) {
+	isRelative := strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../")
+	originalPath := path
 	path = filepath.Clean(path)
-	// 1. Check Dependencies from nora.yaml
-	if dep, ok := f.Dependencies[path]; ok {
+	
+	// 1. Check Dependencies from nora.yaml (skip for relative paths)
+	if dep, ok := f.Dependencies[path]; ok && !isRelative {
 		actualPath := dep.Path
 		// Verify version and load transitive dependencies
 		libConfigPath := filepath.Join(actualPath, "nora.yaml")
@@ -419,9 +422,7 @@ func (f *FileLoader) Load(path string) (*semantic.Scope, error) {
 			}
 		}
 		path = actualPath
-	} else if !filepath.IsAbs(path) &&
-		!strings.HasPrefix(path, "./") &&
-		!strings.HasPrefix(path, "../") {
+	} else if !filepath.IsAbs(path) && !isRelative {
 		var corePathSuffix = path
 		slashPath := filepath.ToSlash(path)
 		if strings.HasPrefix(slashPath, "core/") {
@@ -451,6 +452,9 @@ func (f *FileLoader) Load(path string) (*semantic.Scope, error) {
 				}
 			}
 		}
+	} else if isRelative && basePath != "" {
+		// Resolve relative import relative to the importer file's directory
+		path = filepath.Join(basePath, originalPath)
 	}
 
 	// Load package manifest if present

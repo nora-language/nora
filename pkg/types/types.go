@@ -63,8 +63,9 @@ func Equals(t1, t2 NRType) bool {
 
 		// A. Nominal Check: If they are named types (e.g. "User"), names MUST match.
 		// "User" != "Account" even if fields are same.
+		// And they MUST be from the same package!
 		if s1.Name() != "" || s2.Name() != "" {
-			return s1.Name() == s2.Name()
+			return s1.Name() == s2.Name() && s1.PackageName == s2.PackageName
 		}
 
 		// B. Structural Check: If both are Anonymous (struct { x: int }), compare fields.
@@ -151,7 +152,7 @@ func Equals(t1, t2 NRType) bool {
 		p1 := t1.(*ProtocolType)
 		p2 := t2.(*ProtocolType)
 		if p1.ProtocolName != "" || p2.ProtocolName != "" {
-			return p1.ProtocolName == p2.ProtocolName
+			return p1.ProtocolName == p2.ProtocolName && p1.PackageName == p2.PackageName
 		}
 		if len(p1.Methods) != len(p2.Methods) {
 			return false
@@ -425,6 +426,7 @@ func (g *GenericType) Size() int      { return 8 }
 
 type ProtocolType struct {
 	ProtocolName string
+	PackageName  string
 	Methods      map[string]*FunctionType
 	TypeParams   []*TypeParam
 	TypeArgs     []NRType

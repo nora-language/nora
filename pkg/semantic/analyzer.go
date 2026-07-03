@@ -152,6 +152,15 @@ func (sa *SemanticAnalyzer) validateConcurrentGlobalMutations() {
 	}
 }
 
+func (sa *SemanticAnalyzer) getPackageFromScope(s *Scope) string {
+	for curr := s; curr != nil; curr = curr.Parent {
+		if curr.Kind == ScopePackage {
+			return curr.PackageName
+		}
+	}
+	return ""
+}
+
 func NewAnalyzer() *SemanticAnalyzer {
 	global := NewScope(nil, ScopeGlobal)
 
@@ -397,7 +406,8 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 			sa.AddError(n.Path.Pos(), "could not load package %q: no package loader configured", pkgPath)
 			return
 		}
-		pkgScope, err := sa.Loader.Load(pkgPath)
+		basePath := filepath.Dir(n.Path.Pos().Filename)
+		pkgScope, err := sa.Loader.Load(pkgPath, basePath)
 		if err != nil {
 			sa.AddError(n.Path.Pos(), "could not load package %q: %v", pkgPath, err)
 			return
@@ -535,7 +545,7 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 				normDir := normalizePath(dir)
 				if !sa.LoadedDirs[normDir] {
 					sa.LoadedDirs[normDir] = true
-					sa.Loader.Load(dir)
+					sa.Loader.Load(dir, "")
 				}
 			}
 			sa.CurrentScope = prevScope
@@ -562,7 +572,7 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 			normDir := normalizePath(dir)
 			if !sa.LoadedDirs[normDir] {
 				sa.LoadedDirs[normDir] = true
-				sa.Loader.Load(dir)
+				sa.Loader.Load(dir, "")
 			}
 		}
 		sa.CurrentScope = prevScope
@@ -756,6 +766,7 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 				return
 			}
 			structType := types.NewStructType(n.Name.Value)
+			structType.PackageName = sa.getPackageFromScope(sa.CurrentScope)
 			if ast.GetAttribute(n.Attributes, "shared") != nil {
 				structType.IsShared = true
 			}
@@ -789,6 +800,7 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 			}
 			protocolType := &types.ProtocolType{
 				ProtocolName: n.Name.Value,
+				PackageName:  sa.getPackageFromScope(sa.CurrentScope),
 				Methods:      make(map[string]*types.FunctionType),
 			}
 			if ast.GetAttribute(n.Attributes, "shared") != nil {
@@ -819,7 +831,8 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 				return
 			}
 			sumType := &types.SumType{
-				TypeName: n.Name.Value,
+				TypeName:    n.Name.Value,
+				PackageName: sa.getPackageFromScope(sa.CurrentScope),
 			}
 			if attr := ast.GetAttribute(n.Attributes, "core_intrinsic"); attr != nil && len(attr.Args) > 0 {
 				sumType.CoreIntrinsic = attr.Args[0]
@@ -4650,8 +4663,9 @@ func (sa *SemanticAnalyzer) specializeSumType(st *types.SumType, argTypes []type
 	}
 
 	specialized := &types.SumType{
-		TypeName:      specialName,
-		Variants:      make(map[string]*types.Variant),
+		TypeName:    specialName,
+		PackageName: sa.getPackageFromScope(sa.CurrentScope),
+		Variants:    make(map[string]*types.Variant),
 		TypeParams:    []*types.TypeParam{},
 		TypeArgs:      argTypes,
 		BaseType:      st,
@@ -4816,6 +4830,7 @@ func (sa *SemanticAnalyzer) specializeStructType(base *types.StructType, argType
 
 	// 4. Create specialized struct
 	specialized := types.NewStructType(specialName)
+	specialized.PackageName = sa.getPackageFromScope(sa.CurrentScope)
 	specialized.TypeParams = []*types.TypeParam{} // No longer generic
 	specialized.TypeArgs = argTypes
 	specialized.BaseType = base
@@ -4970,6 +4985,7 @@ func (sa *SemanticAnalyzer) specializeProtocolType(base *types.ProtocolType, arg
 
 	specialized := &types.ProtocolType{
 		ProtocolName: specialName,
+		PackageName:  sa.getPackageFromScope(sa.CurrentScope),
 		Methods:      make(map[string]*types.FunctionType),
 		TypeParams:   []*types.TypeParam{},
 		TypeArgs:     argTypes,

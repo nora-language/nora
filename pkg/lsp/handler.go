@@ -2687,14 +2687,16 @@ func (f *LSPFileLoader) findOpenDocument(path string) (*Document, bool) {
 	return foundDoc, foundDoc != nil
 }
 
-func (f *LSPFileLoader) Load(importPath string) (*semantic.Scope, error) {
+func (f *LSPFileLoader) Load(importPath string, basePath string) (*semantic.Scope, error) {
 	if importPath == "" || importPath == "." || importPath == "./" {
 		return nil, fmt.Errorf("invalid import path")
 	}
+	isRelative := strings.HasPrefix(importPath, "./") || strings.HasPrefix(importPath, "../")
+	originalPath := importPath
 	importPath = filepath.Clean(importPath)
 
 	// 1. Check Dependencies from nora.yaml
-	if dep, ok := f.Dependencies[importPath]; ok {
+	if dep, ok := f.Dependencies[importPath]; ok && !isRelative {
 		actualPath := dep.Path
 		// Load transitive dependencies
 		libConfigPath := filepath.Join(actualPath, "nora.yaml")
@@ -2715,9 +2717,7 @@ func (f *LSPFileLoader) Load(importPath string) (*semantic.Scope, error) {
 			}
 		}
 		importPath = actualPath
-	} else if !filepath.IsAbs(importPath) &&
-		!strings.HasPrefix(importPath, "./") &&
-		!strings.HasPrefix(importPath, "../") {
+	} else if !filepath.IsAbs(importPath) && !isRelative {
 		// 2. Check if it exists in core/
 		root := filepath.Dir(f.StdDir)
 		coreCandidate := filepath.Join(root, "core", importPath)
@@ -2744,6 +2744,8 @@ func (f *LSPFileLoader) Load(importPath string) (*semantic.Scope, error) {
 				}
 			}
 		}
+	} else if isRelative && basePath != "" {
+		importPath = filepath.Join(basePath, originalPath)
 	}
 
 	// Determine full path
