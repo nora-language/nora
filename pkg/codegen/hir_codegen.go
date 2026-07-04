@@ -928,7 +928,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				}
 			}
 
-			fmt.Printf("[DEBUG] Calling packCallArguments for %s, isExtern=%v\n", name, isExtern); argsStr = append(argsStr, g.packCallArguments(i.Args, ft, isExtern)...)
+			argsStr = append(argsStr, g.packCallArguments(i.Args, ft, isExtern)...)
 			callStr = fmt.Sprintf("%s(%s)", name, strings.Join(argsStr, ", "))
 		}
 
