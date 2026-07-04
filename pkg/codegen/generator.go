@@ -456,6 +456,9 @@ func (g *Generator) collectDefinitions() {
 				}
 				mangled := g.mangleName(sym)
 				if st, ok := t.(*types.StructType); ok {
+					if _, isStruct := s.Value.(*ast.StructLiteral); !isStruct {
+						continue
+					}
 					if len(st.TypeParams) > 0 {
 						continue
 					}
@@ -465,6 +468,9 @@ func (g *Generator) collectDefinitions() {
 					}
 					g.getEqMethod(st)
 				} else if sum, ok := t.(*types.SumType); ok {
+					if _, isSum := s.Value.(*ast.SumTypeLiteral); !isSum {
+						continue
+					}
 					if len(sum.TypeParams) > 0 {
 						continue
 					}
@@ -473,6 +479,9 @@ func (g *Generator) collectDefinitions() {
 						g.requestAutoDrop(sum)
 					}
 				} else if proto, ok := t.(*types.ProtocolType); ok {
+					if _, isIface := s.Value.(*ast.InterfaceLiteral); !isIface {
+						continue
+					}
 					g.Protocols[mangled] = proto
 				}
 			case *ast.VarStatement:

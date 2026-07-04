@@ -1,6 +1,6 @@
 # Investigation Report: Package Type Aliasing Bug
 
-**Status**: Open
+**Status**: Closed
 **Date**: 2026-07-03
 **Component**: `pkg/semantic` (Type Resolution)
 

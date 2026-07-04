@@ -1,3 +1,5 @@
+package main
+
 pub type Vector3[T] = struct { x: T, y: T, z: T } 
 
 pub fn (v: #Vector3[T]) Normalize[T]() @Vector3[T] { 

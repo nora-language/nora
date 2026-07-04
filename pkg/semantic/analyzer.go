@@ -857,6 +857,24 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 					sym.Visible = Public
 				}
 			}
+		} else {
+			if n.Name.Value == "" {
+				return
+			}
+			sym, err := sa.CurrentScope.Define(n.Name.Value, types.Void, SymType, n)
+			if err != nil {
+				if existing, ok := sa.CurrentScope.Symbols[n.Name.Value]; ok && existing.DefNode == n {
+					sym = existing
+				} else {
+					sa.AddError(n.Name.Pos(), "%s", err.Error())
+				}
+			}
+			if sym != nil {
+				sa.SemanticInfo.Defs[n.Name] = sym
+				if n.IsPublic {
+					sym.Visible = Public
+				}
+			}
 		}
 	case *ast.VarStatement:
 		if sa.CurrentScope.Kind == ScopePackage {
@@ -1844,8 +1862,28 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			}
 			sym.Type = sumType
 		} else {
-			sa.AddError(n.Value.Pos(), "expected struct, interface, or enum definition")
-			return
+			if len(n.TypeParameters) > 0 {
+				sa.CurrentScope = NewScope(sa.CurrentScope, ScopeBlock)
+				for _, tp := range n.TypeParameters {
+					tSym, _ := sa.CurrentScope.Define(tp.Name.Value, &types.GenericType{TypeParam: tp.Name.Value, Constraint: nil}, SymType, tp)
+					sa.SemanticInfo.Defs[tp.Name] = tSym
+				}
+			}
+
+			if tn, ok := n.Value.(ast.TypeNode); ok {
+				resolvedType := sa.resolveTypeNode(tn)
+				sym.Type = resolvedType
+			} else {
+				sa.AddError(n.Value.Pos(), "expected struct, interface, enum definition, or type alias")
+				if len(n.TypeParameters) > 0 {
+					sa.CurrentScope = sa.CurrentScope.Parent
+				}
+				return
+			}
+
+			if len(n.TypeParameters) > 0 {
+				sa.CurrentScope = sa.CurrentScope.Parent
+			}
 		}
 
 	// --- TOP LEVEL ---
@@ -4410,6 +4448,31 @@ func (sa *SemanticAnalyzer) resolveTypeNode(n ast.TypeNode) types.NRType {
 				res := &types.PointerType{Base: baseType, IsArray: true}
 				sa.SemanticInfo.Types[n] = res
 				return res
+			}
+		}
+
+		// Handle generic type aliases
+		var aliasSym *Symbol
+		if ident, ok := t.Left.(*ast.Identifier); ok {
+			aliasSym = sa.SemanticInfo.Uses[ident]
+		}
+		if aliasSym != nil && aliasSym.DefNode != nil {
+			if ts, isTs := aliasSym.DefNode.(*ast.TypeStatement); isTs && len(ts.TypeParameters) > 0 {
+				if _, isStruct := ts.Value.(*ast.StructLiteral); !isStruct {
+					if _, isSum := ts.Value.(*ast.SumTypeLiteral); !isSum {
+						if _, isIface := ts.Value.(*ast.InterfaceLiteral); !isIface {
+							subs := make(map[string]types.NRType)
+							for i, tp := range ts.TypeParameters {
+								if i < len(argTypes) {
+									subs[tp.Name.Value] = argTypes[i]
+								}
+							}
+							specialized := sa.substituteType(baseType, subs)
+							sa.SemanticInfo.Types[n] = specialized
+							return specialized
+						}
+					}
+				}
 			}
 		}
 

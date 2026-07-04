@@ -15,7 +15,7 @@ type VisibilityMockLoader struct {
 	Files map[string]string
 }
 
-func (m *VisibilityMockLoader) Load(path string) (*Scope, error) {
+func (m *VisibilityMockLoader) Load(path string, version string) (*Scope, error) {
 	if input, ok := m.Files[path]; ok {
 		l := lexer.New(input, path+".nr")
 		p := parser.New(l)

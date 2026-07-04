@@ -15,7 +15,7 @@ import (
 // Simulates finding "io" on disk
 type MockPackageLoader struct{}
 
-func (m *MockPackageLoader) Load(path string) (*Scope, error) {
+func (m *MockPackageLoader) Load(path string, version string) (*Scope, error) {
 	if path == "io" {
 		scope := NewScope(nil, ScopePackage)
 
