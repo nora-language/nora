@@ -41,7 +41,7 @@ func (g *Generator) emitExternPrototypes(file *ast.File) {
 					continue
 				}
 				lease := types.LeaseRead
-				params += g.cParamType(g.SemanticInfo.Types[p.Type], lease)
+				params += g.cParamType(g.SemanticInfo.Types[p.Type], lease, true)
 				if p.Name != nil {
 					params += " " + p.Name.Value
 				}
@@ -84,7 +84,7 @@ func (g *Generator) emitPrototypes() {
 		}
 
 		if fn.Receiver != nil {
-			t := g.cParamType(ft.Receiver, ft.ReceiverLease)
+			t := g.cParamType(ft.Receiver, ft.ReceiverLease, fn.IsExtern || fn.IsExport)
 			if params != "" {
 				params += ", "
 			}
@@ -98,7 +98,7 @@ func (g *Generator) emitPrototypes() {
 			if i < len(ft.ParamLeases) {
 				lease = ft.ParamLeases[i]
 			}
-			t := g.cParamType(p, lease)
+			t := g.cParamType(p, lease, fn.IsExtern || fn.IsExport)
 			params += t
 			if i < len(fn.Parameters) && fn.Parameters[i].Name != nil {
 				params += " " + fn.Parameters[i].Name.Value
@@ -136,7 +136,7 @@ func (g *Generator) emitPrototypes() {
 					if i < len(ft.ParamLeases) {
 						lease = ft.ParamLeases[i]
 					}
-					t := g.cParamType(p, lease)
+					t := g.cParamType(p, lease, false)
 					params += t
 					if i < len(lambdaParams) && lambdaParams[i].Name != nil {
 						params += " " + lambdaParams[i].Name.Value

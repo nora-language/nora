@@ -1,0 +1,9 @@
+﻿name: ffi_struct_by_value
+version: 1.0.0
+language: 0.1.0
+entry: main.nr
+output: ffi_struct_by_value_bin
+dependencies:
+native:
+  compiler: clang
+  source_files: ["test_extern.c"]

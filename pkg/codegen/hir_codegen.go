@@ -74,7 +74,7 @@ func (g *Generator) genHIRFunction(hf *hir.Function) {
 	}
 
 	if hasFn && fn.Receiver != nil {
-		t := g.cParamType(ft.Receiver, ft.ReceiverLease)
+		t := g.cParamType(ft.Receiver, ft.ReceiverLease, false)
 		if params != "" {
 			params += ", "
 		}
@@ -94,7 +94,7 @@ func (g *Generator) genHIRFunction(hf *hir.Function) {
 		if i < len(ft.ParamLeases) {
 			lease = ft.ParamLeases[i]
 		}
-		t := g.cParamType(p, lease)
+		t := g.cParamType(p, lease, false)
 		params += t
 		if hasFn && i < len(fn.Parameters) && fn.Parameters[i].Name != nil {
 			params += " " + fn.Parameters[i].Name.Value
@@ -387,12 +387,12 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 								oldBuf := g.buf
 								var argBuf1 bytes.Buffer
 								g.buf = &argBuf1
-								g.emitArgument(idx.Left, st, mt.ReceiverLease)
+								g.emitArgument(idx.Left, st, mt.ReceiverLease, false)
 								g.buf = oldBuf
 
 								var argBuf2 bytes.Buffer
 								g.buf = &argBuf2
-								g.emitArgument(idx.Indices[0], mt.Params[0], mt.ParamLeases[0])
+								g.emitArgument(idx.Indices[0], mt.Params[0], mt.ParamLeases[0], false)
 								g.buf = oldBuf
 
 								g.emit(fmt.Sprintf("%s, %s)) = %s;", argBuf1.String(), argBuf2.String(), valStr))
@@ -502,12 +502,12 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 								oldBuf := g.buf
 								var argBuf1 bytes.Buffer
 								g.buf = &argBuf1
-								g.emitArgument(idx.Left, st, mt.ReceiverLease)
+								g.emitArgument(idx.Left, st, mt.ReceiverLease, false)
 								g.buf = oldBuf
 
 								var argBuf2 bytes.Buffer
 								g.buf = &argBuf2
-								g.emitArgument(idx.Indices[0], mt.Params[0], mt.ParamLeases[0])
+								g.emitArgument(idx.Indices[0], mt.Params[0], mt.ParamLeases[0], false)
 								g.buf = oldBuf
 
 								g.emit(fmt.Sprintf("%s, %s)) = %s;", argBuf1.String(), argBuf2.String(), valStr))
@@ -863,7 +863,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 			if ft != nil && isVariableCall {
 				var argsStr []string
 				argsStr = append(argsStr, "_c.env")
-				argsStr = append(argsStr, g.packCallArguments(i.Args, ft)...)
+				argsStr = append(argsStr, g.packCallArguments(i.Args, ft, false)...)
 				callStr = fmt.Sprintf("({ nr_closure_t _c = %s; ((%s)_c.fn_ptr)(%s); })",
 					g.exprToString(i.ASTNode.Function),
 					g.getCFunctionPointerType(ft),
@@ -928,7 +928,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				}
 			}
 
-			argsStr = append(argsStr, g.packCallArguments(i.Args, ft)...)
+			fmt.Printf("[DEBUG] Calling packCallArguments for %s, isExtern=%v\n", name, isExtern); argsStr = append(argsStr, g.packCallArguments(i.Args, ft, isExtern)...)
 			callStr = fmt.Sprintf("%s(%s)", name, strings.Join(argsStr, ", "))
 		}
 
@@ -1149,7 +1149,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				}
 			}
 			argStr := g.hirOperandStr(arg)
-			argStr = g.alignCallArgument(arg, paramType, lease, argStr)
+			argStr = g.alignCallArgument(arg, paramType, lease, argStr, false)
 			argsStr = append(argsStr, argStr)
 		}
 		callStr := fmt.Sprintf("(((%s)%s.vtable[%d])(%s))",
@@ -1258,7 +1258,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 					if idx < len(ft.ParamLeases) {
 						lease = ft.ParamLeases[idx]
 					}
-					paramCType = g.cParamType(ft.Params[idx], lease)
+					paramCType = g.cParamType(ft.Params[idx], lease, false)
 				}
 				memberCType := g.cType(unwrapped)
 				if strings.HasSuffix(paramCType, "*") && !strings.HasSuffix(memberCType, "*") {
@@ -1389,7 +1389,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 
 				if rhs == name {
 					if cap.Kind == semantic.SymParam {
-						if g.shouldPassByPointer(cap.Type, cap.LeaseKind) && !g.isPointerTypeInC(cap.Type) {
+						if g.shouldPassByPointer(cap.Type, cap.LeaseKind, false) && !g.isPointerTypeInC(cap.Type) {
 							rhs = "*" + rhs
 						}
 					}
@@ -1524,11 +1524,11 @@ func (g *Generator) cTypeOfOperand(op hir.Operand) string {
 	}
 	if varOp, ok := op.(*hir.VarOperand); ok {
 		if sym := g.findCurrentParamSymbol(varOp.Name); sym != nil {
-			return g.cParamType(sym.Type, sym.LeaseKind)
+			return g.cParamType(sym.Type, sym.LeaseKind, false)
 		}
 		if varOp.Symbol != nil {
 			if varOp.Symbol.Kind == semantic.SymParam {
-				return g.cParamType(varOp.Symbol.Type, varOp.Symbol.LeaseKind)
+				return g.cParamType(varOp.Symbol.Type, varOp.Symbol.LeaseKind, false)
 			}
 			return g.cType(t)
 		}
@@ -1536,15 +1536,15 @@ func (g *Generator) cTypeOfOperand(op hir.Operand) string {
 	return g.cType(t)
 }
 
-func (g *Generator) alignCallArgument(arg hir.Operand, paramType types.NRType, lease types.LeaseKind, argStr string) string {
+func (g *Generator) alignCallArgument(arg hir.Operand, paramType types.NRType, lease types.LeaseKind, argStr string, isExtern bool) string {
 	passByPointer := false
-	if paramType != nil && g.shouldPassByPointer(types.UnwrapLease(paramType), lease) {
+	if paramType != nil && g.shouldPassByPointer(types.UnwrapLease(paramType), lease, isExtern) {
 		passByPointer = true
 	}
 
 	targetCType := "void*"
 	if paramType != nil {
-		targetCType = g.cParamType(paramType, lease)
+		targetCType = g.cParamType(paramType, lease, isExtern)
 	}
 	operandCType := g.cTypeOfOperand(arg)
 	targetStars := 0
@@ -1578,7 +1578,7 @@ func (g *Generator) alignCallArgument(arg hir.Operand, paramType types.NRType, l
 	return argStr
 }
 
-func (g *Generator) packCallArguments(args []hir.Operand, ft *types.FunctionType) []string {
+func (g *Generator) packCallArguments(args []hir.Operand, ft *types.FunctionType, isExtern bool) []string {
 	var argsStr []string
 	for idx, arg := range args {
 		var paramType types.NRType
@@ -1624,7 +1624,7 @@ func (g *Generator) packCallArguments(args []hir.Operand, ft *types.FunctionType
 		argStr := g.hirOperandStr(arg)
 		g.NoTempWrap = oldNoTemp
 
-		argStr = g.alignCallArgument(arg, paramType, lease, argStr)
+		argStr = g.alignCallArgument(arg, paramType, lease, argStr, isExtern)
 		argsStr = append(argsStr, argStr)
 	}
 	return argsStr

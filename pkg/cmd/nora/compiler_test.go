@@ -219,7 +219,16 @@ func TestCompilerWithTestFolder(t *testing.T) {
 				testDir := filepath.Dir(inputFile)
 				localCFiles, _ := filepath.Glob(filepath.Join(testDir, "*.c"))
 				for _, cFile := range localCFiles {
-					args = append(args, cFile)
+					alreadyAdded := false
+					for _, existing := range args {
+						if existing == cFile || strings.HasSuffix(existing, cFile) || strings.HasSuffix(cFile, existing) {
+							alreadyAdded = true
+							break
+						}
+					}
+					if !alreadyAdded {
+						args = append(args, cFile)
+					}
 				}
 
 				if gen.DebugMemory {

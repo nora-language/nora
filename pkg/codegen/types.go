@@ -27,7 +27,7 @@ func (g *Generator) cType(t types.NRType) string {
 		res = g.mangledTypeName(t)
 	case *types.PointerType:
 		if t.Leased && !t.IsArray {
-			if !g.shouldPassByPointer(t.Base, t.Kind) {
+			if !g.shouldPassByPointer(t.Base, t.Kind, false) {
 				return g.cType(t.Base)
 			}
 		}
@@ -42,14 +42,14 @@ func (g *Generator) cType(t types.NRType) string {
 	return res
 }
 
-func (g *Generator) cParamType(t types.NRType, l types.LeaseKind) string {
+func (g *Generator) cParamType(t types.NRType, l types.LeaseKind, isExtern bool) string {
 	if l == types.LeaseRead || l == types.LeaseWrite {
 		if pt, ok := t.(*types.PointerType); ok && pt.Leased && !pt.IsArray && (pt.Kind == types.LeaseRead || pt.Kind == types.LeaseWrite || pt.Kind == types.LeaseMove) {
 			t = pt.Base
 		}
 	}
 	ct := g.cType(t)
-	if g.shouldPassByPointer(t, l) {
+	if g.shouldPassByPointer(t, l, isExtern) {
 		return ct + "*"
 	}
 	return ct
@@ -151,7 +151,7 @@ func (g *Generator) isPointerInC(e ast.Expression) bool {
 	}
 
 	if pt, ok := t.(*types.PointerType); ok && pt.Leased && !pt.IsArray {
-		if !g.isPointerTypeInC(pt.Base) && !g.shouldPassByPointer(pt.Base, pt.Kind) {
+		if !g.isPointerTypeInC(pt.Base) && !g.shouldPassByPointer(pt.Base, pt.Kind, false) {
 			return false
 		}
 		return true
@@ -260,7 +260,7 @@ func (g *Generator) shouldDereferenceInC(e ast.Expression) bool {
 			return false
 		}
 		// Only dereference if it's NOT actually passed by pointer in C (like LeaseRead primitives)
-		if !g.shouldPassByPointer(pt.Base, pt.Kind) {
+		if !g.shouldPassByPointer(pt.Base, pt.Kind, false) {
 			// [NEW] If the base type is already a pointer in C (List, Map, Chan, str),
 			// we MUST NOT dereference it even if it's a lease.
 			if g.isPointerTypeInC(pt.Base) {
@@ -301,7 +301,7 @@ func (g *Generator) isPointerTypeInC(t types.NRType) bool {
 	}
 	if pt, ok := t.(*types.PointerType); ok {
 		if pt.Leased && !pt.IsArray {
-			return g.shouldPassByPointer(pt.Base, pt.Kind) || g.isPointerTypeInC(pt.Base)
+			return g.shouldPassByPointer(pt.Base, pt.Kind, false) || g.isPointerTypeInC(pt.Base)
 		}
 		return true
 	}
@@ -326,8 +326,11 @@ func (g *Generator) isPointerTypeInC(t types.NRType) bool {
 	return false
 }
 
-func (g *Generator) shouldPassByPointer(t types.NRType, l types.LeaseKind) bool {
+func (g *Generator) shouldPassByPointer(t types.NRType, l types.LeaseKind, isExtern bool) bool {
 	if t == nil {
+		return false
+	}
+	if isExtern {
 		return false
 	}
 	if l == types.LeaseWrite {
@@ -360,7 +363,7 @@ func (g *Generator) getCFunctionPointerType(ft *types.FunctionType) string {
 		if i < len(ft.ParamLeases) {
 			lease = ft.ParamLeases[i]
 		}
-		out.WriteString(g.cParamType(p, lease))
+		out.WriteString(g.cParamType(p, lease, false))
 	}
 	if ft.IsVariadic {
 		if len(ft.Params) > 0 {
@@ -420,7 +423,7 @@ func (g *Generator) isSymbolPointerInC(sym *semantic.Symbol) bool {
 	if g.isPointerTypeInC(sym.Type) {
 		return true
 	}
-	if sym.Kind == semantic.SymParam && g.shouldPassByPointer(sym.Type, sym.LeaseKind) {
+	if sym.Kind == semantic.SymParam && g.shouldPassByPointer(sym.Type, sym.LeaseKind, false) {
 		return true
 	}
 	return false

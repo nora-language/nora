@@ -381,9 +381,9 @@ func (g *Generator) genInfixExpression(e *ast.InfixExpression) {
 						}
 						g.buf.WriteString(g.mangledTypeName(isStruct) + "_" + methodName + "(")
 						g.buf.WriteString("NULL, ")
-						g.emitArgument(e.Left, isStruct, mt.ReceiverLease)
+						g.emitArgument(e.Left, isStruct, mt.ReceiverLease, false)
 						g.buf.WriteString(", ")
-						g.emitArgument(e.Right, mt.Params[0], mt.ParamLeases[0])
+						g.emitArgument(e.Right, mt.Params[0], mt.ParamLeases[0], false)
 						g.buf.WriteString(")")
 
 						if methodName == "cmp" {
@@ -479,12 +479,12 @@ func (g *Generator) genPrefixExpression(e *ast.PrefixExpression) {
 				// We need to pass it by address if the method takes a lease
 				if methodType, exists := st.Methods[methodName]; exists {
 					if mt, ok := methodType.(*types.FunctionType); ok {
-						g.emitArgument(e.Right, st, mt.ReceiverLease)
+						g.emitArgument(e.Right, st, mt.ReceiverLease, false)
 					} else {
-						g.emitArgument(e.Right, st, types.LeaseRead)
+						g.emitArgument(e.Right, st, types.LeaseRead, false)
 					}
 				} else {
-					g.emitArgument(e.Right, st, types.LeaseRead)
+					g.emitArgument(e.Right, st, types.LeaseRead, false)
 				}
 				g.buf.WriteString(")")
 				return
@@ -603,7 +603,7 @@ func (g *Generator) genPrefixExpression(e *ast.PrefixExpression) {
 		cTypeRight := g.cType(t)
 		if id, ok := e.Right.(*ast.Identifier); ok {
 			if sym := g.SemanticInfo.Uses[id]; sym != nil && sym.Kind == semantic.SymParam {
-				cTypeRight = g.cParamType(sym.Type, sym.LeaseKind)
+				cTypeRight = g.cParamType(sym.Type, sym.LeaseKind, false)
 			}
 		}
 
@@ -839,7 +839,7 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 
 		if isMethod && receiver != nil {
 			g.buf.WriteString("NULL, ")
-			g.emitArgument(receiver, ft.Receiver, ft.ReceiverLease)
+			g.emitArgument(receiver, ft.Receiver, ft.ReceiverLease, false)
 			for i, arg := range e.Arguments {
 				g.buf.WriteString(", ")
 				var targetType types.NRType
@@ -850,7 +850,7 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 				if i < len(ft.ParamLeases) {
 					lease = ft.ParamLeases[i]
 				}
-				g.emitArgument(arg.Value, targetType, lease)
+				g.emitArgument(arg.Value, targetType, lease, false)
 			}
 		} else {
 			g.buf.WriteString("NULL")
@@ -871,7 +871,7 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 						lease = ft.ParamLeases[i]
 					}
 				}
-				g.emitArgument(arg.Value, targetType, lease)
+				g.emitArgument(arg.Value, targetType, lease, false)
 			}
 		}
 		g.buf.WriteString(")")
@@ -991,7 +991,7 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 					oldBuf := g.buf
 					var tempBuf bytes.Buffer
 					g.buf = &tempBuf
-					g.emitArgument(itemExpr, itemType, types.LeaseMove)
+					g.emitArgument(itemExpr, itemType, types.LeaseMove, false)
 					argStr := tempBuf.String()
 					g.buf = oldBuf
 
@@ -1094,7 +1094,7 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 			receiverType = ft.Receiver
 			lease = ft.ReceiverLease
 		}
-		g.emitArgument(receiver, receiverType, lease)
+		g.emitArgument(receiver, receiverType, lease, false)
 
 		for i, arg := range e.Arguments {
 			g.buf.WriteString(", ")
@@ -1108,7 +1108,7 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 					argLease = ft.ParamLeases[i]
 				}
 			}
-			g.emitArgument(arg.Value, targetType, argLease)
+			g.emitArgument(arg.Value, targetType, argLease, false)
 		}
 		g.buf.WriteString(")")
 		return
@@ -1165,6 +1165,7 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 		}
 	}
 
+	g.buf.WriteString(fmt.Sprintf("/* [CALL isExtern=%v] */", isExtern))
 	if ft != nil && isVariableCall {
 		g.buf.WriteString("({ nr_closure_t _c = ")
 		g.genExpression(e.Function)
@@ -1200,10 +1201,10 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 				lease = ft.ParamLeases[i]
 			}
 			if isVariableCall && targetType != nil {
-				g.buf.WriteString(fmt.Sprintf("(%s)", g.cParamType(targetType, lease)))
+				g.buf.WriteString(fmt.Sprintf("(%s)", g.cParamType(targetType, lease, false)))
 			}
 		}
-		g.emitArgument(arg.Value, targetType, lease)
+		g.emitArgument(arg.Value, targetType, lease, isExtern)
 	}
 	if ft != nil && isVariableCall {
 		g.buf.WriteString("); })")
@@ -1259,7 +1260,7 @@ func (g *Generator) genLambdaExpression(e *ast.LambdaExpression) {
 
 			if rhs == name {
 				if cap.Kind == semantic.SymParam {
-					if g.shouldPassByPointer(cap.Type, cap.LeaseKind) && !g.isPointerTypeInC(cap.Type) {
+					if g.shouldPassByPointer(cap.Type, cap.LeaseKind, false) && !g.isPointerTypeInC(cap.Type) {
 						rhs = "*" + rhs
 					}
 				}
@@ -1316,9 +1317,9 @@ func (g *Generator) genAddressOf(expr ast.Expression, targetType types.NRType, l
 		g.buf.WriteString(" }")
 	}
 }
-func (g *Generator) emitArgument(expr ast.Expression, targetType types.NRType, lease types.LeaseKind) {
+func (g *Generator) emitArgument(expr ast.Expression, targetType types.NRType, lease types.LeaseKind, isExtern bool) {
 	if proto, ok := targetType.(*types.ProtocolType); ok {
-		if g.shouldPassByPointer(targetType, lease) {
+		if g.shouldPassByPointer(targetType, lease, isExtern) {
 			isLVal := false
 			if g.Solver == nil || !g.Solver.Moves[expr] {
 				switch expr.(type) {
@@ -1365,10 +1366,13 @@ func (g *Generator) emitArgument(expr ast.Expression, targetType types.NRType, l
 	}
 
 	if (lease == types.LeaseRead || lease == types.LeaseWrite || lease == types.LeaseMove) && targetType != nil && argType != nil {
-		targetCType := g.cParamType(targetType, lease)
+		targetCType := g.cParamType(targetType, lease, isExtern)
 		argCType := g.cType(argType)
 		targetLevel := strings.Count(targetCType, "*")
 		argLevel := strings.Count(argCType, "*")
+		if isExtern {
+			g.buf.WriteString(fmt.Sprintf("/* [DEBUG isExtern=true, targetCType=%s, argCType=%s, targetStars=%d, argStars=%d] */", targetCType, argCType, targetLevel, argLevel))
+		}
 		if argLevel > targetLevel {
 			shouldDeref := true
 			if targetType != nil {
@@ -1391,7 +1395,7 @@ func (g *Generator) emitArgument(expr ast.Expression, targetType types.NRType, l
 				isAlreadyPointerPointer = true
 			} else if ident, ok := expr.(*ast.Identifier); ok {
 				if sym := g.SemanticInfo.Uses[ident]; sym != nil {
-					if sym.Kind == semantic.SymParam && g.shouldPassByPointer(sym.Type, sym.LeaseKind) {
+					if sym.Kind == semantic.SymParam && g.shouldPassByPointer(sym.Type, sym.LeaseKind, false) {
 						isAlreadyPointerPointer = true
 					}
 				}
@@ -1403,7 +1407,7 @@ func (g *Generator) emitArgument(expr ast.Expression, targetType types.NRType, l
 		}
 	}
 
-	if g.shouldPassByPointer(argType, lease) {
+	if g.shouldPassByPointer(argType, lease, isExtern) {
 		isPointer := g.isPointerInC(expr)
 		if isPointer && lease == types.LeaseMove && (argType.GetKind() == types.KindStruct || argType.GetKind() == types.KindSum) {
 			isPointer = false
@@ -1567,9 +1571,9 @@ func (g *Generator) genIndexExpression(e *ast.IndexExpression) {
 			if methodType, exists := st.Methods["index"]; exists {
 				if mt, ok := methodType.(*types.FunctionType); ok && len(mt.Params) == 1 {
 					g.buf.WriteString(g.mangledTypeName(st) + "_index(NULL, ")
-					g.emitArgument(e.Left, st, mt.ReceiverLease)
+					g.emitArgument(e.Left, st, mt.ReceiverLease, false)
 					g.buf.WriteString(", ")
-					g.emitArgument(e.Indices[0], mt.Params[0], mt.ParamLeases[0])
+					g.emitArgument(e.Indices[0], mt.Params[0], mt.ParamLeases[0], false)
 					g.buf.WriteString(")")
 					return
 				}
@@ -1999,7 +2003,7 @@ func (g *Generator) genSpawnExpression(e *ast.SpawnExpression) {
 					erasedParam = types.Ptr
 				}
 			}
-			paramCType = g.cParamType(erasedParam, lease)
+			paramCType = g.cParamType(erasedParam, lease, false)
 		}
 		memberCType := g.cType(unwrapped)
 		if strings.HasSuffix(paramCType, "*") && !strings.HasSuffix(memberCType, "*") {
@@ -2767,7 +2771,7 @@ func (g *Generator) genInterfaceCall(e *ast.CallExpression, sel *ast.SelectorExp
 				lease = mType.ParamLeases[i]
 			}
 		}
-		g.emitArgument(arg.Value, targetType, lease)
+		g.emitArgument(arg.Value, targetType, lease, false)
 	}
 	g.buf.WriteString(")")
 }

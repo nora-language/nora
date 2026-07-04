@@ -953,11 +953,17 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 			}
 		}
 		isMacro := false
-		if funcSym != nil && funcSym.DefNode != nil {
+		isExtern := false
+		if funcSym != nil {
 			if fnStmt, ok := funcSym.DefNode.(*ast.FunctionStatement); ok {
+				if fnStmt.IsExtern {
+					isExtern = true
+				}
 				if ast.GetAttribute(fnStmt.Attributes, "macro") != nil {
 					isMacro = true
 				}
+			} else if _, ok := funcSym.DefNode.(*ast.ExternStatement); ok {
+				isExtern = true
 			}
 		}
 
@@ -1008,7 +1014,7 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 								baseType = pt.Base
 								lease = pt.Kind
 							}
-							if l.shouldPassByPointer(baseType, lease) {
+							if l.shouldPassByPointer(baseType, lease, false) {
 								if !types.IsPointerLike(argType) {
 									var ptrType types.NRType
 									if _, ok := paramType.(*types.PointerType); ok {
@@ -1066,7 +1072,7 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 						baseType = pt.Base
 						lease = pt.Kind
 					}
-					if l.shouldPassByPointer(baseType, lease) {
+					if l.shouldPassByPointer(baseType, lease, isExtern) {
 						if !types.IsPointerLike(recType) {
 							var ptrType types.NRType
 							if _, ok := paramType.(*types.PointerType); ok {
@@ -1099,7 +1105,7 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 							if paramIdx < len(funcType.ParamLeases) {
 								lease = funcType.ParamLeases[paramIdx]
 							}
-							if l.shouldPassByPointer(proto, lease) {
+							if l.shouldPassByPointer(proto, lease, isExtern) {
 								if !types.IsPointerLike(argType) {
 									ptrType := &types.PointerType{Base: proto, Leased: true, Kind: lease}
 									borrowAddr := &AddressOf{Val: argOp, Type: ptrType}
@@ -1116,7 +1122,7 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 								baseType = pt.Base
 								lease = pt.Kind
 							}
-							if l.shouldPassByPointer(baseType, lease) {
+							if l.shouldPassByPointer(baseType, lease, isExtern) {
 								if !types.IsPointerLike(argType) {
 									var ptrType types.NRType
 									if _, ok := paramType.(*types.PointerType); ok {
@@ -1457,8 +1463,11 @@ func (l *Lowerer) lowerStatementsWithDrops(block *ast.BlockStatement, tempOp Ope
 	return hirBlock
 }
 
-func (l *Lowerer) shouldPassByPointer(t types.NRType, lease types.LeaseKind) bool {
+func (l *Lowerer) shouldPassByPointer(t types.NRType, lease types.LeaseKind, isExtern bool) bool {
 	if t == nil {
+		return false
+	}
+	if isExtern {
 		return false
 	}
 	if lease == types.LeaseWrite {

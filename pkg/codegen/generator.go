@@ -909,7 +909,7 @@ func (g *Generator) genFunction(sym *semantic.Symbol, fn *ast.FunctionStatement)
 	}
 
 	if fn.Receiver != nil {
-		t := g.cParamType(ft.Receiver, ft.ReceiverLease)
+		t := g.cParamType(ft.Receiver, ft.ReceiverLease, false)
 		if params != "" {
 			params += ", "
 		}
@@ -923,7 +923,7 @@ func (g *Generator) genFunction(sym *semantic.Symbol, fn *ast.FunctionStatement)
 		if i < len(ft.ParamLeases) {
 			lease = ft.ParamLeases[i]
 		}
-		t := g.cParamType(p, lease)
+		t := g.cParamType(p, lease, false)
 		params += t
 		if i < len(fn.Parameters) && fn.Parameters[i].Name != nil {
 			params += " " + fn.Parameters[i].Name.Value
@@ -2014,7 +2014,7 @@ func (g *Generator) generateLambdaFunction(e *ast.LambdaExpression) string {
 		if i < len(ft.ParamLeases) {
 			lease = ft.ParamLeases[i]
 		}
-		fnDef.WriteString(g.cParamType(p, lease))
+		fnDef.WriteString(g.cParamType(p, lease, false))
 		if i < len(e.Parameters) && e.Parameters[i].Name != nil {
 			fnDef.WriteString(" ")
 			fnDef.WriteString(e.Parameters[i].Name.Value)
