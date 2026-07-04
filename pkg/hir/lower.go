@@ -1467,11 +1467,11 @@ func (l *Lowerer) shouldPassByPointer(t types.NRType, lease types.LeaseKind, isE
 	if t == nil {
 		return false
 	}
-	if isExtern {
-		return false
-	}
 	if lease == types.LeaseWrite {
 		return true
+	}
+	if isExtern && lease != types.LeaseRead {
+		return false
 	}
 	// Check if it's already a pointer in C
 	if pt, ok := t.(*types.PointerType); ok && !pt.Leased {

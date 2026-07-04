@@ -78,7 +78,7 @@ fn main() {
 
         // Bind client UDP socket on port 8092
         io.PrintLn("  [Client] Binding UDP client on port 8092...")
-        match net.BindUDP(8092) {
+        match net.BindUDP(0) {
             Ok(client) => {
                 // Send message to server
                 var msg = "Hello Nora UDP Sockets!"

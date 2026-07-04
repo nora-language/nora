@@ -330,11 +330,11 @@ func (g *Generator) shouldPassByPointer(t types.NRType, l types.LeaseKind, isExt
 	if t == nil {
 		return false
 	}
-	if isExtern {
-		return false
-	}
 	if l == types.LeaseWrite {
 		return true
+	}
+	if isExtern && l != types.LeaseRead {
+		return false
 	}
 	if g.isPointerTypeInC(t) {
 		return false
