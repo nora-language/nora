@@ -872,6 +872,34 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 		}
 
 		if callStr == "" {
+			if i.FuncSymbol != nil {
+				if fnStmt, ok := i.FuncSymbol.DefNode.(*ast.FunctionStatement); ok {
+					attr := ast.GetAttribute(fnStmt.Attributes, "intrinsic")
+					if attr != nil && len(attr.Args) > 0 {
+						intrinsicName := attr.Args[0]
+						if intrinsicName == "borrow_to_raw" || intrinsicName == "mut_borrow_to_raw" {
+							if len(i.Args) == 1 {
+								arg := i.Args[0]
+								argStr := g.hirOperandStr(arg)
+								argType := arg.GetType()
+								if argType != nil {
+									unwrapped := types.UnwrapLease(argType)
+									lease := types.LeaseRead
+									if pt, ok := argType.(*types.PointerType); ok && pt.Leased {
+										lease = pt.Kind
+									}
+									if g.shouldPassByPointer(unwrapped, lease, false) {
+										return fmt.Sprintf("((void*)(%s))", argStr)
+									} else {
+										return fmt.Sprintf("((void*)(&(%s)))", argStr)
+									}
+								}
+								return fmt.Sprintf("((void*)(%s))", argStr)
+							}
+						}
+					}
+				}
+			}
 			var argsStr []string
 			isExtern := false
 			if i.FuncSymbol != nil {

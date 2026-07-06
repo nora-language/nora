@@ -38,7 +38,19 @@ pub type MSG = struct {
 pub extern fn PeekMessageA(lpMsg: ptr, hWnd: ptr, filterMin: i32, filterMax: i32, removeMsg: i32) i32
 ```
 
-### 3. Simple Custom Attributes
+### 3. Built-in Attributes: `[intrinsic("name")]`
+
+The `[intrinsic("name")]` attribute marks a function as a compiler intrinsic. Instead of generating a standard C function call, the compiler's code generator will intercept calls to this function and substitute them with hardcoded, optimized inline C expressions. This is used extensively in the `ffi` package (e.g., `borrow_to_raw` and `mut_borrow_to_raw`) to emit inline pointer address-of operators (`&`) for primitive borrows.
+
+```nora
+[intrinsic("borrow_to_raw")]
+[NoEmit]
+pub fn BorrowToRaw[T](val: #T) ptr {
+    return val
+}
+```
+
+### 4. Simple Custom Attributes
 
 You can attach arbitrary simple identifiers as metadata for compiler plugins or reflection.
 

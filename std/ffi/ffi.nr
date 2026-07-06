@@ -24,11 +24,15 @@ pub fn IntoRaw[T](val: @T) ptr {
 }
 
 // BorrowToRaw takes a read-only borrow and returns a raw ptr.
+[intrinsic("borrow_to_raw")]
+[NoEmit]
 pub fn BorrowToRaw[T](val: #T) ptr {
     return val
 }
 
 // MutBorrowToRaw takes a mutable borrow and returns a raw ptr.
+[intrinsic("mut_borrow_to_raw")]
+[NoEmit]
 pub fn MutBorrowToRaw[T](val: &T) ptr {
     return val
 }

@@ -81,6 +81,17 @@ var reclaimed_res = ffi.FromRaw[Resource](raw_ptr)
 // reclaimed_res will be safely dropped here at end of scope
 ```
 
+### `ffi.BorrowToRaw` & `ffi.MutBorrowToRaw`
+
+*   **`BorrowToRaw[T](#T)`**: Takes a read-only borrow (`#`) of a Nora object and returns its raw memory address (`ptr`). For primitive types (which are normally passed by value when borrowed to maximize performance), the compiler intrinsically emits an inline address-of operator to safely capture the memory address.
+*   **`MutBorrowToRaw[T](&T)`**: Takes a mutable borrow (`&`) of a Nora object and returns its raw memory address (`ptr`). 
+
+```nora
+// Using BorrowToRaw to pass a handle's address to a C function
+var cmd_handle = commands.handle
+var ptr_to_handle = ffi.BorrowToRaw[ptr](#cmd_handle)
+sys.wgpuQueueSubmit(self.handle, 1, ptr_to_handle)
+```
 ## Lease Rules
 
 1.  **Pinning:** When passing a Nora read-only borrow (`#`) to C, the solver must ensure the object stays alive. The `pin` keyword can be used to manually extend leases across complex FFI boundaries if necessary.
