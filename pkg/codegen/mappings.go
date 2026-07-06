@@ -102,9 +102,9 @@ func (g *Generator) mangleName(sym *semantic.Symbol) string {
 		return "nr_main"
 	}
 
-	// 0. Extern check: do not mangle FFI functions
+	// 0. Extern check: do not mangle FFI and Export functions
 	if sym.Kind == semantic.SymFunc && sym.DefNode != nil {
-		if fn, ok := sym.DefNode.(*ast.FunctionStatement); ok && fn.IsExtern {
+		if fn, ok := sym.DefNode.(*ast.FunctionStatement); ok && (fn.IsExtern || fn.IsExport) {
 			return sym.Name
 		}
 	}

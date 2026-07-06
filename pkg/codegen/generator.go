@@ -437,7 +437,26 @@ func (g *Generator) collectDefinitions() {
 				}
 				sym := g.SemanticInfo.Defs[s.Name]
 				if sym != nil {
-					g.Functions[g.mangleName(sym)] = sym
+					mangled := g.mangleName(sym)
+					if strings.Contains(mangled, "GetModuleHandle") {
+						isNil := true
+						if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok && fnStmt.Body != nil {
+							isNil = false
+						}
+						fmt.Printf("[DEBUG-COLLECT] %s from pkg=%s, bodyNil=%v\n", mangled, g.getSymbolPackage(sym), isNil)
+					}
+					existing := g.Functions[mangled]
+					if existing != nil && existing.DefNode != nil && sym.DefNode != nil {
+						existingFn, ok1 := existing.DefNode.(*ast.FunctionStatement)
+						newFn, ok2 := sym.DefNode.(*ast.FunctionStatement)
+						if ok1 && ok2 && existingFn.Body != nil && newFn.Body == nil {
+							if strings.Contains(mangled, "GetModuleHandle") {
+								fmt.Printf("[DEBUG-COLLECT] %s keeping existing (has body)\n", mangled)
+							}
+							continue
+						}
+					}
+					g.Functions[mangled] = sym
 				}
 			case *ast.TypeStatement:
 				if len(s.TypeParameters) > 0 {
@@ -1798,10 +1817,16 @@ func (g *Generator) GeneratePackageCode(pkgName string) (string, error) {
 		}
 
 		fn, ok := sym.DefNode.(*ast.FunctionStatement)
+		if strings.Contains(name, "GetModuleHandle") {
+			g.emit("// [DEBUG] CHECKING %s: ok=%v, macro=%v, bodyNil=%v", name, ok, ast.GetAttribute(fn.Attributes, "macro") != nil, fn != nil && fn.Body == nil)
+		}
 		if !ok || ast.GetAttribute(fn.Attributes, "macro") != nil || fn.Body == nil {
 			continue
 		}
 		if hf, ok := hirFuncs[name]; ok {
+			if strings.Contains(name, "GetModuleHandle") {
+				fmt.Printf("[DEBUG-PKG-LOOP] pkgName=%s, calling genHIRFunction for %s (hf.pkg=%s)\n", pkgName, name, g.getHIRFunctionPackage(hf))
+			}
 			g.genHIRFunction(hf)
 		} else {
 			g.genFunction(sym, fn)

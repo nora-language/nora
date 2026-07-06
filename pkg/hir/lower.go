@@ -869,6 +869,14 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 		return &InstOperand{Inst: fieldAcc}
 
 	case *ast.CallExpression:
+		if st, isSum := t.(*types.SumType); isSum && st.IsPrimitiveEnum {
+			if len(e.Arguments) == 1 {
+				valOp := l.lowerExpression(e.Arguments[0])
+				cast := &Cast{Val: valOp, Type: t}
+				return &InstOperand{Inst: cast}
+			}
+		}
+
 		if ident, ok := e.Function.(*ast.Identifier); ok {
 			val := ident.Value
 			if prim, ok := types.LookupPrimitive(val); ok {
@@ -1508,8 +1516,11 @@ func (l *Lowerer) shouldPassByPointer(t types.NRType, lease types.LeaseKind, isE
 		return false
 	}
 	if lease == types.LeaseMove || lease == types.LeaseRead {
-		if _, ok := t.(*types.StructType); ok || t.GetKind() == types.KindSum || t.GetKind() == types.KindProtocol {
+		if _, ok := t.(*types.StructType); ok || t.GetKind() == types.KindProtocol {
 			return true
+		}
+		if st, ok := t.(*types.SumType); ok {
+			return !st.IsPrimitiveEnum
 		}
 	}
 	return false

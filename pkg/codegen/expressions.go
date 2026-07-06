@@ -509,6 +509,7 @@ func (g *Generator) genPrefixExpression(e *ast.PrefixExpression) {
 
 		g.buf.WriteString("({ ")
 		g.buf.WriteString(fmt.Sprintf("%s _tmp = ", g.cType(t)))
+		g.buf.WriteString(fmt.Sprintf("/* ptr=%v */", g.isPointerInC(e.Right)))
 		if g.isPointerInC(e.Right) && !strings.HasSuffix(g.cType(t), "*") {
 			g.buf.WriteString("*")
 		}
@@ -672,6 +673,15 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 
 	exprType := g.SemanticInfo.Types[e]
 	if exprType != nil {
+		if st, isSum := exprType.(*types.SumType); isSum && st.IsPrimitiveEnum && len(e.Arguments) == 1 {
+			g.buf.WriteString("((")
+			g.buf.WriteString(g.cType(st))
+			g.buf.WriteString(")(")
+			g.genExpression(e.Arguments[0].Value)
+			g.buf.WriteString("))")
+			return
+		}
+
 		underlying := types.UnwrapLease(exprType)
 		for {
 			if pt, ok := underlying.(*types.PointerType); ok {
@@ -817,6 +827,41 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 				g.genExpression(e.Arguments[0].Value)
 				g.buf.WriteString("))")
 				return
+			}
+		}
+	}
+
+	// 0.5. Intrinsic Check
+	var funcSym *semantic.Symbol
+	if ident, ok := funcExpr.(*ast.Identifier); ok {
+		funcSym = g.SemanticInfo.Uses[ident]
+		if funcSym == nil {
+			funcSym = g.findSymbolByName(ident.Value)
+		}
+	} else if sel, ok := funcExpr.(*ast.SelectorExpression); ok {
+		funcSym = g.SemanticInfo.Uses[sel.Field]
+	}
+
+	if funcSym != nil {
+		if fnStmt, ok := funcSym.DefNode.(*ast.FunctionStatement); ok {
+			attr := ast.GetAttribute(fnStmt.Attributes, "intrinsic")
+			if attr != nil && len(attr.Args) > 0 {
+				intrinsicName := attr.Args[0]
+				if intrinsicName == "borrow_to_raw" || intrinsicName == "mut_borrow_to_raw" {
+					if len(e.Arguments) == 1 {
+						arg := e.Arguments[0].Value
+						if g.isPointerInC(arg) {
+							g.buf.WriteString("((void*)(")
+							g.genExpression(arg)
+							g.buf.WriteString("))")
+						} else {
+							g.buf.WriteString("((void*)(&(")
+							g.genExpression(arg)
+							g.buf.WriteString(")))")
+						}
+						return
+					}
+				}
 			}
 		}
 	}
@@ -1441,30 +1486,35 @@ func (g *Generator) emitArgument(expr ast.Expression, targetType types.NRType, l
 func (g *Generator) genSelectorExpression(e *ast.SelectorExpression) {
 	// [NEW] Handle implicit moves for SelectorExpression
 	if g.Solver != nil && g.Solver.Moves[e] && !g.InMoveOperator {
-		t := g.SemanticInfo.Types[e]
-		g.buf.WriteString("({ ")
-		g.buf.WriteString(fmt.Sprintf("%s _tmp = ", g.cType(t)))
-		if g.isPointerInC(e) && !strings.HasSuffix(g.cType(t), "*") {
-			g.buf.WriteString("*")
-		}
-		oldInMove := g.InMoveOperator
-		g.InMoveOperator = true
-		g.genSelectorExpression(e)
-		g.InMoveOperator = oldInMove
-		g.buf.WriteString("; ")
-
-		exprStr := g.genSelectorString(e.Left, e.Field.Value)
-		if g.isPointerTypeInC(t) && strings.HasSuffix(g.cType(t), "*") {
-			g.buf.WriteString(fmt.Sprintf("%s = NULL; ", exprStr))
+		// [NEW] Skip move logic for variant constructors (they are constants, not variables)
+		if st, _ := g.isVariantConstructor(e); st != nil {
+			// Just fall through to normal generation
 		} else {
-			if g.isPointerInC(e) {
-				g.buf.WriteString(fmt.Sprintf("memset(%s, 0, sizeof(%s)); ", exprStr, g.cType(t)))
-			} else {
-				g.buf.WriteString(fmt.Sprintf("memset(&%s, 0, sizeof(%s)); ", exprStr, g.cType(t)))
+			t := g.SemanticInfo.Types[e]
+			g.buf.WriteString("({ ")
+			g.buf.WriteString(fmt.Sprintf("%s _tmp = ", g.cType(t)))
+			if g.isPointerInC(e) && !strings.HasSuffix(g.cType(t), "*") {
+				g.buf.WriteString("*")
 			}
+			oldInMove := g.InMoveOperator
+			g.InMoveOperator = true
+			g.genSelectorExpression(e)
+			g.InMoveOperator = oldInMove
+			g.buf.WriteString("; ")
+
+			exprStr := g.genSelectorString(e.Left, e.Field.Value)
+			if g.isPointerTypeInC(t) && strings.HasSuffix(g.cType(t), "*") {
+				g.buf.WriteString(fmt.Sprintf("%s = NULL; ", exprStr))
+			} else {
+				if g.isPointerInC(e) {
+					g.buf.WriteString(fmt.Sprintf("memset(%s, 0, sizeof(%s)); ", exprStr, g.cType(t)))
+				} else {
+					g.buf.WriteString(fmt.Sprintf("memset(&%s, 0, sizeof(%s)); ", exprStr, g.cType(t)))
+				}
+			}
+			g.buf.WriteString(" _tmp; })")
+			return
 		}
-		g.buf.WriteString(" _tmp; })")
-		return
 	}
 
 	// Check if this is a package access (e.g., io.println)
@@ -1475,6 +1525,16 @@ func (g *Generator) genSelectorExpression(e *ast.SelectorExpression) {
 				return
 			}
 		}
+	}
+
+	// [NEW] Check for generic variant constructor
+	if st, vName := g.isVariantConstructor(e); st != nil {
+		if st.IsPrimitiveEnum {
+			g.buf.WriteString(fmt.Sprintf("%s_%s", g.mangledTypeName(st), vName))
+		} else {
+			g.buf.WriteString(fmt.Sprintf("%s_%s_make()", g.mangledTypeName(st), vName))
+		}
+		return
 	}
 
 	g.buf.WriteString(g.genSelectorString(e.Left, e.Field.Value))

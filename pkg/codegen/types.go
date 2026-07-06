@@ -144,8 +144,11 @@ func (g *Generator) isPointerInC(e ast.Expression) bool {
 			sym = g.findSymbolByName(ident.Value)
 		}
 		if sym != nil && sym.Kind == semantic.SymParam && !g.isCaptured(sym) {
-			if _, ok := ut.(*types.StructType); ok || ut.GetKind() == types.KindSum || ut.GetKind() == types.KindProtocol {
+			if _, ok := ut.(*types.StructType); ok || ut.GetKind() == types.KindProtocol {
 				return true
+			}
+			if st, ok := ut.(*types.SumType); ok {
+				return !st.IsPrimitiveEnum
 			}
 		}
 	}
@@ -340,8 +343,11 @@ func (g *Generator) shouldPassByPointer(t types.NRType, l types.LeaseKind, isExt
 		return false
 	}
 	if l == types.LeaseMove || l == types.LeaseRead {
-		if _, ok := t.(*types.StructType); ok || t.GetKind() == types.KindSum || t.GetKind() == types.KindProtocol {
+		if _, ok := t.(*types.StructType); ok || t.GetKind() == types.KindProtocol {
 			return true
+		}
+		if st, ok := t.(*types.SumType); ok {
+			return !st.IsPrimitiveEnum
 		}
 	}
 	return false

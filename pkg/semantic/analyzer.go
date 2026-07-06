@@ -3203,6 +3203,17 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					}
 					return
 				}
+			} else if sumType, isSum := castType.(*types.SumType); isSum && sumType.IsPrimitiveEnum {
+				// Enum casts (e.g. MyEnum(10))
+				// We must ensure the argument is a primitive integer.
+				_, isArgPrim := argType.(*types.PrimitiveType)
+				if !isArgPrim {
+					sa.AddError(n.Arguments[0].Pos(), "cannot cast %s to enum %s (expected primitive integer)", argType.Name(), sumType.Name())
+					sa.SemanticInfo.Types[n] = types.ErrorType
+					return
+				}
+				sa.SemanticInfo.Types[n] = sumType
+				return
 			}
 		}
 

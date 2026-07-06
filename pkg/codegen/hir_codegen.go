@@ -45,6 +45,9 @@ func collectAllocas(b *hir.HIRBlock) []*hir.Alloca {
 }
 
 func (g *Generator) genHIRFunction(hf *hir.Function) {
+	if strings.Contains(hf.Name, "GetModuleHandle") {
+		fmt.Printf("[DEBUG-GEN-HIR] genHIRFunction called for %s, hf.pkg=%s, Lambda=%v\n", hf.Name, g.getHIRFunctionPackage(hf), hf.LambdaExpr != nil)
+	}
 	g.CurrentFunc = hf.FuncSymbol
 	if hf.LambdaExpr != nil {
 		g.CurrentLambda = hf.LambdaExpr
@@ -55,6 +58,10 @@ func (g *Generator) genHIRFunction(hf *hir.Function) {
 
 	// Print signature
 	name := g.mangleName(hf.FuncSymbol)
+	if strings.Contains(name, "test_export") {
+		fnNode, ok := hf.FuncSymbol.DefNode.(*ast.FunctionStatement)
+		g.emit("// [DEBUG-MANGLE] FuncSymbol.Name=%s, FuncSymbol.Pkg=%s, mangleName=%s, DefNode_is_fn=%v, DefNode_is_export=%v, DefNode_is_extern=%v", hf.FuncSymbol.Name, g.getSymbolPackage(hf.FuncSymbol), name, ok, ok && fnNode.IsExport, ok && fnNode.IsExtern)
+	}
 	ft := hf.FuncSymbol.Type.(*types.FunctionType)
 	
 	// Use type-erased signature if this is a shared generic monomorphization
@@ -587,6 +594,11 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 					} else {
 						// We must heap-allocate the return value because the caller owns it (move lease return)
 						ct := strings.TrimSuffix(retCType, "*")
+						if ct == "void" {
+							g.emit("    nr_flush_temps();")
+							g.emit("    return NULL;")
+							break
+						}
 						g.emit(fmt.Sprintf("    %s* _ret_heap = nr_malloc(sizeof(%s));", ct, ct))
 						g.emit(fmt.Sprintf("    *_ret_heap = %s;", valStr))
 						g.emit("    nr_flush_temps();")
