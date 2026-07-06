@@ -1,7 +1,7 @@
 # Investigation: Function Type Alias Nil Pointer Panic
 
 ## Status
-Open
+Closed
 
 ## Problem
 The Nora compiler crashes with a `panic: runtime error: invalid memory address or nil pointer dereference` in `pkg/semantic/analyzer.go` when parsing a function type alias that contains named parameters (which is invalid syntax in Nora).
@@ -52,3 +52,6 @@ The panic is the result of a two-step failure between the Parser and the Semanti
 
 ## Validation
 To validate the fix, a negative test should be added to `pkg/cmd/test/` (e.g., `fail_named_parameters_in_type.nr`) ensuring that compiling the reproductive snippet emits a clean diagnostic error rather than panicking.
+
+## Resolution
+The issue was fixed by introducing an `ast.ErrorNode` to the parser to represent syntax errors safely without returning `nil`. The semantic analyzer was fortified to gracefully handle cases where the value is an `ErrorNode` or `nil`, correctly falling back to retrieving positional data from the token or name. A negative test (`fail_named_parameters_in_type`) was added to validate this fix.

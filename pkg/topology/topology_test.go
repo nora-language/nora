@@ -15,7 +15,7 @@ import (
 
 type MockPackageLoader struct{}
 
-func (m *MockPackageLoader) Load(path string) (*semantic.Scope, error) {
+func (m *MockPackageLoader) Load(path string, from string) (*semantic.Scope, error) {
 	if path == "io" {
 		scope := semantic.NewScope(nil, semantic.ScopePackage)
 		ioPrintType := &types.FunctionType{

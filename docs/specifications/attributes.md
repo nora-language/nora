@@ -23,7 +23,22 @@ pub fn add_five(x: i32) i32 {
 }
 ```
 
-### 2. Simple Custom Attributes
+### 2. Built-in Attributes: `[NoEmit]`
+
+The `[NoEmit]` attribute instructs the C-generator to skip emitting C declarations (forward declarations, struct bodies, and function prototypes) for specific structs and `extern fn`s. This is crucial for preventing type collisions when a C header (like `<windows.h>`) already defines these symbols.
+
+```nora
+[NoEmit]
+pub type MSG = struct {
+    hwnd: ptr,
+    message: i32
+}
+
+[NoEmit]
+pub extern fn PeekMessageA(lpMsg: ptr, hWnd: ptr, filterMin: i32, filterMax: i32, removeMsg: i32) i32
+```
+
+### 3. Simple Custom Attributes
 
 You can attach arbitrary simple identifiers as metadata for compiler plugins or reflection.
 
@@ -34,7 +49,7 @@ type MyStruct = struct {
 }
 ```
 
-### 3. Parameterized Custom Attributes
+### 4. Parameterized Custom Attributes
 
 Attributes can carry string arguments. This is incredibly useful for providing metadata like custom JSON field names, routing paths for HTTP handler plugins, or FFI mapping names.
 

@@ -443,6 +443,9 @@ func (g *Generator) collectDefinitions() {
 				if len(s.TypeParameters) > 0 {
 					continue
 				}
+				if ast.GetAttribute(s.Attributes, "NoEmit") != nil {
+					continue
+				}
 				sym := g.SemanticInfo.Defs[s.Name]
 				if sym == nil {
 					if g.DebugSemantic {

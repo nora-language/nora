@@ -16,7 +16,7 @@ import (
 // Mock Loader to satisfy Semantic Analyzer
 type MockLoader struct{}
 
-func (m *MockLoader) Load(path string) (*semantic.Scope, error) {
+func (m *MockLoader) Load(path string, from string) (*semantic.Scope, error) {
 	return semantic.NewScope(nil, semantic.ScopePackage), nil
 }
 

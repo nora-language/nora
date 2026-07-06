@@ -18,7 +18,21 @@ extern fn printf(format: ptr, ...) i32
 extern fn nr_free_untracked(p: ptr)
 ```
 
-### 2. The `export` Keyword
+### 2. Avoiding Header Collisions: `[NoEmit]`
+When defining `pub type` structs or `pub extern fn` functions that directly map to symbols already defined in external C headers (e.g., `<windows.h>` or `<stdlib.h>`), the generated Nora C prototypes will collide with the C headers. Use the `[NoEmit]` attribute to instruct Nora to rely on the external header's definition instead of generating its own:
+
+```nora
+[NoEmit]
+pub type div_t = struct {
+    quot: i32,
+    rem: i32
+}
+
+[NoEmit]
+pub extern fn rand() i32
+```
+
+### 3. The `export` Keyword
 To allow a C program to call a Nora function, use `export`. This prevents Nora from name-mangling the function in the generated C code, preserving its exact name.
 
 ```nora
@@ -27,10 +41,10 @@ export fn MyNoraCallback(data: i32) {
 }
 ```
 
-### 3. The `ptr` Type
+### 4. The `ptr` Type
 Nora uses the `ptr` keyword to represent untyped raw C pointers (`void*`). This type circumvents the Topological Lease Solver's tracking, allowing arbitrary memory manipulation but placing safety burdens squarely on the developer.
 
-### 4. C Strings
+### 5. C Strings
 C expects null-terminated strings (`char*`), whereas Nora strings contain length headers and data pointers. The `ffi` package provides conversion utilities:
 
 ```nora

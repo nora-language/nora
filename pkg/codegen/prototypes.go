@@ -74,6 +74,10 @@ func (g *Generator) emitPrototypes() {
 			continue
 		}
 
+		if ast.GetAttribute(fn.Attributes, "NoEmit") != nil {
+			continue
+		}
+
 		ft := sym.Type.(*types.FunctionType)
 		retType := g.cType(ft.Return)
 		name := g.mangleName(sym)
