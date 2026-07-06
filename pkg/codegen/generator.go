@@ -931,6 +931,9 @@ func (g *Generator) isGeneric(t types.NRType) bool {
 
 func (g *Generator) genFunction(sym *semantic.Symbol, fn *ast.FunctionStatement) {
 	name := g.mangleName(sym)
+	if strings.Contains(name, "test_export") {
+		fmt.Printf("[DEBUG-GEN-FUNC] name=%s, sym.Name=%s, IsExport=%v, IsExtern=%v\n", name, sym.Name, fn.IsExport, fn.IsExtern)
+	}
 	ft := sym.Type.(*types.FunctionType)
 	
 	// Use type-erased signature if this is a shared generic monomorphization

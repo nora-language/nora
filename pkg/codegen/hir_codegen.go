@@ -58,10 +58,6 @@ func (g *Generator) genHIRFunction(hf *hir.Function) {
 
 	// Print signature
 	name := g.mangleName(hf.FuncSymbol)
-	if strings.Contains(name, "test_export") {
-		fnNode, ok := hf.FuncSymbol.DefNode.(*ast.FunctionStatement)
-		g.emit("// [DEBUG-MANGLE] FuncSymbol.Name=%s, FuncSymbol.Pkg=%s, mangleName=%s, DefNode_is_fn=%v, DefNode_is_export=%v, DefNode_is_extern=%v", hf.FuncSymbol.Name, g.getSymbolPackage(hf.FuncSymbol), name, ok, ok && fnNode.IsExport, ok && fnNode.IsExtern)
-	}
 	ft := hf.FuncSymbol.Type.(*types.FunctionType)
 	
 	// Use type-erased signature if this is a shared generic monomorphization
