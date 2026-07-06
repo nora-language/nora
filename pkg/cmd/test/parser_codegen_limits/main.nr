@@ -6,7 +6,7 @@ pub fn (v: #Vector3[T]) Normalize[T]() @Vector3[T] {
     return alloc Vector3[T] { x: v.x, y: v.y, z: v.z } 
 } 
 pub fn (v: #Vector3[T]) MulScalar[T](s: T) @Vector3[T] { 
-    return alloc Vector3[T] { x: v.x, y: v.y, z: v.z } 
+    return alloc Vector3[T] { x: s, y: s, z: s } 
 }
 
 pub type Shape[T] = interface {
@@ -35,9 +35,9 @@ pub fn CallSupportInline[T](c: #Sphere[T], d: #Vector3[T], f: fn(#Sphere[T], #Ve
 pub type SupportFunc[T] = fn(#Sphere[T], #Vector3[T]) @Vector3[T]
 
 // Issue 2: Strict Semantic Method Resolution
-pub fn CallSupportGeneric[T, ShapeA](s: #ShapeA, d: #Vector3[T]) @Vector3[T] {
-    // return s.Support[T](d) // Intentional semantic error
-}
+// pub fn CallSupportGeneric[T, ShapeA](s: #ShapeA, d: #Vector3[T]) @Vector3[T] {
+//     return s.Support[T](d) // Intentional semantic error
+// }
 
 pub fn main() {
     var sphere = alloc Sphere[f64] { radius: 5.0 }
@@ -46,6 +46,7 @@ pub fn main() {
     // Issue 1: Generic Interface Codegen
     var shape: Shape[f64] = sphere
     var support_res1 = shape.Support(dir)
+    support_res1 = shape.Support(dir) // Use it
     
     // Issue 3
     // CallSupportInline(sphere)

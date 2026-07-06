@@ -4383,6 +4383,18 @@ func (sa *SemanticAnalyzer) AnalyzeFunctionStatement(n *ast.FunctionStatement) {
 					}
 				}
 			}
+		} else {
+			// Non-void function: verify it terminates on all paths
+			if !sa.terminates(n.Body) {
+				pos := n.Token.Position
+				if n.Body != nil && len(n.Body.Statements) > 0 {
+					lastStmt := n.Body.Statements[len(n.Body.Statements)-1]
+					if p, ok := lastStmt.(interface{ Pos() token.Position }); ok {
+						pos = p.Pos()
+					}
+				}
+				sa.AddError(pos, "missing return at end of function")
+			}
 		}
 
 		sa.CurrentFunction = oldFn
@@ -4419,8 +4431,35 @@ func (sa *SemanticAnalyzer) terminates(node ast.Node) bool {
 			return false
 		}
 		return sa.terminates(n.Consequence) && sa.terminates(n.Alternative)
+	case *ast.ScopeExpression:
+		return sa.terminates(n.Body)
+	case *ast.SelectStatement:
+		if len(n.Cases) == 0 {
+			return false
+		}
+		for _, c := range n.Cases {
+			if !sa.terminates(c.Body) {
+				return false
+			}
+		}
+		return true
+	case *ast.MatchExpression:
+		if len(n.Cases) == 0 {
+			return false
+		}
+		for _, c := range n.Cases {
+			if !sa.terminates(c.Body) {
+				return false
+			}
+		}
+		return true
 	case *ast.ExpressionStatement:
 		return sa.terminates(n.Expression)
+	case *ast.CallExpression:
+		if ident, ok := n.Function.(*ast.Identifier); ok && ident.Value == "panic" {
+			return true
+		}
+		return false
 	}
 	return false
 }
