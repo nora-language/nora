@@ -50,7 +50,21 @@ pub fn BorrowToRaw[T](val: #T) ptr {
 }
 ```
 
-### 4. Simple Custom Attributes
+### 4. Built-in Attributes: `[repr("type")]`
+
+The `[repr("type")]` attribute is specifically used on `enum` declarations to force the compiler to lower the enum into a primitive C integer type (e.g., `i32`, `u8`) rather than a tagged union struct. This provides 100% C ABI compatibility for FFI and drastically simplifies C interoperability.
+To use `[repr]`, the enum must not contain any data payloads in its variants.
+
+```nora
+[repr("i32")]
+pub type WGPUTextureFormat = enum {
+    Undefined = 0,
+    R8Unorm = 1,
+    R8Snorm = 2
+}
+```
+
+### 5. Simple Custom Attributes
 
 You can attach arbitrary simple identifiers as metadata for compiler plugins or reflection.
 

@@ -975,6 +975,9 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 		}
 		g.TargetIsValue = oldTargetVal
 		g.NoTempWrap = oldNoTemp
+		if i.SumType.IsPrimitiveEnum {
+			return fmt.Sprintf("%s_%s", g.mangledTypeName(i.SumType), i.VariantName)
+		}
 		return fmt.Sprintf("%s_%s_make(%s)", g.mangledTypeName(i.SumType), i.VariantName, strings.Join(argsStr, ", "))
 	case *hir.Alloc:
 		if i.IsArray {

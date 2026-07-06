@@ -70,6 +70,8 @@ type Symbol struct {
 	IsInitialized bool
 
 	IsPinned bool
+
+	VariantValue int64 // Used for SymVariant to store evaluated constant value
 }
 
 type Scope struct {

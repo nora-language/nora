@@ -2062,6 +2062,10 @@ func (p *Parser) parseSumTypeLiteral() ast.Expression {
 		if p.peekTokenIs(token.LPAREN) {
 			p.nextToken() // Move to '('
 			variant.Fields = p.parseFieldDefinitions(token.RPAREN)
+		} else if p.peekTokenIs(token.ASSIGN) {
+			p.nextToken() // Move to '='
+			p.nextToken() // Move to the expression
+			variant.Value = p.parseExpression(LOWEST)
 		}
 
 		p.applyDocComments(variant)

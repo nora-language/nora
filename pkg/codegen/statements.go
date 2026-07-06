@@ -682,9 +682,13 @@ func (g *Generator) genMatchWithTarget(s *ast.MatchExpression, targetVar string)
 				} else {
 					vName = p.Value
 				}
+			} else if p, ok := case_.Pattern.(*ast.SelectorExpression); ok {
+				vName = p.Field.Value
 			} else if p, ok := case_.Pattern.(*ast.CallExpression); ok {
 				if ident, ok := p.Function.(*ast.Identifier); ok {
 					vName = ident.Value
+				} else if sel, ok := p.Function.(*ast.SelectorExpression); ok {
+					vName = sel.Field.Value
 				}
 			}
 
@@ -702,7 +706,11 @@ func (g *Generator) genMatchWithTarget(s *ast.MatchExpression, targetVar string)
 			} else if i == len(s.Cases)-1 && i > 0 {
 				g.emit("    else {")
 			} else {
-				g.emit("    %s (_target.tag == %s_TAG_%s) {", prefix, mangledType, vName)
+				if st.IsPrimitiveEnum {
+					g.emit("    %s (_target == %s_%s) {", prefix, mangledType, vName)
+				} else {
+					g.emit("    %s (_target.tag == %s_TAG_%s) {", prefix, mangledType, vName)
+				}
 			}
 
 			// Extract fields using compilePattern logic

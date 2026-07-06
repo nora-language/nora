@@ -837,6 +837,12 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 			if attr := ast.GetAttribute(n.Attributes, "core_intrinsic"); attr != nil && len(attr.Args) > 0 {
 				sumType.CoreIntrinsic = attr.Args[0]
 			}
+			if attr := ast.GetAttribute(n.Attributes, "repr"); attr != nil && len(attr.Args) > 0 {
+				sumType.IsPrimitiveEnum = true
+				if attr.Args[0] == "i8" || attr.Args[0] == "u8" || attr.Args[0] == "i16" || attr.Args[0] == "u16" || attr.Args[0] == "i32" || attr.Args[0] == "u32" || attr.Args[0] == "i64" || attr.Args[0] == "u64" || attr.Args[0] == "int" || attr.Args[0] == "uint" {
+					sumType.PrimitiveType = sa.resolveTypeNode(&ast.Identifier{Value: attr.Args[0]})
+				}
+			}
 			for _, tp := range n.TypeParameters {
 				sumType.TypeParams = append(sumType.TypeParams, &types.TypeParam{
 					Name: tp.Name.Value,
@@ -1824,12 +1830,34 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			}
 
 			sumType.Variants = make(map[string]*types.Variant)
+			var currentVal int64 = 0
 			for i, vDef := range sumLit.Variants {
 				variant := &types.Variant{
 					Name:   vDef.Name.Value,
 					Tag:    i,
 					Fields: make(map[string]types.NRType),
 				}
+
+				if sumType.IsPrimitiveEnum {
+					if len(vDef.Fields) > 0 {
+						sa.AddError(vDef.Name.Pos(), "enum '%s' is marked with [repr] but variant '%s' has a payload", sumType.Name(), variant.Name)
+					}
+					if vDef.Value != nil {
+						val, err := EvalConstInteger(vDef.Value, sa.CurrentScope)
+						if err != nil {
+							sa.AddError(vDef.Value.Pos(), "failed to evaluate constant for variant '%s': %v", variant.Name, err)
+						} else {
+							currentVal = val
+						}
+					}
+					variant.Value = currentVal
+					currentVal++
+				} else {
+					if vDef.Value != nil {
+						sa.AddError(vDef.Value.Pos(), "cannot assign explicit value to variant '%s' in a non-primitive enum", variant.Name)
+					}
+				}
+
 				for _, fDef := range vDef.Fields {
 					fName := fDef.Name.Value
 					fType := sa.resolveTypeNode(fDef.Type)
@@ -1847,11 +1875,15 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				}
 
 				if len(variant.Fields) == 0 {
-					targetScope.Define(variant.Name, sumType, SymVariant, vDef)
+					sym, _ := targetScope.Define(variant.Name, sumType, SymVariant, vDef)
+					if sym != nil {
+						sym.VariantValue = variant.Value
+					}
 				} else {
 					// Variant constructor function type
 					params := []types.NRType{}
 					leases := []types.LeaseKind{}
+					
 					for _, fName := range variant.FieldNames {
 						fType := variant.Fields[fName]
 						params = append(params, fType)

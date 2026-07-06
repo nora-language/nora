@@ -43,6 +43,25 @@ match s2 {
 }
 ```
 
+## C-Compatible Integer Enums
+
+If you need an enum that is 100% C ABI compatible (e.g., for FFI with C libraries), you can use the `[repr("type")]` attribute. This tells the compiler to lower the enum to a primitive integer type rather than a tagged union struct.
+
+```nora
+[repr("i32")]
+pub type WGPUTextureFormat = enum {
+    Undefined = 0,
+    R8Unorm = 1,
+    BGRA8Unorm = 1 << 4 | 5
+}
+```
+
+**Rules for C-Compatible Enums:**
+1. You must not include any data payloads in the variants.
+2. The `repr` type must be a valid primitive integer (`i8`, `u8`, `i32`, `uint`, etc.).
+3. You can explicitly assign compile-time evaluated integer expressions to variants.
+4. If a value is omitted, it auto-increments from the previous variant (starting at 0).
+
 ## Generic Sum Types
 
 Sum types can be generic. The most common examples in Nora's standard library are `Option[T]` and `Result[T, E]`.

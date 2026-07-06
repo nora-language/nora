@@ -36,6 +36,7 @@ type VariantDefinition struct {
 	Token  token.Token // The identifier of the variant
 	Name   *Identifier
 	Fields []*FieldDefinition // Optional data fields (for Enums with data)
+	Value  Expression         // Optional explicit value assignment
 }
 
 func (vd *VariantDefinition) Pos() token.Position  { return vd.Token.Position }
@@ -48,6 +49,10 @@ func (vd *VariantDefinition) String() string {
 		out.WriteString("(")
 		// ... format fields ...
 		out.WriteString(")")
+	}
+	if vd.Value != nil {
+		out.WriteString(" = ")
+		out.WriteString(vd.Value.String())
 	}
 	return out.String()
 }

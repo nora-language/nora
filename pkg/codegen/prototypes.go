@@ -175,7 +175,12 @@ func (g *Generator) emitForwardDeclarations() {
 	}
 	sort.Strings(sumNames)
 	for _, name := range sumNames {
-		g.emit("typedef struct %s %s;", name, name)
+		st := g.SumTypes[name]
+		if st.IsPrimitiveEnum {
+			g.emit("typedef %s %s;", g.cType(st.PrimitiveType), name)
+		} else {
+			g.emit("typedef struct %s %s;", name, name)
+		}
 	}
 	g.emit("")
 }
@@ -328,6 +333,15 @@ func (g *Generator) emitCombinedTypeDefs() {
 			g.emit("};")
 			g.emit("")
 		} else if st, ok := g.SumTypes[name]; ok {
+			if st.IsPrimitiveEnum {
+				vNames := g.sortedVariantNames(st)
+				for _, vName := range vNames {
+					variant := st.Variants[vName]
+					g.emit("#define %s_%s %d", name, vName, variant.Value)
+				}
+				g.emit("")
+				continue
+			}
 			g.emit("struct %s {", name)
 			g.emit("    int tag;")
 			g.emit("    union {")

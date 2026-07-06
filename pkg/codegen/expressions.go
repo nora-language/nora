@@ -208,7 +208,11 @@ func (g *Generator) genIdentifier(e *ast.Identifier) {
 	if sym != nil {
 		if sym.Kind == semantic.SymVariant {
 			st := sym.Type.(*types.SumType)
-			g.buf.WriteString(fmt.Sprintf("%s_%s_make()", g.mangledTypeName(st), sym.Name))
+			if st.IsPrimitiveEnum {
+				g.buf.WriteString(fmt.Sprintf("%s_%s", g.mangledTypeName(st), sym.Name))
+			} else {
+				g.buf.WriteString(fmt.Sprintf("%s_%s_make()", g.mangledTypeName(st), sym.Name))
+			}
 		} else if sym.Kind == semantic.SymFunc && !g.InCallExpression {
 			isExtern := false
 			if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok && fnStmt.IsExtern {
@@ -1549,7 +1553,11 @@ func (g *Generator) genIndexExpression(e *ast.IndexExpression) {
 
 	// [NEW] Check for generic variant constructor: None[i32]
 	if st, vName := g.isVariantConstructor(e); st != nil {
-		g.buf.WriteString(fmt.Sprintf("%s_%s_make()", g.mangledTypeName(st), vName))
+		if st.IsPrimitiveEnum {
+			g.buf.WriteString(fmt.Sprintf("%s_%s", g.mangledTypeName(st), vName))
+		} else {
+			g.buf.WriteString(fmt.Sprintf("%s_%s_make()", g.mangledTypeName(st), vName))
+		}
 		return
 	}
 

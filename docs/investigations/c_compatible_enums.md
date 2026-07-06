@@ -1,7 +1,7 @@
 # Specification: C-Compatible Integer Enums (`enum(T)`)
 
-**Status:** Proposed  
-**Date:** 2026-07-04  
+**Status:** Resolved  
+**Date:** 2026-07-06  
 **Component:** Parser, Semantic Analyzer, Code Generator  
 
 ## Motivation
@@ -10,26 +10,21 @@ While mathematically elegant, this makes it impossible to define native, FFI-com
 
 To maximize both **User Simplicity** and **Language Consistency**, we should avoid adding entirely new keywords or syntax (like `enum(i32)`). Instead, Nora's existing `enum` should be upgraded to intelligently handle C-compatible integers.
 
-## Proposed Solution: Smart Enums (Auto-Elision)
-We propose modifying the Semantic Analyzer and C11 Code Generator to auto-detect "payload-less" enums and seamlessly lower them to native C integers.
+## Implemented Solution: `[repr("type")]` Attributes
+We modified the Semantic Analyzer and C11 Code Generator to support the `[repr("type")]` attribute on enums, lowering them to native C integers.
 
-Additionally, the Parser must be updated to allow assigning explicit compile-time integer values (`= value`) to payload-less variants.
+Additionally, the Parser was updated to allow assigning explicit compile-time integer expressions (`= value`) to payload-less variants.
 
 ### Unified Syntax
-Users will use the exact same `enum` syntax they already know:
+Users will use the exact same `enum` syntax they already know, but opt-in to primitive lowering via the `[repr]` attribute:
 
 ```nora
-// A C-compatible enum (auto-detected because it has no payloads)
+// A C-compatible enum explicitly backed by an i32
+[repr("i32")]
 pub type WGPUTextureFormat = enum {
-    Undefined = 0x00000000,
-    R8Unorm   = 0x00000001,
-    BGRA8Unorm = 0x0000001B
-}
-
-// A standard Sum Type (auto-detected because of the payload)
-pub type State = enum {
-    Idle,
-    Running(progress: i32)
+    Undefined = 0,
+    R8Unorm   = 1,
+    BGRA8Unorm = 1 << 4 | 5
 }
 ```
 
@@ -40,16 +35,17 @@ var format: WGPUTextureFormat = WGPUTextureFormat.BGRA8Unorm
 ```
 
 ## Semantic Rules
-1. **Auto-Detection**: If the Semantic Analyzer determines that an `enum` contains **zero payloads** across all its variants, it flags the type as a `PrimitiveEnum`.
-2. **Explicit Values**: Variants may optionally be assigned an integer value (e.g., `= 27`). If omitted, the value auto-increments from the previous variant (starting at `0`), matching standard C behavior.
-3. **Payload Mixing**: You cannot assign an explicit `= value` to a variant that *also* has a payload.
+1. **Validation**: If the Semantic Analyzer detects a `[repr("type")]` attribute, it verifies the type is a primitive integer (e.g., `i32`, `u8`).
+2. **Payload Restriction**: You cannot assign a payload to any variant in a primitive enum.
+3. **Explicit Values**: Variants may optionally be assigned an integer expression (e.g., `= 27`). If omitted, the value auto-increments from the previous variant (starting at `0`), matching standard C behavior. The expressions are fully evaluated at compile-time.
 
 ## Code Generation (Lowering to C11)
 During AST-to-HIR lowering, the compiler checks if the `enum` is a `PrimitiveEnum`.
-If it is, the compiler entirely skips generating the `struct / union` wrapper. Instead, it emits a standard C `typedef` to `int32_t` (or `int64_t` if the assigned values exceed 32-bit bounds):
+If it is, the compiler entirely skips generating the `struct / union` wrapper. Instead, it emits a standard C `typedef` to the specified backing type:
 
 **Nora Source:**
 ```nora
+[repr("i32")]
 pub type WGPUTextureFormat = enum {
     Undefined = 0,
     BGRA8Unorm = 27
