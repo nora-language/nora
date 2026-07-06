@@ -481,6 +481,8 @@ func (p *Parser) parseStatementInternal() ast.Statement {
 		return p.parseReturnStatement()
 	case token.VAR:
 		return p.parseVarStatement()
+	case token.CONST:
+		return p.parseConstStatement()
 	case token.PIN:
 		return p.parsePinStatement()
 	case token.EXTERN:
@@ -917,6 +919,11 @@ func (p *Parser) parsePublicStatement() ast.Statement {
 		if vs, ok := stmt.(*ast.VarStatement); ok && vs != nil {
 			vs.IsPublic = true
 		}
+	case token.CONST:
+		stmt = p.parseConstStatement()
+		if cs, ok := stmt.(*ast.ConstStatement); ok && cs != nil {
+			cs.IsPublic = true
+		}
 	case token.EXPORT:
 		stmt = p.parseExportStatement(true)
 		if fn, ok := stmt.(*ast.FunctionStatement); ok && fn != nil {
@@ -977,6 +984,31 @@ func (p *Parser) parseVarStatement() *ast.VarStatement {
 		p.nextToken() // move to '='
 		p.nextToken() // move past '='
 		stmt.Value = p.parseExpression(LOWEST)
+	}
+
+	return stmt
+}
+
+func (p *Parser) parseConstStatement() *ast.ConstStatement {
+	stmt := &ast.ConstStatement{Token: p.curToken}
+
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+
+	if p.peekTokenIs(token.COLON) {
+		p.nextToken() // move past :
+		p.nextToken() // move to type
+		stmt.Type = p.parseType()
+	}
+
+	if p.peekTokenIs(token.ASSIGN) {
+		p.nextToken() // move to '='
+		p.nextToken() // move past '='
+		stmt.Value = p.parseExpression(LOWEST)
+	} else {
+		p.ReportError(p.curToken.Position, "const declaration must have an initializer")
 	}
 
 	return stmt

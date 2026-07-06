@@ -1,8 +1,35 @@
-# Variables & Definite Initialization
+# Variables & Constants
 
 ## Overview
 
-Variables in Nora are declared using the `var` keyword. To prevent subtle logic bugs and undefined behavior caused by uninitialized memory (a notorious problem in C), Nora employs a strict **Definite Initialization** static analysis pass.
+Variables in Nora are declared using the `var` keyword, while compile-time immutable values are declared using the `const` keyword. To prevent subtle logic bugs and undefined behavior caused by uninitialized memory, Nora employs a strict **Definite Initialization** static analysis pass.
+
+## Constants (`const`)
+
+Constants are immutable values evaluated and enforced at compile-time. Unlike variables, they can be declared at both the global (package) scope and local block scope.
+
+### Declaration & Immutability
+Constants **must** be initialized immediately upon declaration. Type inference works identically to variables.
+
+```nora
+pub const MAX_RETRIES: i32 = 5
+const GREETING = "Hello, Nora!" // Inferred as str
+```
+
+Constants are strictly immutable. Any attempt to mutate a constant will result in a compile-time semantic error.
+
+```nora
+const LOCAL_VAL = 42
+LOCAL_VAL = 50 // ERROR: cannot assign to LOCAL_VAL (it is a Constant)
+```
+
+### Global (Package) Constants
+Constants are ideal for magic numbers, configuration limits, and FFI enum definitions. They can be exposed across package boundaries using the `pub` modifier.
+
+```nora
+pub type Config = struct { timeout: i32 }
+pub const DEFAULT_CONFIG = Config { timeout: 500 }
+```
 
 ## Syntax & Type Inference
 

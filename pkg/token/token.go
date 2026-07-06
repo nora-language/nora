@@ -112,6 +112,7 @@ const (
 	IMPORT  = "IMPORT"
 	FN      = "FN"
 	VAR     = "VAR"
+	CONST   = "CONST"
 	ENUM    = "ENUM"
 
 	PIN      = "PIN" // Manual lease override - Keep leases alive during C calls
@@ -152,6 +153,7 @@ var keywords = map[string]TokenType{
 	"import":  IMPORT,
 	"fn":      FN,
 	"var":     VAR,
+	"const":   CONST,
 	"enum":    ENUM,
 
 	"pin":       PIN,

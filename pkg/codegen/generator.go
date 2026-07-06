@@ -41,7 +41,7 @@ type Generator struct {
 	SumTypes        map[string]*types.SumType
 	Protocols       map[string]*types.ProtocolType
 	Globals         map[string]*semantic.Symbol
-	GlobalInits     []*ast.VarStatement
+	GlobalInits     []ast.Node
 	SpawnWrappers   []string
 	SpawnStructs    []string
 	spawnCounter    int
@@ -488,6 +488,14 @@ func (g *Generator) collectDefinitions() {
 					g.Protocols[mangled] = proto
 				}
 			case *ast.VarStatement:
+				sym := g.SemanticInfo.Defs[s.Name]
+				if sym != nil && sym.DefScope != nil && sym.DefScope.Kind == semantic.ScopePackage {
+					g.Globals[g.mangleName(sym)] = sym
+					if s.Value != nil {
+						g.GlobalInits = append(g.GlobalInits, s)
+					}
+				}
+			case *ast.ConstStatement:
 				sym := g.SemanticInfo.Defs[s.Name]
 				if sym != nil && sym.DefScope != nil && sym.DefScope.Kind == semantic.ScopePackage {
 					g.Globals[g.mangleName(sym)] = sym
@@ -1521,15 +1529,34 @@ func (g *Generator) emitAutoEqMethods() {
 func (g *Generator) emitGlobalInits() {
 	g.emit("// --- GLOBAL INITIALIZERS ---")
 	g.emit("void nr_init_globals(void) {")
-	for _, s := range g.GlobalInits {
-		sym := g.SemanticInfo.Defs[s.Name]
+	for _, node := range g.GlobalInits {
+		var sName *ast.Identifier
+		var sValue ast.Expression
+		var sNode ast.Node
+
+		switch s := node.(type) {
+		case *ast.VarStatement:
+			sName = s.Name
+			sValue = s.Value
+			sNode = s
+		case *ast.ConstStatement:
+			sName = s.Name
+			sValue = s.Value
+			sNode = s
+		}
+
+		if sName == nil {
+			continue
+		}
+
+		sym := g.SemanticInfo.Defs[sName]
 		if sym == nil {
 			continue
 		}
 		name := g.mangleName(sym)
-		g.emitLine(s)
+		g.emitLine(sNode)
 		g.buf.WriteString(fmt.Sprintf("    %s = ", name))
-		g.genExpression(s.Value)
+		g.genExpression(sValue)
 		g.emit(";")
 	}
 	g.emit("}")
@@ -1540,15 +1567,28 @@ func (g *Generator) emitGlobalInits() {
 func (g *Generator) emitGlobalCleanups() {
 	g.emit("void nr_cleanup_globals(void) {")
 	for i := len(g.GlobalInits) - 1; i >= 0; i-- {
-		s := g.GlobalInits[i]
-		sym := g.SemanticInfo.Defs[s.Name]
-		if sym == nil {
-			continue
-		}
-		if types.IsOwnedType(sym.Type) {
-			name := g.mangleName(sym)
-			isPtr := g.isSymbolPointerInC(sym)
-			g.emitDrop(name, sym.Type, isPtr)
+		node := g.GlobalInits[i]
+		switch s := node.(type) {
+		case *ast.VarStatement:
+			sym := g.SemanticInfo.Defs[s.Name]
+			if sym == nil {
+				continue
+			}
+			if types.IsOwnedType(sym.Type) {
+				name := g.mangleName(sym)
+				isPtr := g.isSymbolPointerInC(sym)
+				g.emitDrop(name, sym.Type, isPtr)
+			}
+		case *ast.ConstStatement:
+			sym := g.SemanticInfo.Defs[s.Name]
+			if sym == nil {
+				continue
+			}
+			if types.IsOwnedType(sym.Type) {
+				name := g.mangleName(sym)
+				isPtr := g.isSymbolPointerInC(sym)
+				g.emitDrop(name, sym.Type, isPtr)
+			}
 		}
 	}
 	g.emit("}")

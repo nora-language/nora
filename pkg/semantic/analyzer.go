@@ -886,6 +886,16 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 				}
 			}
 		}
+	case *ast.ConstStatement:
+		if sa.CurrentScope.Kind == ScopePackage {
+			sym, err := sa.CurrentScope.Define(n.Name.Value, types.Void, SymConst, n)
+			if err == nil {
+				sa.SemanticInfo.Defs[n.Name] = sym
+				if n.IsPublic {
+					sym.Visible = Public
+				}
+			}
+		}
 	}
 }
 
@@ -1052,7 +1062,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		reanalyze := false
 		switch node.(type) {
 		case *ast.BlockStatement, *ast.IfExpression, *ast.MatchExpression,
-			*ast.ReturnStatement, *ast.VarStatement, *ast.AssignmentStatement,
+			*ast.ReturnStatement, *ast.VarStatement, *ast.ConstStatement, *ast.AssignmentStatement,
 			*ast.ExpressionStatement, *ast.ForStatement, *ast.WhileStatement:
 			reanalyze = true
 		}
@@ -2404,6 +2414,105 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		sa.SemanticInfo.Types[n] = lastType
 		sa.checkUnusedSymbolsInScope(sa.CurrentScope)
 		sa.CurrentScope = prevScope
+
+	case *ast.ConstStatement:
+		var rhsType types.NRType = types.Void
+		if n.Value != nil {
+			sa.Analyze(n.Value)
+			rhsType = sa.SemanticInfo.Types[n.Value]
+			if rhsType == nil {
+				rhsType = types.ErrorType
+			}
+		} else {
+			sa.AddError(n.Name.Pos(), "const '%s' must have an initializer", n.Name.Value)
+		}
+
+		var finalType types.NRType
+		if n.Type != nil {
+			explicitType := sa.resolveTypeNode(n.Type)
+			if n.Value != nil {
+				sa.checkImplicitMoveLoad(n.Value, explicitType)
+				if !types.IsAssignable(explicitType, rhsType) {
+					if _, ok := explicitType.(*types.ProtocolType); ok {
+						sa.checkInterfaceCompatibility(n.Value, explicitType)
+					} else {
+						sa.AddError(n.Value.Pos(), "type mismatch: cannot assign %s to %s", rhsType.Name(), explicitType.Name())
+					}
+				}
+			}
+			finalType = explicitType
+		} else {
+			if n.Value == nil {
+				finalType = types.ErrorType
+			} else {
+				finalType = rhsType
+			}
+		}
+
+		if finalType == types.ErrorType || finalType == nil {
+			sa.AddError(n.Name.Pos(), "cannot infer type for const '%s'", n.Name.Value)
+			finalType = types.ErrorType
+		}
+
+		var sym *Symbol
+		var err error
+		if existing, ok := sa.CurrentScope.Symbols[n.Name.Value]; ok && existing.DefNode == n {
+			sym = existing
+			sym.Type = finalType
+		} else {
+			sym, err = sa.CurrentScope.Define(n.Name.Value, finalType, SymConst, n)
+		}
+
+		if err != nil {
+			sa.AddError(n.Name.Pos(), "%s", err.Error())
+		} else {
+			sa.SemanticInfo.Defs[n.Name] = sym
+			sym.IsInitialized = true
+			sa.InitStates[sym] = Initialized
+			sym.WritePerm = false
+			if n.IsPublic {
+				sym.Visible = Public
+			}
+
+			if pt, ok := finalType.(*types.PointerType); ok && pt.Leased {
+				sym.LeaseKind = pt.Kind
+			} else if pref, ok := n.Value.(*ast.PrefixExpression); ok && pref.Operator == "@" {
+				sym.LeaseKind = types.LeaseMove
+			} else if _, ok := n.Value.(*ast.AllocExpression); ok {
+				sym.LeaseKind = types.LeaseMove
+			} else if id, ok := n.Value.(*ast.Identifier); ok {
+				if rhsSym := sa.SemanticInfo.Uses[id]; rhsSym != nil {
+					sym.LeaseKind = rhsSym.LeaseKind
+				} else {
+					sym.LeaseKind = types.LeaseMove
+				}
+			} else {
+				isLiteral := false
+				if _, ok := n.Value.(*ast.StringLiteral); ok {
+					isLiteral = true
+				}
+
+				if types.IsOwnedType(finalType) && !isLiteral {
+					sym.LeaseKind = types.LeaseMove
+				} else {
+					sym.LeaseKind = types.LeaseRead
+				}
+			}
+
+			if id, ok := n.Value.(*ast.Identifier); ok {
+				if rhsSym := sa.SemanticInfo.Uses[id]; rhsSym != nil {
+					if types.IsOwnedType(rhsSym.Type) && !rhsSym.Type.IsLeased() && rhsSym.LeaseKind != types.LeaseRead && rhsSym.LeaseKind != types.LeaseWrite {
+						sa.SemanticInfo.Kill(rhsSym, n)
+					}
+				}
+			}
+		}
+
+		if sa.CurrentScope.Kind == ScopePackage || sa.CurrentScope.Kind == ScopeGlobal {
+			if sa.hasRestrictedClosure(finalType, nil) {
+				sa.AddError(n.Token.Position, "closure captures local lease and cannot be assigned to global/package scope")
+			}
+		}
 
 	case *ast.VarStatement:
 		var rhsType types.NRType = types.Void

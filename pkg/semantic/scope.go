@@ -15,7 +15,7 @@ func (s *Scope) Define(name string, t types.NRType, kind SymbolKind, node ast.No
 	}
 
 	if s.Parent != nil {
-		if kind == SymVar || kind == SymParam || kind == SymFunc {
+		if kind == SymVar || kind == SymParam || kind == SymFunc || kind == SymConst {
 			root := s
 			for root.Parent != nil {
 				root = root.Parent

@@ -361,6 +361,33 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 			l.CurrentBlock.AddInst(store)
 		}
 
+	case *ast.ConstStatement:
+		t := l.getType(s.Name)
+		sym := l.SemanticInfo.Defs[s.Name]
+		if sym == nil {
+			sym = l.SemanticInfo.Uses[s.Name]
+		}
+
+		// Emit explicit VarDecl (alloca)
+		alloca := &Alloca{Name: s.Name.Value, Type: t, Symbol: sym}
+		l.CurrentBlock.AddInst(alloca)
+
+		if s.Value != nil {
+			valOp := l.lowerExpression(s.Value)
+			if proto, ok := t.(*types.ProtocolType); ok {
+				valType := l.getType(s.Value)
+				if valProto, valIsProto := valType.(*types.ProtocolType); !valIsProto || !types.Equals(proto, valProto) {
+					valOp = &InstOperand{Inst: &InterfaceCast{Val: valOp, Type: proto}}
+				}
+			}
+			// Explicit store to local variable
+			store := &Store{
+				Dest: &VarOperand{Name: s.Name.Value, Type: t, Symbol: sym},
+				Val:  valOp,
+			}
+			l.CurrentBlock.AddInst(store)
+		}
+
 	case *ast.AssignmentStatement:
 		destOp := l.lowerExpression(s.Left)
 		valOp := l.lowerExpression(s.Value)

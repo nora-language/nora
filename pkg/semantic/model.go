@@ -30,6 +30,7 @@ type SymbolKind int
 
 const (
 	SymVar     SymbolKind = iota // let x = 5
+	SymConst                     // const x = 5
 	SymFunc                      // fn add()
 	SymType                      // type User ...
 	SymModule                    // import "math"
@@ -40,7 +41,7 @@ const (
 
 // String representation for debugging
 func (sk SymbolKind) String() string {
-	return [...]string{"Variable", "Function", "Type", "Module", "Parameter", "Package", "Variant"}[sk]
+	return [...]string{"Variable", "Constant", "Function", "Type", "Module", "Parameter", "Package", "Variant"}[sk]
 }
 
 // Symbol represents a named entity (variable, function, type)

@@ -22,6 +22,8 @@ func (g *Generator) genStatement(stmt ast.Statement) {
 		g.genBlock(s)
 	case *ast.VarStatement:
 		g.genVarStatement(s)
+	case *ast.ConstStatement:
+		g.genConstStatement(s)
 	case *ast.AssignmentStatement:
 		g.genAssignmentStatement(s)
 	case *ast.ReturnStatement:
@@ -81,6 +83,44 @@ func (g *Generator) genBlockWithTarget(b *ast.BlockStatement, targetVar string) 
 	g.CurrentStmtIndex = oldIdx
 
 	g.emit("}")
+}
+
+func (g *Generator) genConstStatement(s *ast.ConstStatement) {
+	var finalType types.NRType
+	sym := g.SemanticInfo.Defs[s.Name]
+	if sym == nil {
+		sym = g.SemanticInfo.Uses[s.Name]
+	}
+	if sym != nil {
+		finalType = sym.Type
+	} else if s.Type != nil {
+		finalType = g.SemanticInfo.Types[s.Name]
+	}
+	if finalType == nil {
+		finalType = g.SemanticInfo.Types[s.Value]
+	}
+	if finalType == nil {
+		finalType = types.I32
+	}
+
+	if s.Value != nil {
+		g.buf.WriteString(fmt.Sprintf("%s %s = ", g.cType(finalType), s.Name.Value))
+
+		oldNoTemp := g.NoTempWrap
+		g.NoTempWrap = true
+		oldTargetIsValue := g.TargetIsValue
+		g.TargetIsValue = !g.isPointerTypeInC(finalType)
+		if proto, ok := finalType.(*types.ProtocolType); ok {
+			g.genInterfaceCast(s.Value, proto)
+		} else {
+			g.genOwnedValue(s.Value, finalType)
+		}
+		g.TargetIsValue = oldTargetIsValue
+		g.NoTempWrap = oldNoTemp
+		g.emit(";")
+	} else {
+		g.buf.WriteString(fmt.Sprintf("%s %s;\n", g.cType(finalType), s.Name.Value))
+	}
 }
 
 func (g *Generator) genVarStatement(s *ast.VarStatement) {
