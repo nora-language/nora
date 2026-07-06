@@ -1610,6 +1610,9 @@ func (l *Lowerer) shouldSkipHIR(sym *semantic.Symbol, fn *ast.FunctionStatement)
 	if fn.IsGenericTemplate || len(fn.TypeParameters) > 0 {
 		return true
 	}
+	if fn.IsExtern {
+		return true
+	}
 	return false
 }
 
