@@ -1285,24 +1285,38 @@ func (p *Parser) parseFunctionType() ast.TypeNode {
 	lit := &ast.FunctionType{Token: p.curToken}
 
 	if !p.expectPeek(token.LPAREN) {
-		return nil
+		return &ast.ErrorNode{Token: p.curToken}
 	}
 
 	lit.Parameters = []ast.TypeNode{}
 
 	if !p.peekTokenIs(token.RPAREN) {
 		p.nextToken()
+
+		if p.curTokenIs(token.IDENT) && p.peekTokenIs(token.COLON) {
+			p.ReportError(p.curToken.Position, "function types cannot have parameter names")
+			p.nextToken() // Move to ':'
+			p.nextToken() // Move past ':'
+		}
+
 		lit.Parameters = append(lit.Parameters, p.parseType())
 
 		for p.peekTokenIs(token.COMMA) {
 			p.nextToken() // Move to ','
 			p.nextToken() // Move past ','
+			
+			if p.curTokenIs(token.IDENT) && p.peekTokenIs(token.COLON) {
+				p.ReportError(p.curToken.Position, "function types cannot have parameter names")
+				p.nextToken() // Move to ':'
+				p.nextToken() // Move past ':'
+			}
+
 			lit.Parameters = append(lit.Parameters, p.parseType())
 		}
 	}
 
 	if !p.expectPeek(token.RPAREN) {
-		return nil
+		return &ast.ErrorNode{Token: p.curToken}
 	}
 
 	// Optional return type

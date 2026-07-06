@@ -1870,11 +1870,17 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				}
 			}
 
-			if tn, ok := n.Value.(ast.TypeNode); ok {
+			if tn, ok := n.Value.(ast.TypeNode); ok && !ast.IsNil(n.Value) {
 				resolvedType := sa.resolveTypeNode(tn)
 				sym.Type = resolvedType
 			} else {
-				sa.AddError(n.Value.Pos(), "expected struct, interface, enum definition, or type alias")
+				pos := n.Token.Position
+				if !ast.IsNil(n.Value) {
+					pos = n.Value.Pos()
+				} else if n.Name != nil {
+					pos = n.Name.Pos()
+				}
+				sa.AddError(pos, "expected struct, interface, enum definition, or type alias")
 				if len(n.TypeParameters) > 0 {
 					sa.CurrentScope = sa.CurrentScope.Parent
 				}

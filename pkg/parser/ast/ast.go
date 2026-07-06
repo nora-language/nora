@@ -50,6 +50,8 @@ func IsNil(n Node) bool {
 		return v == nil
 	case *TypeStatement:
 		return v == nil
+	case *ErrorNode:
+		return v == nil
 	case *File:
 		return v == nil
 	case *Program:
