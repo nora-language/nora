@@ -976,6 +976,12 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				ct, ct, strings.ReplaceAll(i.PosFile, "\\", "/"), i.PosLine, valStr)
 		}
 	case *hir.FieldAccess:
+		if mod, isMod := i.Base.GetType().(*semantic.ModuleType); isMod {
+			if sym, exists := mod.Exports.Resolve(i.FieldName); exists {
+				return g.mangleName(sym)
+			}
+		}
+
 		opStr := g.hirOperandStr(i.Base)
 		res := ""
 		ptrLevel := strings.Count(g.cType(i.Base.GetType()), "*")

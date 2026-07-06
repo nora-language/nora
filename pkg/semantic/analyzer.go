@@ -1046,6 +1046,35 @@ func (sa *SemanticAnalyzer) extractMatchedVariant(pattern ast.Expression, sumTyp
 	return "", false
 }
 
+func (sa *SemanticAnalyzer) ensureGlobalVariableAnalyzed(sym *Symbol) {
+	if sym == nil || sym.DefNode == nil {
+		return
+	}
+	if sym.Type != nil && sym.Type != types.Void && sym.Type != types.ErrorType {
+		return
+	}
+	if sym.Kind != SymVar && sym.Kind != SymConst {
+		return
+	}
+	if sym.DefScope == nil || (sym.DefScope.Kind != ScopePackage && sym.DefScope.Kind != ScopeGlobal) {
+		return
+	}
+
+	if sa.analyzingTypes[sym] {
+		sa.AddError(sym.DefNode.Pos(), "circular dependency detected in global variable '%s'", sym.Name)
+		sym.Type = types.ErrorType
+		return
+	}
+	sa.analyzingTypes[sym] = true
+
+	prevScope := sa.CurrentScope
+	sa.CurrentScope = sym.DefScope
+	sa.Analyze(sym.DefNode)
+	sa.CurrentScope = prevScope
+
+	delete(sa.analyzingTypes, sym)
+}
+
 func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 	if node == nil {
 		return
@@ -3009,6 +3038,9 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			sa.SemanticInfo.Types[n] = types.ErrorType
 			return
 		}
+		
+		sa.ensureGlobalVariableAnalyzed(sym)
+
 		// This fills the map your test is checking!
 		sa.SemanticInfo.Uses[n] = sym
 		sa.SemanticInfo.Types[n] = sym.Type
@@ -3675,6 +3707,8 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				sa.SemanticInfo.Types[n] = types.ErrorType
 				return
 			}
+
+			sa.ensureGlobalVariableAnalyzed(sym)
 
 			// Fill Uses for the field (e.g., 'Print')
 			sa.SemanticInfo.Uses[n.Field] = sym
