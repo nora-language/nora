@@ -74,7 +74,7 @@ func (g *Generator) genHIRFunction(hf *hir.Function) {
 	}
 
 	if hasFn && fn.Receiver != nil {
-		t := g.cParamType(ft.Receiver, ft.ReceiverLease, false)
+		t := g.cParamType(ft.Receiver, ft.ReceiverLease, hasFn && fn.IsExport)
 		if params != "" {
 			params += ", "
 		}
@@ -94,7 +94,7 @@ func (g *Generator) genHIRFunction(hf *hir.Function) {
 		if i < len(ft.ParamLeases) {
 			lease = ft.ParamLeases[i]
 		}
-		t := g.cParamType(p, lease, false)
+		t := g.cParamType(p, lease, hasFn && fn.IsExport)
 		params += t
 		if hasFn && i < len(fn.Parameters) && fn.Parameters[i].Name != nil {
 			params += " " + fn.Parameters[i].Name.Value
@@ -876,7 +876,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 			isExtern := false
 			if i.FuncSymbol != nil {
 				sym := i.FuncSymbol
-				if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok && fnStmt.IsExtern {
+				if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok && (fnStmt.IsExtern || fnStmt.IsExport) {
 					if ast.GetAttribute(fnStmt.Attributes, "plugin_override") == nil {
 						isExtern = true
 					}
@@ -1529,12 +1529,18 @@ func (g *Generator) cTypeOfOperand(op hir.Operand) string {
 		}
 	}
 	if varOp, ok := op.(*hir.VarOperand); ok {
+		isExtern := false
+		if g.CurrentFunc != nil && g.CurrentFunc.DefNode != nil {
+			if fn, ok := g.CurrentFunc.DefNode.(*ast.FunctionStatement); ok && fn.IsExport {
+				isExtern = true
+			}
+		}
 		if sym := g.findCurrentParamSymbol(varOp.Name); sym != nil {
-			return g.cParamType(sym.Type, sym.LeaseKind, false)
+			return g.cParamType(sym.Type, sym.LeaseKind, isExtern)
 		}
 		if varOp.Symbol != nil {
 			if varOp.Symbol.Kind == semantic.SymParam {
-				return g.cParamType(varOp.Symbol.Type, varOp.Symbol.LeaseKind, false)
+				return g.cParamType(varOp.Symbol.Type, varOp.Symbol.LeaseKind, isExtern)
 			}
 			return g.cType(t)
 		}

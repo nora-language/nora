@@ -929,7 +929,7 @@ func (g *Generator) genFunction(sym *semantic.Symbol, fn *ast.FunctionStatement)
 	}
 
 	if fn.Receiver != nil {
-		t := g.cParamType(ft.Receiver, ft.ReceiverLease, false)
+		t := g.cParamType(ft.Receiver, ft.ReceiverLease, fn.IsExport)
 		if params != "" {
 			params += ", "
 		}
@@ -943,7 +943,7 @@ func (g *Generator) genFunction(sym *semantic.Symbol, fn *ast.FunctionStatement)
 		if i < len(ft.ParamLeases) {
 			lease = ft.ParamLeases[i]
 		}
-		t := g.cParamType(p, lease, false)
+		t := g.cParamType(p, lease, fn.IsExport)
 		params += t
 		if i < len(fn.Parameters) && fn.Parameters[i].Name != nil {
 			params += " " + fn.Parameters[i].Name.Value
