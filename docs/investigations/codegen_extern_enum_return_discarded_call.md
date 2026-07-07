@@ -1,6 +1,6 @@
 # Investigation: Codegen Silently Drops `extern fn` Call When Return Type is an Enum and Value is Discarded
 
-**Status:** Open
+**Status:** Completed
 
 ## Problem
 

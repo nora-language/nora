@@ -75,6 +75,18 @@ pub fn main() i32 {
         panic("Cross-primitive to Enum cast failed")
     }
 
+    // --- Scenario 4: Direct Equality Checks ---
+    var status_a = Status.Pending
+    var status_b = Status.Pending
+    var status_c = Status.Error
+
+    if status_a != status_b {
+        panic("FAIL: Expected Status.Pending == Status.Pending")
+    }
+    if status_a == status_c {
+        panic("FAIL: Expected Status.Pending != Status.Error")
+    }
+
     io.PrintLn("PASS: All enum cast scenarios succeeded!")
     return 0;
 }

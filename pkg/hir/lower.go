@@ -871,9 +871,19 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 	case *ast.CallExpression:
 		if st, isSum := t.(*types.SumType); isSum && st.IsPrimitiveEnum {
 			if len(e.Arguments) == 1 {
-				valOp := l.lowerExpression(e.Arguments[0])
-				cast := &Cast{Val: valOp, Type: t}
-				return &InstOperand{Inst: cast}
+				// Enum casts are handled purely as types during semantic analysis,
+				// so their e.Function node is never analyzed as an expression and has no Type.
+				// If e.Function DOES have a type, it's a real function being called (or closure).
+				isEnumCast := true
+				if fnType := l.SemanticInfo.Types[e.Function]; fnType != nil {
+					isEnumCast = false
+				}
+
+				if isEnumCast {
+					valOp := l.lowerExpression(e.Arguments[0])
+					cast := &Cast{Val: valOp, Type: t}
+					return &InstOperand{Inst: cast}
+				}
 			}
 		}
 
