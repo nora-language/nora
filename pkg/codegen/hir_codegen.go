@@ -888,21 +888,28 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 						if intrinsicName == "borrow_to_raw" || intrinsicName == "mut_borrow_to_raw" {
 							if len(i.Args) == 1 {
 								arg := i.Args[0]
-								argStr := g.hirOperandStr(arg)
 								argType := arg.GetType()
 								if argType != nil {
 									unwrapped := types.UnwrapLease(argType)
+									argStr := g.hirOperandStr(arg)
+									if g.isPointerTypeInC(unwrapped) {
+										if instOp, ok := arg.(*hir.InstOperand); ok {
+											if addrOf, ok := instOp.Inst.(*hir.AddressOf); ok {
+												argStr = g.hirOperandStr(addrOf.Val)
+											}
+										}
+									}
 									lease := types.LeaseRead
 									if pt, ok := argType.(*types.PointerType); ok && pt.Leased {
 										lease = pt.Kind
 									}
-									if g.shouldPassByPointer(unwrapped, lease, false) {
+									if g.shouldPassByPointer(unwrapped, lease, false) || g.isPointerTypeInC(unwrapped) {
 										return fmt.Sprintf("((void*)(%s))", argStr)
 									} else {
 										return fmt.Sprintf("((void*)(&(%s)))", argStr)
 									}
 								}
-								return fmt.Sprintf("((void*)(%s))", argStr)
+								return fmt.Sprintf("((void*)(%s))", g.hirOperandStr(arg))
 							}
 						}
 					}
