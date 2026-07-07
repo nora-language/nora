@@ -438,21 +438,11 @@ func (g *Generator) collectDefinitions() {
 				sym := g.SemanticInfo.Defs[s.Name]
 				if sym != nil {
 					mangled := g.mangleName(sym)
-					if strings.Contains(mangled, "GetModuleHandle") {
-						isNil := true
-						if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok && fnStmt.Body != nil {
-							isNil = false
-						}
-						fmt.Printf("[DEBUG-COLLECT] %s from pkg=%s, bodyNil=%v\n", mangled, g.getSymbolPackage(sym), isNil)
-					}
 					existing := g.Functions[mangled]
 					if existing != nil && existing.DefNode != nil && sym.DefNode != nil {
 						existingFn, ok1 := existing.DefNode.(*ast.FunctionStatement)
 						newFn, ok2 := sym.DefNode.(*ast.FunctionStatement)
 						if ok1 && ok2 && existingFn.Body != nil && newFn.Body == nil {
-							if strings.Contains(mangled, "GetModuleHandle") {
-								fmt.Printf("[DEBUG-COLLECT] %s keeping existing (has body)\n", mangled)
-							}
 							continue
 						}
 					}
@@ -931,9 +921,6 @@ func (g *Generator) isGeneric(t types.NRType) bool {
 
 func (g *Generator) genFunction(sym *semantic.Symbol, fn *ast.FunctionStatement) {
 	name := g.mangleName(sym)
-	if strings.Contains(name, "test_export") {
-		fmt.Printf("[DEBUG-GEN-FUNC] name=%s, sym.Name=%s, IsExport=%v, IsExtern=%v\n", name, sym.Name, fn.IsExport, fn.IsExtern)
-	}
 	ft := sym.Type.(*types.FunctionType)
 	
 	// Use type-erased signature if this is a shared generic monomorphization
@@ -1827,9 +1814,6 @@ func (g *Generator) GeneratePackageCode(pkgName string) (string, error) {
 			continue
 		}
 		if hf, ok := hirFuncs[name]; ok {
-			if strings.Contains(name, "GetModuleHandle") {
-				fmt.Printf("[DEBUG-PKG-LOOP] pkgName=%s, calling genHIRFunction for %s (hf.pkg=%s)\n", pkgName, name, g.getHIRFunctionPackage(hf))
-			}
 			g.genHIRFunction(hf)
 		} else {
 			g.genFunction(sym, fn)
