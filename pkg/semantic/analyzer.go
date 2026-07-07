@@ -3153,14 +3153,18 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					return
 				}
 
-				// Ensure argument is also a primitive or pointer-like type that can be casted
+				// Ensure argument is also a primitive, pointer-like, or primitive enum type that can be casted
 				_, isArgPrim := argType.(*types.PrimitiveType)
 				_, isArgPtr := argType.(*types.PointerType)
 				_, isArgFn := argType.(*types.FunctionType)
+				isArgEnum := false
+				if sumType, isSum := argType.(*types.SumType); isSum && sumType.IsPrimitiveEnum {
+					isArgEnum = true
+				}
 
 				isValidFnCast := isArgFn && prim.Name() == "ptr"
 
-				if !isArgPrim && !isArgPtr && !isValidFnCast {
+				if !isArgPrim && !isArgPtr && !isValidFnCast && !isArgEnum {
 					sa.AddError(n.Arguments[0].Pos(), "cannot cast %s to %s", argType.Name(), prim.Name())
 					sa.SemanticInfo.Types[n] = types.ErrorType
 					return
