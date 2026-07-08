@@ -654,16 +654,36 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 		// [NEW] E. ANONYMOUS R-VALUE DROPS (Closures & Temporaries)
 		if !s.InSecondPass {
 			unconsumed := s.findUnconsumedRValues(stmt)
+			isTerm := false
+			if _, ok := stmt.(*ast.ReturnStatement); ok {
+				isTerm = true
+			} else if _, ok := stmt.(*ast.ContinueStatement); ok {
+				isTerm = true
+			} else if _, ok := stmt.(*ast.BranchStatement); ok {
+				isTerm = true
+			}
 			for _, expr := range unconsumed {
-				if s.Drops[block] == nil {
-					s.Drops[block] = make(map[int][]DropInfo)
-				}
-				if lambda, ok := expr.(*ast.LambdaExpression); ok {
-					s.Drops[block][i+1] = append(s.Drops[block][i+1], DropInfo{Lambda: lambda, Expr: lambda})
+				if isTerm {
+					if s.PreDrops[block] == nil {
+						s.PreDrops[block] = make(map[int][]DropInfo)
+					}
+					if lambda, ok := expr.(*ast.LambdaExpression); ok {
+						s.PreDrops[block][i] = append(s.PreDrops[block][i], DropInfo{Lambda: lambda, Expr: lambda})
+					} else {
+						s.PreDrops[block][i] = append(s.PreDrops[block][i], DropInfo{Expr: expr})
+					}
+					s.debug("      Scheduled temporary PRE-drop for inline RValue at Index %d (%T)", i, expr)
 				} else {
-					s.Drops[block][i+1] = append(s.Drops[block][i+1], DropInfo{Expr: expr})
+					if s.Drops[block] == nil {
+						s.Drops[block] = make(map[int][]DropInfo)
+					}
+					if lambda, ok := expr.(*ast.LambdaExpression); ok {
+						s.Drops[block][i+1] = append(s.Drops[block][i+1], DropInfo{Lambda: lambda, Expr: lambda})
+					} else {
+						s.Drops[block][i+1] = append(s.Drops[block][i+1], DropInfo{Expr: expr})
+					}
+					s.debug("      Scheduled temporary drop for inline RValue at Index %d (%T)", i, expr)
 				}
-				s.debug("      Scheduled temporary drop for inline RValue at Index %d (%T)", i, expr)
 			}
 		}
 
@@ -2234,16 +2254,33 @@ func (s *Solver) walkUnconsumedRValues(node ast.Node, isConsumed bool, out *[]as
 		}
 		return
 	case *ast.ReturnStatement:
-		s.walkUnconsumedRValues(n.ReturnValue, true, out)
+		valConsumed := true
+		if s.CurrentFunction != nil && s.CurrentFunction.Return != nil {
+			if !s.isOwnedRValueType(s.CurrentFunction.Return) {
+				valConsumed = false
+			}
+		}
+		s.walkUnconsumedRValues(n.ReturnValue, valConsumed, out)
 	case *ast.VarStatement:
 		s.walkUnconsumedRValues(n.Value, true, out)
 	case *ast.AssignmentStatement:
 		s.walkUnconsumedRValues(n.Left, false, out)
-		s.walkUnconsumedRValues(n.Value, true, out)
+		valConsumed := true
+		leftType := s.SemanticInfo.Types[n.Left]
+		if leftType != nil && !s.isOwnedRValueType(leftType) {
+			valConsumed = false
+		}
+		s.walkUnconsumedRValues(n.Value, valConsumed, out)
 	case *ast.CallExpression:
 		if !isConsumed {
 			if t := s.SemanticInfo.Types[n]; t != nil && s.isOwnedRValueType(t) {
-				*out = append(*out, n)
+				isLValueIntrinsic := false
+				if sel, ok := n.Function.(*ast.SelectorExpression); ok && sel.Field.Value == "unchecked_get" {
+					isLValueIntrinsic = true
+				}
+				if !isLValueIntrinsic {
+					*out = append(*out, n)
+				}
 			}
 		}
 		recvConsumed := false
@@ -2281,8 +2318,26 @@ func (s *Solver) walkUnconsumedRValues(node ast.Node, isConsumed bool, out *[]as
 				*out = append(*out, n)
 			}
 		}
+		var stType *types.StructType
+		if t := s.SemanticInfo.Types[n]; t != nil {
+			if st, ok := t.(*types.StructType); ok {
+				stType = st
+			} else if pt, ok := t.(*types.PointerType); ok {
+				if st, ok := pt.Base.(*types.StructType); ok {
+					stType = st
+				}
+			}
+		}
 		for _, arg := range n.Fields {
-			s.walkUnconsumedRValues(arg, true, out)
+			valConsumed := true
+			if stType != nil {
+				if fieldType, exists := stType.Fields[arg.Name.Value]; exists {
+					if !s.isOwnedRValueType(fieldType) {
+						valConsumed = false
+					}
+				}
+			}
+			s.walkUnconsumedRValues(arg, valConsumed, out)
 		}
 	case *ast.FieldDefinition:
 		if n.Value != nil {
@@ -2319,6 +2374,13 @@ func (s *Solver) walkUnconsumedRValues(node ast.Node, isConsumed bool, out *[]as
 		s.walkUnconsumedRValues(n.Right, isConsumed, out)
 	case *ast.ExpressionStatement:
 		s.walkUnconsumedRValues(n.Expression, isConsumed, out)
+	case *ast.AllocExpression:
+		if !isConsumed {
+			if t := s.SemanticInfo.Types[n]; t != nil && s.isOwnedRValueType(t) {
+				*out = append(*out, n)
+			}
+		}
+		s.walkUnconsumedRValues(n.Value, true, out)
 	case *ast.ArgumentsExpression:
 		s.walkUnconsumedRValues(n.Value, isConsumed, out)
 	}

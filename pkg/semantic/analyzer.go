@@ -2759,6 +2759,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			// Link AST usage
 			sa.SemanticInfo.Uses[ident] = sym
 			sa.SemanticInfo.Defs[ident] = sym
+			sa.SemanticInfo.Types[ident] = sym.Type
 
 			// Update LeaseKind if it's a move
 			if pref, ok := n.Value.(*ast.PrefixExpression); ok && pref.Operator == "@" {

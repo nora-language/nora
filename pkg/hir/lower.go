@@ -1374,6 +1374,48 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 
 		return &VarOperand{Name: tempName, Type: t, Symbol: sym}
 
+	case *ast.StructLiteral:
+		for _, f := range e.Fields {
+			if f.Value != nil {
+				if l.UnconsumedTemps[f.Value] {
+					tempName := l.makeTempName()
+					ft := l.getType(f.Value)
+					sym := &semantic.Symbol{Name: tempName, Type: ft, Kind: semantic.SymVar}
+					l.ExprTemps[f.Value] = sym
+					l.CurrentBlock.AddInst(&Alloca{Symbol: sym, Type: ft})
+					l.CurrentBlock.AddInst(&Store{
+						Dest: &VarOperand{Name: tempName, Type: ft, Symbol: sym},
+						Val:  l.lowerExpression(f.Value),
+					})
+					f.Value = &ast.Identifier{Value: tempName}
+				} else {
+					l.lowerExpression(f.Value)
+				}
+			}
+		}
+		astExpr := &ASTExpr{ASTNode: e, Type: t}
+		return &InstOperand{Inst: astExpr}
+
+	case *ast.ArrayLiteral:
+		for i, el := range e.Elements {
+			if l.UnconsumedTemps[el] {
+				tempName := l.makeTempName()
+				et := l.getType(el)
+				sym := &semantic.Symbol{Name: tempName, Type: et, Kind: semantic.SymVar}
+				l.ExprTemps[el] = sym
+				l.CurrentBlock.AddInst(&Alloca{Symbol: sym, Type: et})
+				l.CurrentBlock.AddInst(&Store{
+					Dest: &VarOperand{Name: tempName, Type: et, Symbol: sym},
+					Val:  l.lowerExpression(el),
+				})
+				e.Elements[i] = &ast.Identifier{Value: tempName}
+			} else {
+				l.lowerExpression(el)
+			}
+		}
+		astExpr := &ASTExpr{ASTNode: e, Type: t}
+		return &InstOperand{Inst: astExpr}
+
 	default:
 		l.collectHiddenLambdas(expr)
 		astExpr := &ASTExpr{ASTNode: expr, Type: t}
