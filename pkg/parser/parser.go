@@ -474,6 +474,9 @@ func (p *Parser) parseStatement() ast.Statement {
 func (p *Parser) parseStatementInternal() ast.Statement {
 	switch p.curToken.Type {
 	case token.PACKAGE:
+		if p.scopeDepth > 0 {
+			p.ReportError(p.curToken.Position, "package statements are only allowed at the top level of a file")
+		}
 		return p.parsePackageStatement()
 	case token.IMPORT:
 		if p.scopeDepth > 0 {
