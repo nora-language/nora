@@ -182,11 +182,6 @@ func (h *Handler) analyze(ctx context.Context, conn *jsonrpc2.Conn, doc *Documen
 		return
 	}
 
-	f, _ := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if f != nil {
-		fmt.Fprintf(f, "[%v] START analyze: %s\n", time.Now().Format(time.RFC3339), doc.URI)
-		f.Close()
-	}
 
 	path := uriToPath(doc.URI)
 	analyzer := semantic.NewAnalyzer()
@@ -302,18 +297,19 @@ func (h *Handler) analyze(ctx context.Context, conn *jsonrpc2.Conn, doc *Documen
 	doc.Info = &analyzer.SemanticInfo
 	doc.Diags = analyzer.Diagnostics
 
-	f, _ = os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if f != nil {
-		fmt.Fprintf(f, "[%v] END analyze: %s (Diags: %d)\n", time.Now().Format(time.RFC3339), doc.URI, len(analyzer.Diagnostics.Diagnostics))
-		f.Close()
+	if fEnd, _ := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); fEnd != nil {
+		fmt.Fprintf(fEnd, "[%v] END analyze: %s (Diags: %d)\n", time.Now().Format(time.RFC3339), doc.URI, len(analyzer.Diagnostics.Diagnostics))
+		fEnd.Close()
 	}
 
 	h.publishDiagnostics(ctx, conn, doc)
 
 	// Send refresh requests asynchronously to avoid blocking the handler
 	go func() {
-		conn.Call(ctx, "workspace/semanticTokens/refresh", nil, nil)
-		conn.Call(ctx, "workspace/inlayHint/refresh", nil, nil)
+		if conn != nil {
+			conn.Call(ctx, "workspace/semanticTokens/refresh", nil, nil)
+			conn.Call(ctx, "workspace/inlayHint/refresh", nil, nil)
+		}
 	}()
 }
 

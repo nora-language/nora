@@ -684,20 +684,28 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 				rName = strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(rName, "@"), "#"), "&")
 				mangledName := rName + "_" + n.Name.Value
 				sym, _ := sa.CurrentScope.Define(mangledName, fnType, SymFunc, n)
-				sa.SemanticInfo.Defs[n.Name] = sym
+				// If sym is nil, the symbol was already defined (duplicate import pass).
+				// Fall back to looking it up so we don't lose the existing Defs entry.
+				if sym == nil {
+					if existing, found := sa.CurrentScope.Resolve(mangledName); found {
+						sym = existing
+					}
+				}
+				if sym != nil {
+					sa.SemanticInfo.Defs[n.Name] = sym
+				}
 
 				if st, ok := baseType.(*types.StructType); ok {
-					if n.Name.Value == "Next" || n.Name.Value == "Take" {
-						if sa.DebugMode {
-							fmt.Printf("DEBUG Adding method %s to struct %s (%p)\n", n.Name.Value, st.TypeName, st)
-						}
-					}
 					st.Methods[n.Name.Value] = fnType
 
 					if sa.SemanticInfo.MethodSymbols[st] == nil {
 						sa.SemanticInfo.MethodSymbols[st] = make(map[string]*Symbol)
 					}
-					sa.SemanticInfo.MethodSymbols[st][n.Name.Value] = sym
+					// Only write to MethodSymbols if sym is non-nil, to avoid
+					// overwriting a valid entry from a previous CollectSymbols pass.
+					if sym != nil {
+						sa.SemanticInfo.MethodSymbols[st][n.Name.Value] = sym
+					}
 				} else if sumT, ok := baseType.(*types.SumType); ok {
 					if sumT.Methods == nil {
 						sumT.Methods = make(map[string]types.NRType)
@@ -707,7 +715,11 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 					if sa.SemanticInfo.MethodSymbols[sumT] == nil {
 						sa.SemanticInfo.MethodSymbols[sumT] = make(map[string]*Symbol)
 					}
-					sa.SemanticInfo.MethodSymbols[sumT][n.Name.Value] = sym
+					// Only write to MethodSymbols if sym is non-nil, to avoid
+					// overwriting a valid entry from a previous CollectSymbols pass.
+					if sym != nil {
+						sa.SemanticInfo.MethodSymbols[sumT][n.Name.Value] = sym
+					}
 				} else if primT, ok := baseType.(*types.PrimitiveType); ok {
 					if primT.Methods == nil {
 						primT.Methods = make(map[string]types.NRType)
@@ -717,7 +729,11 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 					if sa.SemanticInfo.MethodSymbols[primT] == nil {
 						sa.SemanticInfo.MethodSymbols[primT] = make(map[string]*Symbol)
 					}
-					sa.SemanticInfo.MethodSymbols[primT][n.Name.Value] = sym
+					// Only write to MethodSymbols if sym is non-nil, to avoid
+					// overwriting a valid entry from a previous CollectSymbols pass.
+					if sym != nil {
+						sa.SemanticInfo.MethodSymbols[primT][n.Name.Value] = sym
+					}
 				} else {
 					sa.AddError(n.Receiver.Pos(), "cannot define methods on non-struct/non-sum type %s", receiverType.Name())
 				}
@@ -3700,6 +3716,8 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		sa.Analyze(n.Left) // Resolves 'io' and fills sa.SemanticInfo.Uses[n.Left]
 
 		leftType := sa.SemanticInfo.Types[n.Left]
+
+
 		if leftType == nil || leftType == types.ErrorType {
 			sa.SemanticInfo.Types[n] = types.ErrorType
 			return
@@ -3765,20 +3783,17 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		// CASE B: Struct Field Access (e.g., user.id)
 		case *types.StructType:
 			// 1. Look up field
-			fieldType, exists := t.Fields[n.Field.Value]
-			if exists {
+			if fieldType, exists := t.Fields[n.Field.Value]; exists {
 				sa.SemanticInfo.Types[n] = fieldType
-				base := t
-				if t.BaseType != nil {
-					base = t.BaseType
-				}
-				if syms, ok := sa.SemanticInfo.FieldSymbols[base]; ok {
-					if sym, ok := syms[n.Field.Value]; ok {
+				if sa.SemanticInfo.FieldSymbols[t] != nil {
+					if sym, ok := sa.SemanticInfo.FieldSymbols[t][n.Field.Value]; ok {
 						sa.SemanticInfo.Uses[n.Field] = sym
 					}
 				}
 				return
 			}
+
+
 
 			// 2. Look up method
 			methodType, exists := t.Methods[n.Field.Value]
@@ -5965,6 +5980,7 @@ func (sa *SemanticAnalyzer) Monomorphize(fnStmt *ast.FunctionStatement, typeArgs
 				if sa.SemanticInfo.MethodSymbols[receiverType] == nil {
 					sa.SemanticInfo.MethodSymbols[receiverType] = make(map[string]*Symbol)
 				}
+
 				sa.SemanticInfo.MethodSymbols[receiverType][fnStmt.Name.Value] = sym
 				unwrappedReceiver := types.UnwrapLease(receiverType)
 				if pt, ok := unwrappedReceiver.(*types.PointerType); ok {
