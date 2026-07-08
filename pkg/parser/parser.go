@@ -84,6 +84,8 @@ type Parser struct {
 	DisableMacros       bool
 	Context             context.Context // Added for cancellation
 
+	scopeDepth int // Tracks block nesting depth to forbid certain top-level only statements like import
+
 	curDocComments []*ast.Comment // Collect doc comments for next statement
 	allComments    []*ast.Comment // Every comment in the file
 
@@ -474,6 +476,9 @@ func (p *Parser) parseStatementInternal() ast.Statement {
 	case token.PACKAGE:
 		return p.parsePackageStatement()
 	case token.IMPORT:
+		if p.scopeDepth > 0 {
+			p.ReportError(p.curToken.Position, "import statements are only allowed at the top level of a file")
+		}
 		return p.parseImportStatement()
 	case token.FN:
 		return p.parseFunctionStatement(false, false)
@@ -640,6 +645,10 @@ func (p *Parser) parseSelectCase() *ast.SelectCase {
 
 	// Parse body until next case, default or }
 	sc.Body = &ast.BlockStatement{Token: p.peekToken}
+	
+	p.scopeDepth++
+	defer func() { p.scopeDepth-- }()
+	
 	for !p.peekTokenIs(token.CASE) && !p.peekTokenIs(token.DEFAULT) && !p.peekTokenIs(token.RBRACE) && !p.peekTokenIs(token.EOF) {
 		p.nextToken()
 		if p.curTokenIs(token.SEMICOLON) {
@@ -1841,6 +1850,9 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 	block.Statements = []ast.Statement{}
 
 	p.nextToken() // move past '{'
+	
+	p.scopeDepth++
+	defer func() { p.scopeDepth-- }()
 
 	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
 		// Skip leading semicolons
