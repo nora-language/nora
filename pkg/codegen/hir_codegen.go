@@ -891,14 +891,24 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 								argType := arg.GetType()
 								if argType != nil {
 									unwrapped := types.UnwrapLease(argType)
-									argStr := g.hirOperandStr(arg)
-									if g.isPointerTypeInC(unwrapped) {
-										if instOp, ok := arg.(*hir.InstOperand); ok {
-											if addrOf, ok := instOp.Inst.(*hir.AddressOf); ok {
-												argStr = g.hirOperandStr(addrOf.Val)
+									if instOp, ok := arg.(*hir.InstOperand); ok {
+										if addrOf, ok := instOp.Inst.(*hir.AddressOf); ok {
+											valStr := g.hirOperandStr(addrOf.Val)
+											
+											stripAddressOf := false
+											if g.isPointerTypeInC(unwrapped) && unwrapped.Name() != "ptr" {
+												stripAddressOf = true
+											}
+											
+											if stripAddressOf {
+												return fmt.Sprintf("((void*)(%s))", valStr)
+											} else {
+												return fmt.Sprintf("((void*)(&(%s)))", valStr)
 											}
 										}
 									}
+
+									argStr := g.hirOperandStr(arg)
 									lease := types.LeaseRead
 									if pt, ok := argType.(*types.PointerType); ok && pt.Leased {
 										lease = pt.Kind
