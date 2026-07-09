@@ -63,6 +63,9 @@ type Generator struct {
 	CurrentBlock     *ast.BlockStatement
 	CurrentStmtIndex int
 
+	LatePrototypes *bytes.Buffer // Stores prototypes discovered after GenerateHeader
+	PastHeaderPhase bool
+
 	eraseCache         map[string]types.NRType
 	NativeHeaders      []string
 	GeneratedLambdas   map[string]bool
@@ -1195,6 +1198,9 @@ func (g *Generator) requestAutoDrop(t types.NRType) string {
 	name := "nr_drop_" + g.mangledTypeName(t)
 	if _, ok := g.AutoDropMethods[name]; !ok {
 		g.AutoDropMethods[name] = t
+		if g.LatePrototypes != nil {
+			g.LatePrototypes.WriteString(fmt.Sprintf("void %s(%s* self);\n", name, g.cType(t)))
+		}
 	}
 	return name
 }
@@ -1910,6 +1916,9 @@ func (g *Generator) GenerateSharedGlobals() (string, error) {
 	g.emit("#include \"out.h\"")
 	g.emit("")
 
+	g.PastHeaderPhase = true
+	g.LatePrototypes = new(bytes.Buffer)
+
 	// Generate functions into a temporary buffer first so static literals and spawn wrappers can be emitted above them
 	funcBuf := new(bytes.Buffer)
 	mainBuf := g.buf
@@ -1926,6 +1935,10 @@ func (g *Generator) GenerateSharedGlobals() (string, error) {
 
 	// Restore main buffer
 	g.buf = mainBuf
+
+	// Emit any late prototypes discovered during function generation FIRST!
+	g.buf.Write(g.LatePrototypes.Bytes())
+	g.emit("")
 
 	// Emit static string literals (now populated!)
 	g.emitStringLiterals()
