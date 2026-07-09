@@ -24,10 +24,21 @@ double nr_time_now(void) {
 #endif
 }
 
+// g_active_fibers counts SPAWNED (non-main) fibers that are currently alive.
+// When it is 0, there is nothing else to schedule, so parking the fiber would
+// only cause the scheduler to spin at 100% CPU waiting for the timer to fire.
+extern NR_ATOMIC_LONG g_active_fibers;
+
 void nr_sleep_ms(int32_t ms) {
-    nr_time_init();
     fiber_info_t* self = (fiber_info_t*)GetFiberData();
-    if (!self) {
+
+    // Smart sleep: nr_main itself is spawned as a fiber, so g_active_fibers is
+    // always >= 1 during normal execution. "Only the main fiber running" means
+    // g_active_fibers == 1. When user code spawns additional fibers it becomes 2+.
+    bool no_other_fibers = NR_ATOMIC_LOAD(&g_active_fibers) <= 1;
+    if (!self || no_other_fibers) {
+        // No fiber context, or no other fibers to schedule.
+        // Use OS-level thread suspend directly — 0% idle CPU.
 #ifdef _WIN32
         Sleep(ms);
 #elif defined(__EMSCRIPTEN__)
@@ -40,6 +51,11 @@ void nr_sleep_ms(int32_t ms) {
 #endif
         return;
     }
+
+    // Only reach here when other fibers are alive and need scheduling.
+    // Initialize the timer poller thread so it can wake us after `ms` ms.
+    nr_time_init();
+
 
     double now = nr_time_now();
     double delay = (double)ms / 1000.0;

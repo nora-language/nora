@@ -104,35 +104,56 @@ This avoids the park/resume cycle entirely when there is no other work to schedu
 ### Fix C: Batch Yield Checkpoints
 Rather than yielding on every function call, the checkpoint should use a counter and only yield every N calls (already partially implemented via `g_yield_ticks`). Verify the tick threshold is high enough that single-fiber tight loops don't yield excessively.
 
-## Applied Fix (Fix B + C Combined)
+## Applied Fixes
 
-**File:** `std/runtime/runtime.h`
+### Fix B — Yield Checkpoint Guard (`std/runtime/runtime.h`)
 
-The `NR_COOPERATIVE_YIELD_CHECKPOINT` macro was updated to guard the yield with an `g_active_fibers > 0` check, combined with the existing tick-based batching:
+**Key discovery:** `nr_main` itself is spawned as a fiber via `scheduler_spawn`, so `g_active_fibers == 1` throughout the entire program lifetime. The original check `> 0` was therefore always true. The correct threshold is `> 1` (user-spawned fibers exist beyond the main fiber itself).
 
 ```diff
-- #define NR_COOPERATIVE_YIELD_CHECKPOINT() do { \
--     if (++g_yield_ticks >= 1000) { \
--         g_yield_ticks = 0; \
--         nr_cooperative_yield(); \
--     } \
-- } while(0)
-
-+ // g_active_fibers tracks the number of SPAWNED (non-main) fibers currently alive.
-+ extern NR_ATOMIC_LONG g_active_fibers;
-+
-+ #define NR_COOPERATIVE_YIELD_CHECKPOINT() do { \
-+     if (NR_ATOMIC_LOAD(&g_active_fibers) > 0 && ++g_yield_ticks >= 1000) { \
-+         g_yield_ticks = 0; \
-+         nr_cooperative_yield(); \
-+     } \
-+ } while(0)
+- if (++g_yield_ticks >= 1000) {
++ if (NR_ATOMIC_LOAD(&g_active_fibers) > 1 && ++g_yield_ticks >= 1000) {
 ```
 
-The `&&` short-circuits — when `g_active_fibers == 0`, the tick counter is never even incremented. This means a single-fiber program pays **zero scheduling overhead** per checkpoint (just one atomic load per call vs. potentially thousands of semaphore wakeups per second).
+Effect: the yield checkpoint becomes a no-op for single-fiber programs, eliminating the worker thread wakeup storm.
 
-## Validation
-- **Before fix:** `cube.exe` (render loop, no spawned fibers) showed ~20% CPU on a multi-core machine in Task Manager → Details tab.
-- **After fix:** `cube.exe` shows **~0% CPU** with no `NORA_NUM_WORKERS` env var required.
-- The fix is self-tuning: programs that call `spawn` will see `g_active_fibers > 0` and correctly yield cooperatively, preserving full concurrent scheduling behavior.
-- The `NORA_NUM_WORKERS=1` workaround is **no longer needed** for single-fiber applications.
+---
+
+### Smart `nr_sleep_ms` (`std/runtime/time.c`)
+
+`nr_time_init()` creates a timer poller OS thread that loops with `Sleep(1)` 1000×/second. It must NOT be called when we're taking the OS sleep path. The check must occur **before** `nr_time_init()` is called, and also uses threshold `<= 1`:
+
+```c
+bool no_other_fibers = NR_ATOMIC_LOAD(&g_active_fibers) <= 1;
+if (!self || no_other_fibers) {
+    Sleep(ms);  // OS-level thread suspend, 0% idle CPU
+    return;
+}
+nr_time_init();  // Only initialized when actually needed
+// ... fiber park path
+```
+
+---
+
+## Validation Results
+
+| Configuration | CPU % | Notes |
+|---|---|---|
+| Default workers, no sleep cap | ~50% | Original state — full busy-wait |
+| `NORA_NUM_WORKERS=1`, `sys.Sleep(16)` | **~0%** | Confirmed workaround |
+| Fix B only, `sys.Sleep(16)` | **~0%** | Confirmed — yield wakeup storm eliminated |
+| Fix B + smart `time.Sleep` | ~10% | ⚠️ Unexplained residual overhead |
+| Fix B + `sys.Sleep(16)` | **~0%** | ✅ Final confirmed state |
+
+## Known Remaining Issue: `time.Sleep` Overhead
+
+Despite the smart `nr_sleep_ms` correctly routing to `Sleep(ms)` when `g_active_fibers <= 1`, importing the `time` package and calling `time.Sleep` in a render loop still results in ~10% CPU vs. 0% with `sys.Sleep`.
+
+**Hypotheses (not yet confirmed):**
+1. The `time.Sleep` Nora wrapper (`time_Sleep`) goes through multiple function call layers that change clang's inlining decisions in `-O0` mode, increasing render work overhead
+2. The `time` package's compiled code (`out_pkg_time.c`) includes channel-based `Ticker` infrastructure that interacts with the scheduler's internal state
+3. The `NR_COOPERATIVE_YIELD_CHECKPOINT()` in `time_Sleep`'s prologue, even as a no-op, creates a measurable footprint across 60 calls/second × N checkpoints per call
+
+**Current workaround for render loops:** Use `sys.Sleep(ms)` (direct Win32 `Sleep` FFI binding) which bypasses the Nora time package and fiber scheduler entirely, consistently giving ~0% idle CPU.
+
+**Outstanding work:** Requires profiling (e.g., with Very Sleepy or ETW traces) to identify exactly which instruction accounts for the 10% residual when `time.Sleep` is used.
