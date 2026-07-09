@@ -180,8 +180,21 @@ extern THREAD_LOCAL int g_yield_ticks;
 
 void nr_cooperative_yield();
 
+// g_active_fibers tracks the number of SPAWNED (non-main) fibers currently alive.
+// Declared here so the yield checkpoint macro can read it without a function call overhead.
+extern NR_ATOMIC_LONG g_active_fibers;
+
+// Cooperative yield checkpoint inserted by the compiler into function prologues.
+// 
+// Fix B: If no other fibers exist (g_active_fibers == 0), this is a no-op.
+// A single-fiber program (e.g. a game/render loop) pays zero scheduling overhead.
+// When fibers ARE spawned, the standard tick-based yield kicks in so other fibers
+// get CPU time, exactly as before.
+//
+// This eliminates the "worker thread wakeup storm" where each yield checkpoint
+// would signal all N sleeping worker OS threads unnecessarily.
 #define NR_COOPERATIVE_YIELD_CHECKPOINT() do { \
-    if (++g_yield_ticks >= 1000) { \
+    if (NR_ATOMIC_LOAD(&g_active_fibers) > 0 && ++g_yield_ticks >= 1000) { \
         g_yield_ticks = 0; \
         nr_cooperative_yield(); \
     } \
