@@ -142,18 +142,28 @@ nr_time_init();  // Only initialized when actually needed
 | Default workers, no sleep cap | ~50% | Original state — full busy-wait |
 | `NORA_NUM_WORKERS=1`, `sys.Sleep(16)` | **~0%** | Confirmed workaround |
 | Fix B only, `sys.Sleep(16)` | **~0%** | Confirmed — yield wakeup storm eliminated |
-| Fix B + smart `time.Sleep` | ~10% | ⚠️ Unexplained residual overhead |
-| Fix B + `sys.Sleep(16)` | **~0%** | ✅ Final confirmed state |
+| Fix B + smart `time.Sleep` + spinning poller | ~10% | Identified bug in WGPU bindings |
+| Fix B + smart `time.Sleep` + sleeping poller | **~0%** | ✅ Final confirmed state |
 
-## Known Remaining Issue: `time.Sleep` Overhead
+## 10% CPU Overhead Explained (Resolved)
 
-Despite the smart `nr_sleep_ms` correctly routing to `Sleep(ms)` when `g_active_fibers <= 1`, importing the `time` package and calling `time.Sleep` in a render loop still results in ~10% CPU vs. 0% with `sys.Sleep`.
+Despite the smart `nr_sleep_ms` correctly routing to `Sleep(ms)` when `g_active_fibers <= 1`, importing the `time` package and calling `time.Sleep` in the render loop initially resulted in ~10% CPU overhead vs. 0% with `sys.Sleep`.
 
-**Hypotheses (not yet confirmed):**
-1. The `time.Sleep` Nora wrapper (`time_Sleep`) goes through multiple function call layers that change clang's inlining decisions in `-O0` mode, increasing render work overhead
-2. The `time` package's compiled code (`out_pkg_time.c`) includes channel-based `Ticker` infrastructure that interacts with the scheduler's internal state
-3. The `NR_COOPERATIVE_YIELD_CHECKPOINT()` in `time_Sleep`'s prologue, even as a no-op, creates a measurable footprint across 60 calls/second × N checkpoints per call
+**Root Cause:**
+This was tracked down to an accidental infinite spin-loop in the WGPU bindings (`nora_wgpu/src/core/instance.nr`).
 
-**Current workaround for render loops:** Use `sys.Sleep(ms)` (direct Win32 `Sleep` FFI binding) which bypasses the Nora time package and fiber scheduler entirely, consistently giving ~0% idle CPU.
+When a WGPU instance was created, it spawned a background fiber to poll for callbacks:
+```nora
+fn _process_events_poller(inst: ptr) {
+    while true {
+        sys.wgpuInstanceProcessEvents(inst)
+        runtime.Yield()
+    }
+}
+```
 
-**Outstanding work:** Requires profiling (e.g., with Very Sleepy or ETW traces) to identify exactly which instruction accounts for the 10% residual when `time.Sleep` is used.
+- With `time.Sleep(16ms)`, the main fiber parked and the scheduler looked for other work. The poller fiber was the only other runnable fiber, so it ran `ProcessEvents` (non-blocking) and called `runtime.Yield()`. Because the main fiber was sleeping, the poller fiber was immediately re-scheduled. It spun in a tight loop thousands of times per second, burning ~10% CPU.
+- With `sys.Sleep(16ms)`, the entire Windows OS thread was suspended at the kernel level. Because the OS thread was asleep, the background poller fiber was frozen and couldn't spin.
+
+**The Fix:**
+The `_process_events_poller` was modified to use `time.Sleep(10ms)` instead of `runtime.Yield()`. The render loop now uses `time.Sleep` without any overhead, perfectly idling at **~0% CPU**.
