@@ -1298,7 +1298,11 @@ func (g *Generator) getDropMethod(t types.NRType) string {
 	}
 
 	for k, methods := range g.SemanticInfo.MethodSymbols {
-		if types.Equals(k, base) || (k.Name() != "" && k.Name() == base.Name()) {
+		kBase := k
+		if pt, ok := k.(*types.PointerType); ok {
+			kBase = pt.Base
+		}
+		if types.Equals(kBase, base) {
 			if sym, ok := methods["drop"]; ok {
 				return g.mangleName(sym)
 			}
@@ -1325,7 +1329,11 @@ func (g *Generator) isDropMethodReceiverOwned(t types.NRType) bool {
 	}
 	if dropSym == nil {
 		for k, methods := range g.SemanticInfo.MethodSymbols {
-			if types.Equals(k, base) || (k.Name() != "" && k.Name() == base.Name()) {
+			kBase := k
+			if pt, ok := k.(*types.PointerType); ok {
+				kBase = pt.Base
+			}
+			if types.Equals(kBase, base) {
 				if sym, ok := methods["drop"]; ok {
 					dropSym = sym
 					break

@@ -1,7 +1,7 @@
 # Nested Struct Auto-Drop Leak
 
 ## Status
-Investigating
+Resolved
 
 ## Problem
 When a struct contains owned fields (`@` pointers), the Nora compiler is expected to automatically generate an `AutoDropMethod` that recursively calls the `drop()` methods of its fields when the parent struct goes out of scope. However, during the implementation of `nora_wgpu`, we discovered a memory leak where `gfx.Texture`, `gfx.Mesh`, and `gfx.Material` structs were successfully deallocated, but their internal `@` fields (such as `@core.Texture`, `@core.TextureView`, `@core.Sampler`) were never dropped. 
@@ -9,36 +9,57 @@ When a struct contains owned fields (`@` pointers), the Nora compiler is expecte
 Because the compiler failed to auto-drop the inner fields, the 8-byte pointer allocations for those inner objects leaked.
 
 ## Reproduction
-To reproduce this issue, create a wrapper struct that takes ownership of another allocated object without defining a custom `drop()` method:
+To reproduce this issue, create two structs across different packages that share the **exact same name**. One must have an explicit `drop` method, and the other must hold the first as an `@` pointer without its own explicit `drop` method.
 
+**pkg_a/inner.nr**:
 ```nora
+package pkg_a
+
 pub type Inner = struct {
     handle: ptr
 }
 
 pub fn (self: &Inner) drop() {
-    // some cleanup
+    // Explicit drop method
 }
+```
 
-pub type Wrapper = struct {
-    inner: @Inner
+**pkg_b/inner.nr**:
+```nora
+package pkg_b
+import "pkg_a"
+
+// Shares the same name ("Inner"), but has no manual drop method
+pub type Inner = struct {
+    value: @pkg_a.Inner
 }
+```
+
+**main.nr**:
+```nora
+package main
+import "pkg_a"
+import "pkg_b"
 
 fn main() {
-    var raw = alloc Inner { handle: none }
-    var wrap = alloc Wrapper { inner: @raw }
-    // Loop break or scope exit
-    // Expected: `wrap` is dropped, which triggers `wrap.inner.drop()`, which cleans up `raw`.
-    // Actual: `wrap` is dropped, but `raw` leaks (8 bytes).
+    var raw = alloc pkg_a.Inner { handle: none }
+    var wrap = alloc pkg_b.Inner { value: @raw }
+    // Expected: `wrap` is auto-dropped, which recursively drops `wrap.value`.
+    // Actual: Compiler binds `wrap` to `pkg_a.Inner`'s drop function due to the name collision! 
+    // It runs `pkg_a.Inner`'s drop on `wrap` and permanently leaks the 8-byte `@pkg_a.Inner` field.
 }
 ```
 
 ## Root Cause
-The root cause lies in how the Nora compiler's Topological Lease Solver and C-Codegen handle auto-generated drops. 
+The root cause was a **cross-package name collision** during the C-codegen phase.
 
-When a struct like `gfx.Texture` has no explicitly defined `drop()` method, the compiler's semantic phase correctly identifies it as needing an `AutoDropMethod` because it contains `@` fields. However, the generated C drop function `nr_drop_gfx_Texture` appears to be incomplete. It successfully frees the memory of the `gfx.Texture` allocation itself (the 24 bytes), but it fails to emit the recursive `drop()` calls for its `texture`, `view`, and `sampler` fields before the free occurs. 
+When a struct like `gfx.Texture` has no explicitly defined `drop()` method, the compiler's semantic phase correctly identifies it as needing an `AutoDropMethod`. However, during method resolution, the compiler searches `g.SemanticInfo.MethodSymbols` for an existing explicit drop method via `getDropMethod()`.
 
-This indicates that either the AST traversal in `requestAutoDrop` misses nested `@` fields, or the `emitAutoDropMethods` function in `generator.go` fails to iterate over the struct's layout and emit the necessary field cleanup instructions.
+In `pkg/codegen/generator.go`, `getDropMethod` attempts a direct lookup. When that fails (as it should for `gfx.Texture`), it falls back to a loop over all registered methods. Due to a flaw in pointer unwrapping, the loop used a dangerous string-matching check: `(k.Name() != "" && k.Name() == base.Name())`. 
+
+Because both `core.Texture` (which *does* have a manual drop method) and `gfx.Texture` share the same struct name (`"Texture"`), the compiler incorrectly matched `gfx.Texture` to `core.Texture`'s explicit `drop()` method. This tricked the compiler into believing `gfx.Texture` already had a manual drop function, causing it to completely skip generating the `AutoDrop` recursive memory release instructions.
+
+When a `gfx.Texture` went out of scope, the compiler blindly called `core_Texture_drop` on the `gfx.Texture` memory layout, which silently failed to release its nested `@` fields and permanently leaked them (8 bytes per pointer).
 
 ## Fix / Workaround
 **Workaround Implemented:**
@@ -51,10 +72,17 @@ pub fn (self: &Texture) drop() {
     var _samp = @self.sampler
 }
 ```
-*(Note: As discovered during this workaround, doing this requires a cache clear of the `build/debug/runtime_cache` to avoid linking errors, due to a separate caching bug where the compiler continues to look for the `nr_drop_...` symbol in dependent packages).*
 
-**Required Compiler Fix:**
-The `pkg/codegen/generator.go` (and potentially the semantic analyzer) must be updated. The logic that generates the body for `AutoDropMethods` must be amended to loop over all fields of the struct. For any field marked as an owned type (`@`), it must explicitly emit a call to that field type's drop function before freeing the struct's own memory.
+**Compiler Fix (Applied):**
+The `pkg/codegen/generator.go` file was updated to eliminate the dangerous string-matching fallback in `getDropMethod` and `isDropMethodReceiverOwned`. The keys in `MethodSymbols` are pointer types (`&Texture`), so the fix properly unwraps the pointer first, and then relies entirely on the robust `types.Equals()` check (which enforces both struct structure and exact package boundaries):
+
+```go
+kBase := k
+if pt, ok := k.(*types.PointerType); ok {
+    kBase = pt.Base
+}
+if types.Equals(kBase, base) { ... }
+```
 
 ## Validation
-By implementing the manual `drop()` workaround, the active allocations dropped to `0` and the "Nora MEMORY LEAK REPORT" disappeared at runtime, proving that the leak was isolated purely to the auto-drop field traversal. A permanent regression test should be added to `pkg/cmd/test/` once the compiler fix is deployed.
+A standalone regression test was created in `pkg/cmd/test/repro_nested_struct_auto_drop_leak` using two `Inner` structs in separate packages to recreate the cross-package collision. With the fix applied, the compiler correctly avoids the name collision, generates the `AutoDrop` code, and Memory Leak tracking reports exactly 0 leaked bytes. The manual workarounds in `nora_wgpu` have since been removed.
