@@ -3081,7 +3081,11 @@ func copyDynamicLibraries(buildDir string, opts BuildOptions) error {
 		targetOS = runtime.GOOS
 	}
 
-	for _, lib := range opts.Native.DynamicLibs {
+	var allLibsToCopy []string
+	allLibsToCopy = append(allLibsToCopy, opts.Native.DynamicLibs...)
+	allLibsToCopy = append(allLibsToCopy, opts.Native.StaticLibs...)
+
+	for _, lib := range allLibsToCopy {
 		libName := filepath.Base(lib)
 		if libName == "" {
 			continue
@@ -3090,17 +3094,28 @@ func copyDynamicLibraries(buildDir string, opts BuildOptions) error {
 		var candidates []string
 		switch targetOS {
 		case "windows":
-			candidates = []string{
-				libName,
-				libName + ".dll",
-				"lib" + libName + ".dll",
-			}
-			if strings.HasSuffix(strings.ToLower(libName), ".dll") {
+			lowerLib := strings.ToLower(libName)
+			if strings.HasSuffix(lowerLib, ".dll.lib") {
+				base := libName[:len(libName)-8]
+				candidates = []string{base + ".dll", "lib" + base + ".dll", libName}
+			} else if strings.HasSuffix(lowerLib, ".dll.a") {
+				base := libName[:len(libName)-6]
+				candidates = []string{base + ".dll", "lib" + base + ".dll", libName}
+			} else if strings.HasSuffix(lowerLib, ".lib") {
+				base := libName[:len(libName)-4]
+				candidates = []string{base + ".dll", "lib" + base + ".dll", libName}
+			} else if strings.HasSuffix(lowerLib, ".dll") {
 				base := strings.TrimSuffix(libName, ".dll")
-				candidates = append(candidates, base, "lib"+base+".dll")
-			} else if strings.HasSuffix(strings.ToLower(libName), "dll") {
+				candidates = []string{libName, "lib" + base + ".dll"}
+			} else if strings.HasSuffix(lowerLib, "dll") {
 				base := libName[:len(libName)-3]
-				candidates = append(candidates, base+".dll", "lib"+base+".dll")
+				candidates = []string{base + ".dll", "lib" + base + ".dll"}
+			} else {
+				candidates = []string{
+					libName,
+					libName + ".dll",
+					"lib" + libName + ".dll",
+				}
 			}
 		case "linux":
 			candidates = []string{
