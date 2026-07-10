@@ -27,14 +27,14 @@ pub fn IntoRaw[T](val: @T) ptr {
 [intrinsic("borrow_to_raw")]
 [NoEmit]
 pub fn BorrowToRaw[T](val: #T) ptr {
-    return val
+    return ptr(val)
 }
 
 // MutBorrowToRaw takes a mutable borrow and returns a raw ptr.
 [intrinsic("mut_borrow_to_raw")]
 [NoEmit]
 pub fn MutBorrowToRaw[T](val: &T) ptr {
-    return val
+    return ptr(val)
 }
 
 // FromRaw takes a raw ptr and reclaims ownership, wrapping it in a managed @T lease.
