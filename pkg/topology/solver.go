@@ -1409,6 +1409,78 @@ func (s *Solver) isMoveOperationForSelector(stmt ast.Statement, target *ast.Sele
 			}
 		}
 
+		// 6. Literals (Struct, Array, Map)
+		if structLit, ok := n.(*ast.StructLiteral); ok {
+			structTypeObj := s.SemanticInfo.Types[structLit]
+			if st, ok := structTypeObj.(*types.StructType); ok {
+				for _, field := range structLit.Fields {
+					fName := field.Name.Value
+					fExpr := field.Value
+					if fExpr != nil {
+						if pref, ok := fExpr.(*ast.PrefixExpression); ok && pref.Operator == "@" {
+							if s.isSameSelector(pref.Right, target) {
+								isMove = true
+								return false
+							}
+						}
+						fType := st.Fields[fName]
+						if s.isImplicitMoveType(fType) && s.isSameSelector(fExpr, target) {
+							isMove = true
+							return false
+						}
+					}
+				}
+			}
+		}
+
+		if arrayLit, ok := n.(*ast.ArrayLiteral); ok {
+			arrayTypeObj := s.SemanticInfo.Types[arrayLit]
+			if at, ok := arrayTypeObj.(*types.ListType); ok {
+				for _, elem := range arrayLit.Elements {
+					if pref, ok := elem.(*ast.PrefixExpression); ok && pref.Operator == "@" {
+						if s.isSameSelector(pref.Right, target) {
+							isMove = true
+							return false
+						}
+					}
+					if s.isImplicitMoveType(at.ElementType) && s.isSameSelector(elem, target) {
+						isMove = true
+						return false
+					}
+				}
+			}
+		}
+
+		if mapLit, ok := n.(*ast.MapLiteral); ok {
+			mapTypeObj := s.SemanticInfo.Types[mapLit]
+			if mt, ok := mapTypeObj.(*types.MapType); ok {
+				for kExpr, vExpr := range mapLit.Pairs {
+					// Check Key
+					if pref, ok := kExpr.(*ast.PrefixExpression); ok && pref.Operator == "@" {
+						if s.isSameSelector(pref.Right, target) {
+							isMove = true
+							return false
+						}
+					}
+					if s.isImplicitMoveType(mt.Key) && s.isSameSelector(kExpr, target) {
+						isMove = true
+						return false
+					}
+					// Check Value
+					if pref, ok := vExpr.(*ast.PrefixExpression); ok && pref.Operator == "@" {
+						if s.isSameSelector(pref.Right, target) {
+							isMove = true
+							return false
+						}
+					}
+					if s.isImplicitMoveType(mt.Value) && s.isSameSelector(vExpr, target) {
+						isMove = true
+						return false
+					}
+				}
+			}
+		}
+
 		return true
 	})
 	return isMove

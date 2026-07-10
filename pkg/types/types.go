@@ -1,5 +1,7 @@
 package types
 
+import "fmt"
+
 type Kind int
 
 const (
@@ -285,7 +287,17 @@ func IsOwnedType(t NRType) bool {
 		return false
 	}
 	kind := t.GetKind()
-	if kind == KindStruct || kind == KindSum || kind == KindList || kind == KindMap || kind == KindChan || kind == KindProtocol || kind == KindFunction {
+	if kind == KindStruct || kind == KindList || kind == KindMap || kind == KindChan || kind == KindProtocol || kind == KindFunction {
+		return true
+	}
+	if kind == KindSum {
+		if st, ok := t.(*SumType); ok {
+			if st.IsPrimitiveEnum {
+				return false
+			}
+		} else {
+			fmt.Printf("[DEBUG-IsOwnedType] t is KindSum but not *SumType. Type: %T\n", t)
+		}
 		return true
 	}
 	if kind == KindGeneric {
