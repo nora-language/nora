@@ -1,7 +1,7 @@
 # Large Array Stack Overflow in Nora `alloc T[N]` Codegen
 
 ## Status
-**Open** — Workaround in place (cap at ~1000 elements). Requires compiler or stdlib fix.
+**Completed** — The Nora compiler has been updated to unconditionally heap allocate `alloc T[N]` using `nr_malloc_debug` in the HIR codegen phase. The VLA stack overflow bug is resolved.
 
 ---
 
@@ -121,14 +121,7 @@ This enables writing to a `GetMappedRange` pointer directly without a CPU stagin
 
 ## Current Workaround
 
-In `nora_wgpu/examples/instancing/main.nr`, the particle count is capped at **1000**:
-
-```nora
-// NOTE: num_particles is capped at 1000 due to Nora VLA stack-size limitations.
-// See: docs/investigations/large_array_stack_overflow.md for details and roadmap solution.
-var num_particles = 1000
-var p_data = alloc Particle[num_particles]
-```
+**Resolved.** The particle count in `nora_wgpu/examples/instancing/main.nr` has been successfully restored to `100000` as the underlying compiler issue was addressed.
 
 ---
 
