@@ -1669,6 +1669,20 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					structType.FieldNames = append(structType.FieldNames, fieldName)
 				}
 				structType.Fields[fieldName] = resolvedType
+				if pt, ok := resolvedType.(*types.PointerType); ok && pt.IsArray {
+					pos := fieldDef.Name.Pos()
+					sa.Diagnostics.Add(diag.Diagnostic{
+						Range: diag.Range{
+							Start: diag.Position{Line: pos.Line, Column: pos.Column, Offset: pos.Offset},
+							End:   diag.Position{Line: pos.Line, Column: pos.Column + len(fieldName), Offset: pos.Offset + len(fieldName)},
+						},
+						Severity: diag.Warning,
+						Message:  fmt.Sprintf("fixed-size array type `T[N]` as struct field '%s' emits a slice header", fieldName),
+						Source:   "Semantic",
+						File:     pos.Filename,
+						Hint:     "For FFI/GPU-compatible structs, use flat scalar fields.",
+					})
+				}
 
 				fieldSym := &Symbol{
 					Name:    fieldName,

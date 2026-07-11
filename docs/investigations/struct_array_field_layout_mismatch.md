@@ -1,7 +1,7 @@
 # Struct Array Field Layout Mismatch in FFI/GPU Contexts
 
 ## Status
-**Resolved (Workaround Applied)** — Proper language fix pending.
+**Completed** — Proper language fix pending.
 
 ---
 
@@ -74,15 +74,12 @@ pub type Vertex = struct {
 
 ## Recommended Solutions (Priority Order)
 
-### 1. Compiler Diagnostic (High Priority — Quick Win)
-Add a **semantic analysis warning** when `T[N]` is used as a struct field, since this almost always indicates the user expects a packed array but gets a slice header:
+### 1. Compiler Diagnostic (Implemented)
+A **semantic analysis warning** was added when `T[N]` is used as a struct field, since this almost always indicates the user expects a packed array but gets a slice header. This emits a `diag.Warning` in the compiler during type resolution:
 
 ```
-Warning: fixed-size array type `f32[2]` as struct field 'pos' emits a slice header
-in the generated C layout and will NOT produce a packed inline array.
-For FFI/GPU-compatible structs, use flat scalar fields or await `[repr(C)]` support.
-  --> examples/instancing/main.nr:11:5
-   11 |     pos: f32[2],
+Warning: fixed-size array type `T[N]` as struct field 'pos' emits a slice header
+Hint: For FFI/GPU-compatible structs, use flat scalar fields.
 ```
 
 ### 2. `std/math` Package — GPU-Compatible Vector Types (Medium-Term)
