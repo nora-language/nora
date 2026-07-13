@@ -1,0 +1,14 @@
+name: manifest_platforms
+version: 1.0.0
+dependencies:
+  win_dep:
+    path: win_dep
+    platform: windows
+  lin_dep:
+    path: lin_dep
+    platform: linux
+native:
+  windows:
+    cflags: ["-DWINDOWS_TEST"]
+  linux:
+    cflags: ["-DLINUX_TEST"]

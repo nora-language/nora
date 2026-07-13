@@ -171,8 +171,9 @@ func initStdPath() {
 }
 
 type Dependency struct {
-	Path    string `yaml:"path"`
-	Version string `yaml:"version"`
+	Path     string `yaml:"path"`
+	Version  string `yaml:"version"`
+	Platform string `yaml:"platform"`
 }
 
 type CompilerConfig struct {
@@ -187,6 +188,17 @@ type CompilerConfig struct {
 	CFlags       []string `yaml:"cflags"`        // Custom/extra flags
 }
 
+type NativePlatformConfig struct {
+	CompilerConfig `yaml:",inline"`
+
+	DynamicLibs []string `yaml:"dynamic_libs"`
+	StaticLibs  []string `yaml:"static_libs"`
+	IncludeDirs []string `yaml:"include_dirs"`
+	LibDirs     []string `yaml:"lib_dirs"`
+	Headers     []string `yaml:"headers"`
+	SourceFiles []string `yaml:"source_files"`
+}
+
 type NativeConfig struct {
 	CompilerConfig `yaml:",inline"`
 
@@ -196,6 +208,55 @@ type NativeConfig struct {
 	LibDirs     []string `yaml:"lib_dirs"`
 	Headers     []string `yaml:"headers"`
 	SourceFiles []string `yaml:"source_files"`
+
+	Platforms map[string]NativePlatformConfig `yaml:",inline"`
+}
+
+func resolveNativeConfig(base NativeConfig, targetOS string) NativeConfig {
+	if targetOS == "" {
+		targetOS = runtime.GOOS
+	}
+	merged := base
+	merged.Platforms = nil // Prevent it from being used
+	
+	plat, ok := base.Platforms[targetOS]
+	if !ok {
+		return merged
+	}
+
+	if plat.Compiler != "" {
+		merged.Compiler = plat.Compiler
+	}
+	if plat.OptRelease != "" {
+		merged.OptRelease = plat.OptRelease
+	}
+	if plat.OptDebug != "" {
+		merged.OptDebug = plat.OptDebug
+	}
+	if plat.DebugSymbols != "" {
+		merged.DebugSymbols = plat.DebugSymbols
+	}
+	if plat.OutFlag != "" {
+		merged.OutFlag = plat.OutFlag
+	}
+	if plat.IncFlag != "" {
+		merged.IncFlag = plat.IncFlag
+	}
+	if plat.DefineFlag != "" {
+		merged.DefineFlag = plat.DefineFlag
+	}
+	if plat.LibDirFlag != "" {
+		merged.LibDirFlag = plat.LibDirFlag
+	}
+
+	merged.DynamicLibs = append(merged.DynamicLibs, plat.DynamicLibs...)
+	merged.StaticLibs = append(merged.StaticLibs, plat.StaticLibs...)
+	merged.IncludeDirs = append(merged.IncludeDirs, plat.IncludeDirs...)
+	merged.LibDirs = append(merged.LibDirs, plat.LibDirs...)
+	merged.Headers = append(merged.Headers, plat.Headers...)
+	merged.SourceFiles = append(merged.SourceFiles, plat.SourceFiles...)
+	
+	return merged
 }
 
 type ProjectConfig struct {
@@ -369,6 +430,9 @@ func (f *FileLoader) loadManifest(dirPath string) {
 				f.Dependencies = make(map[string]Dependency)
 			}
 			for name, dep := range config.Dependencies {
+				if dep.Platform != "" && dep.Platform != f.TargetOS && f.TargetOS != "" {
+					continue
+				}
 				if _, exists := f.Dependencies[name]; !exists {
 					if !filepath.IsAbs(dep.Path) && !strings.HasPrefix(dep.Path, "http") {
 						dep.Path = filepath.Join(dirPath, dep.Path)
@@ -376,7 +440,7 @@ func (f *FileLoader) loadManifest(dirPath string) {
 					f.Dependencies[name] = dep
 				}
 			}
-			f.CollectedNative.Merge(config.Native, dirPath)
+			f.CollectedNative.Merge(resolveNativeConfig(config.Native, f.TargetOS), dirPath)
 			for _, p := range config.Plugins {
 				resolved := p
 				if !filepath.IsAbs(p) {
@@ -421,6 +485,9 @@ func (f *FileLoader) Load(path string, basePath string) (*semantic.Scope, error)
 					f.Dependencies = make(map[string]Dependency)
 				}
 				for transName, transDep := range libConfig.Dependencies {
+					if transDep.Platform != "" && transDep.Platform != f.TargetOS && f.TargetOS != "" {
+						continue
+					}
 					if existing, exists := f.Dependencies[transName]; exists {
 						if existing.Version != transDep.Version && transDep.Version != "" && existing.Version != "" {
 							fmt.Printf("Warning: version conflict for dependency '%s' found in '%s'. Using '%s' (v%s) but found '%s' (v%s) as transitive dependency.\n",
@@ -754,6 +821,16 @@ fn main() {
 		}
 
 		configData, _ := yaml.Marshal(config)
+		configData = append(configData, []byte(`
+# native:
+#   cflags: ["-Wall"]
+#   windows:
+#     dynamic_libs: ["ws2_32"]
+#     headers: ["winsock2.h"]
+#   linux:
+#     dynamic_libs: ["pthread"]
+#     headers: ["sys/socket.h"]
+`)...)
 		if err := os.WriteFile(filepath.Join(projectName, "nora.yaml"), configData, 0644); err != nil {
 			fmt.Printf("Error creating nora.yaml: %v\n", err)
 			os.Exit(1)
@@ -781,6 +858,16 @@ fn main() {
 		}
 
 		configData, _ := yaml.Marshal(config)
+		configData = append(configData, []byte(`
+# native:
+#   cflags: ["-Wall"]
+#   windows:
+#     dynamic_libs: ["ws2_32"]
+#     headers: ["winsock2.h"]
+#   linux:
+#     dynamic_libs: ["pthread"]
+#     headers: ["sys/socket.h"]
+`)...)
 		if err := os.WriteFile(filepath.Join(projectName, "nora.yaml"), configData, 0644); err != nil {
 			fmt.Printf("Error creating nora.yaml: %v\n", err)
 			os.Exit(1)
@@ -905,8 +992,13 @@ func runBuild(args []string) {
 		}
 		var err error
 		if config, err = LoadProjectConfig(); err == nil {
-			dependencies = config.Dependencies
-			nativeConfig = config.Native
+			dependencies = make(map[string]Dependency)
+			for k, v := range config.Dependencies {
+				if v.Platform == "" || v.Platform == t.OS {
+					dependencies[k] = v
+				}
+			}
+			nativeConfig = resolveNativeConfig(config.Native, t.OS)
 			pluginPaths = append(pluginPaths, config.Plugins...)
 			exeName = *exampleFlag
 		}
@@ -918,8 +1010,13 @@ func runBuild(args []string) {
 		config, err = LoadProjectConfig()
 		if err == nil {
 			pluginPaths = append(pluginPaths, config.Plugins...)
-			dependencies = config.Dependencies
-			nativeConfig = config.Native
+			dependencies = make(map[string]Dependency)
+			for k, v := range config.Dependencies {
+				if v.Platform == "" || v.Platform == t.OS {
+					dependencies[k] = v
+				}
+			}
+			nativeConfig = resolveNativeConfig(config.Native, t.OS)
 			exeName = config.Output
 			inputFile = config.Entry
 		}
@@ -1086,8 +1183,13 @@ func runRun(args []string) {
 		}
 		var err error
 		if config, err = LoadProjectConfig(); err == nil {
-			dependencies = config.Dependencies
-			nativeConfig = config.Native
+			dependencies = make(map[string]Dependency)
+			for k, v := range config.Dependencies {
+				if v.Platform == "" || v.Platform == t.OS {
+					dependencies[k] = v
+				}
+			}
+			nativeConfig = resolveNativeConfig(config.Native, t.OS)
 			pluginPaths = append(pluginPaths, config.Plugins...)
 		}
 	} else {
@@ -1095,8 +1197,13 @@ func runRun(args []string) {
 		config, err = LoadProjectConfig()
 		if err == nil {
 			pluginPaths = append(pluginPaths, config.Plugins...)
-			dependencies = config.Dependencies
-			nativeConfig = config.Native
+			dependencies = make(map[string]Dependency)
+			for k, v := range config.Dependencies {
+				if v.Platform == "" || v.Platform == t.OS {
+					dependencies[k] = v
+				}
+			}
+			nativeConfig = resolveNativeConfig(config.Native, t.OS)
 			inputFile = config.Entry
 		}
 

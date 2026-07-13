@@ -1,0 +1,9 @@
+name: fail_platform_deps
+version: 1.0.0
+dependencies:
+  win_dep:
+    path: win_dep
+    platform: windows
+  lin_dep:
+    path: lin_dep
+    platform: linux

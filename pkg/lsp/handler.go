@@ -2587,8 +2587,29 @@ func deriveStdDir(docURI string) string {
 }
 
 type Dependency struct {
-	Path    string `yaml:"path"`
-	Version string `yaml:"version"`
+	Path     string `yaml:"path"`
+	Version  string `yaml:"version"`
+	Platform string `yaml:"platform"`
+}
+
+type NativePlatformConfig struct {
+	DynamicLibs []string `yaml:"dynamic_libs"`
+	StaticLibs  []string `yaml:"static_libs"`
+	IncludeDirs []string `yaml:"include_dirs"`
+	LibDirs     []string `yaml:"lib_dirs"`
+	Headers     []string `yaml:"headers"`
+	SourceFiles []string `yaml:"source_files"`
+}
+
+type NativeConfig struct {
+	DynamicLibs []string `yaml:"dynamic_libs"`
+	StaticLibs  []string `yaml:"static_libs"`
+	IncludeDirs []string `yaml:"include_dirs"`
+	LibDirs     []string `yaml:"lib_dirs"`
+	Headers     []string `yaml:"headers"`
+	SourceFiles []string `yaml:"source_files"`
+
+	Platforms map[string]NativePlatformConfig `yaml:",inline"`
 }
 
 type ProjectConfig struct {
@@ -2597,6 +2618,7 @@ type ProjectConfig struct {
 	Language     string                `yaml:"language"`
 	Plugins      []string              `yaml:"plugins"`
 	Dependencies map[string]Dependency `yaml:"dependencies"`
+	Native       NativeConfig          `yaml:"native"`
 	NoStdlib     bool                  `yaml:"no_stdlib"`
 	NoCore       bool                  `yaml:"no_core"`
 }
@@ -2646,6 +2668,9 @@ func (f *LSPFileLoader) loadManifest(dirPath string) {
 			}
 			f.Plugins = append(f.Plugins, config.Plugins...)
 			for name, dep := range config.Dependencies {
+				if dep.Platform != "" && dep.Platform != runtime.GOOS {
+					continue
+				}
 				if _, exists := f.Dependencies[name]; !exists {
 					if !filepath.IsAbs(dep.Path) && !strings.HasPrefix(dep.Path, "http") {
 						dep.Path = filepath.Join(dirPath, dep.Path)
@@ -2703,6 +2728,9 @@ func (f *LSPFileLoader) Load(importPath string, basePath string) (*semantic.Scop
 					f.Dependencies = make(map[string]Dependency)
 				}
 				for transName, transDep := range libConfig.Dependencies {
+					if transDep.Platform != "" && transDep.Platform != runtime.GOOS {
+						continue
+					}
 					if _, exists := f.Dependencies[transName]; !exists {
 						if !filepath.IsAbs(transDep.Path) && !strings.HasPrefix(transDep.Path, "http") {
 							transDep.Path = filepath.Join(actualPath, transDep.Path)

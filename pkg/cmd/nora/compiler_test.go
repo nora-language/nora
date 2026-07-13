@@ -127,6 +127,7 @@ func TestCompilerWithTestFolder(t *testing.T) {
 				analyzer.Loader = loader
 				loader.loadManifest(CorePath)
 				loader.loadManifest(StdPath)
+				loader.loadManifest(filepath.Dir(inputFile))
 
 				analyzer.Analyze(prog)
 				if analyzer.Diagnostics.HasErrors() {

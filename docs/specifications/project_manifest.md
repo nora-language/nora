@@ -41,6 +41,10 @@ native:
   lib_dirs: ["lib/"]
   headers: ["my_header.h"]
   source_files: ["my_c_implementation.c"]
+  windows:
+    dynamic_libs: ["ws2_32"]
+  linux:
+    dynamic_libs: ["pthread"]
 ```
 
 ### Core Fields
@@ -61,6 +65,7 @@ The `dependencies` section maps import module names to their physical locations 
 *   **`[module_name]`**: The key is the name you use in your `import` statements (e.g., `import "my_lib"`).
     *   **`path`**: The local relative or absolute path to the dependency's source code (must point to a directory containing its own `nora.yaml`).
     *   **`version`**: The version constraint for the dependency.
+    *   **`platform`**: Optional flag. Specifies the target OS for this dependency (e.g., `windows` or `linux`). If specified, the dependency is only included when compiling for that target OS.
 
 ### Native Integration (`native`)
 
@@ -81,6 +86,16 @@ Because Nora compiles to C11, the manifest provides native build configurations 
 *   **`lib_dirs`** (list of strings): Paths to directories containing pre-compiled C libraries, appended using `lib_dir_flag`.
 *   **`headers`** (list of strings): Local C header files to include in the generated C output.
 *   **`source_files`** (list of strings): Local `.c` implementation files to compile and link alongside the Nora-generated C code.
+
+In addition to these global flags, you can specify platform-specific configurations by defining a nested map matching the target OS (`windows`, `linux`, `darwin`, `wasm`, etc.). The platform-specific lists (e.g., `dynamic_libs`, `headers`) will be appended to the global ones.
+
+*   **`[platform_name]`**:
+    *   **`dynamic_libs`** (list of strings): Appended on this platform.
+    *   **`static_libs`** (list of strings): Appended on this platform.
+    *   **`include_dirs`** (list of strings): Appended on this platform.
+    *   **`lib_dirs`** (list of strings): Appended on this platform.
+    *   **`headers`** (list of strings): Appended on this platform.
+    *   **`source_files`** (list of strings): Appended on this platform.
 
 ## Usage
 
