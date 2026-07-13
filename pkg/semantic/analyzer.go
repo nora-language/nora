@@ -77,6 +77,7 @@ type SemanticAnalyzer struct {
 	// Context for analysis
 	CurrentFunction   *ast.FunctionStatement
 	CurrentLambda     *ast.LambdaExpression
+	TargetOS          string            // <--- Set by compiler flag
 	AllowUnsafe       bool              // <--- Set by compiler flag
 	AllowedUnsafeDirs []string          // <--- Set from Project Manifest
 	PackageScopes     map[string]*Scope // <--- Track scopes by package name
@@ -159,6 +160,37 @@ func (sa *SemanticAnalyzer) getPackageFromScope(s *Scope) string {
 		}
 	}
 	return ""
+}
+
+func (sa *SemanticAnalyzer) isCfgCompatible(attributes []ast.Attribute) bool {
+	if sa.TargetOS == "" {
+		return true // If target OS is not set, allow everything
+	}
+	attr := ast.GetAttribute(attributes, "cfg")
+	if attr == nil {
+		return true
+	}
+	for _, arg := range attr.Args {
+		// Example: os="windows" or target_os="linux"
+		arg = strings.TrimSpace(arg)
+		if strings.HasPrefix(arg, "os=") {
+			expected := strings.Trim(strings.TrimPrefix(arg, "os="), `"`)
+			if expected != sa.TargetOS {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (sa *SemanticAnalyzer) stmtHasValidCfg(stmt ast.Statement) bool {
+	switch s := stmt.(type) {
+	case *ast.FunctionStatement:
+		return sa.isCfgCompatible(s.Attributes)
+	case *ast.TypeStatement:
+		return sa.isCfgCompatible(s.Attributes)
+	}
+	return true
 }
 
 func NewAnalyzer() *SemanticAnalyzer {
@@ -529,6 +561,9 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 
 		// Pass 1a: Collect all Types AND Imports first (so methods can resolve receivers)
 		for _, stmt := range n.Statements {
+			if !sa.stmtHasValidCfg(stmt) {
+				continue
+			}
 			switch stmt.(type) {
 			case *ast.TypeStatement, *ast.ImportStatement:
 				sa.CollectSymbols(stmt)
@@ -554,6 +589,9 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 
 		// Pass 1b: Collect Functions and other top-level symbols
 		for _, stmt := range n.Statements {
+			if !sa.stmtHasValidCfg(stmt) {
+				continue
+			}
 			switch stmt.(type) {
 			case *ast.TypeStatement, *ast.ImportStatement:
 				// Skip, already collected in Pass 1a
@@ -1179,6 +1217,9 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		}
 
 		for _, stmt := range n.Statements {
+			if !sa.stmtHasValidCfg(stmt) {
+				continue
+			}
 			sa.Analyze(stmt)
 		}
 		sa.CurrentScope = prevScope
@@ -7285,6 +7326,9 @@ func (sa *SemanticAnalyzer) AnalyzeFileTypes(file *ast.File) {
 	}
 
 	for _, stmt := range file.Statements {
+		if !sa.stmtHasValidCfg(stmt) {
+			continue
+		}
 		if ts, ok := stmt.(*ast.TypeStatement); ok {
 			sa.Analyze(ts)
 		}

@@ -41,6 +41,20 @@ var CorePath string
 const CompilerVersion = "0.1.0"
 const LanguageVersion = "0.1.0"
 
+func isPlatformCompatible(filename string, targetOS string) bool {
+	if targetOS == "" {
+		return true
+	}
+	base := strings.TrimSuffix(filepath.Base(filename), ".nr")
+	knownOSes := []string{"windows", "linux", "darwin", "wasm", "wasi"}
+	for _, osName := range knownOSes {
+		if strings.HasSuffix(base, "_"+osName) {
+			return osName == targetOS
+		}
+	}
+	return true
+}
+
 func initCorePath() {
 	if StdPath != "" {
 		path := filepath.Join(filepath.Dir(StdPath), "core")
@@ -249,6 +263,7 @@ type FileLoader struct {
 	NoStdlib          bool
 	NoCore            bool
 	AllowedUnsafeDirs []string
+	TargetOS          string
 }
 
 func contains(slice []string, val string) bool {
@@ -491,6 +506,9 @@ func (f *FileLoader) Load(path string, basePath string) (*semantic.Scope, error)
 			var pkgScope *semantic.Scope
 			for _, fileInfo := range files {
 				if !fileInfo.IsDir() && strings.HasSuffix(fileInfo.Name(), ".nr") {
+					if !isPlatformCompatible(fileInfo.Name(), f.TargetOS) {
+						continue
+					}
 					fullFilePath := filepath.Join(path, fileInfo.Name())
 					if file, exists := f.ParsedFiles[fullFilePath]; exists {
 						if pkgScope == nil {
@@ -1223,6 +1241,9 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 		}
 		for _, fileInfo := range files {
 			if !fileInfo.IsDir() && strings.HasSuffix(fileInfo.Name(), ".nr") {
+				if !isPlatformCompatible(fileInfo.Name(), opts.Target.OS) {
+					continue
+				}
 				fullPath := filepath.Join(inputFile, fileInfo.Name())
 				input, err := os.ReadFile(fullPath)
 				if err != nil {
@@ -1326,6 +1347,13 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 	analyzer.DebugMode = opts.DebugSemantic
 	analyzer.AllowUnsafe = opts.AllowUnsafe
 	analyzer.Diagnostics = diags // Share diagnostics collection
+	
+	targetOS := opts.Target.OS
+	if targetOS == "" {
+		targetOS = runtime.GOOS
+	}
+	analyzer.TargetOS = targetOS
+	
 	loader := &FileLoader{
 		Cache:             make(map[string]*semantic.Scope),
 		ParsedFiles:       make(map[string]*ast.File),
@@ -1334,6 +1362,7 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 		Dependencies:      dependencies,
 		PluginManager:     pluginMgr,
 		AllowedUnsafeDirs: make([]string, 0),
+		TargetOS:          targetOS,
 	}
 	if loader.Dependencies == nil {
 		loader.Dependencies = make(map[string]Dependency)
@@ -2303,6 +2332,7 @@ func runSingleTest(path string) error {
 	// We don't have opts here, it's Language Server. By default we might not allow unsafe, or maybe we allow it for LSP if it's the stdlib.
 	// For now, let's allow it in LSP since stdlib uses it and we don't want false positives in IDE.
 	analyzer.AllowUnsafe = true
+	analyzer.TargetOS = runtime.GOOS
 	loader := &FileLoader{
 		Cache:             make(map[string]*semantic.Scope),
 		ParsedFiles:       make(map[string]*ast.File),
@@ -2311,6 +2341,7 @@ func runSingleTest(path string) error {
 		Dependencies:      make(map[string]Dependency),
 		PluginManager:     pm,
 		AllowedUnsafeDirs: make([]string, 0),
+		TargetOS:          runtime.GOOS,
 	}
 	analyzer.Loader = loader
 	analyzer.AllowedUnsafeDirs = loader.AllowedUnsafeDirs

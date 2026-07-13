@@ -60,6 +60,9 @@ func TestCompilerWithTestFolder(t *testing.T) {
 			if info.IsDir() || !strings.HasSuffix(info.Name(), ".nr") {
 				return nil
 			}
+			if !isPlatformCompatible(info.Name(), runtime.GOOS) {
+				return nil
+			}
 
 			t.Run(path, func(t *testing.T) {
 				inputFile := path
@@ -96,6 +99,7 @@ func TestCompilerWithTestFolder(t *testing.T) {
 				// 3. Analyze
 				analyzer := semantic.NewAnalyzer()
 				analyzer.AllowUnsafe = true // Allow unsafe for integration tests that compile stdlib
+				analyzer.TargetOS = runtime.GOOS
 				parsedFiles := make(map[string]*ast.File)
 				parsedFiles[filepath.Clean(inputFile)] = parsedFile
 
@@ -118,6 +122,7 @@ func TestCompilerWithTestFolder(t *testing.T) {
 					ParsedFiles: parsedFiles,
 					Program:     prog,
 					Analyzer:    analyzer,
+					TargetOS:    runtime.GOOS,
 				}
 				analyzer.Loader = loader
 				loader.loadManifest(CorePath)
