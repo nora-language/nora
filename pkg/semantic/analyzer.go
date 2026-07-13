@@ -2809,20 +2809,8 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			if sym, exists := sa.CurrentScope.Resolve(ident.Value); exists {
 				targetTypeHint = sym.Type
 			}
-		} else if sel, ok := n.Left.(*ast.SelectorExpression); ok {
-			leftType := sa.SemanticInfo.Types[sel.Left]
-			if leftType != nil {
-				for {
-					if pt, ok := leftType.(*types.PointerType); ok {
-						leftType = pt.Base
-					} else {
-						break
-					}
-				}
-				if st, ok := leftType.(*types.StructType); ok && sel.Field != nil {
-					targetTypeHint = st.Fields[sel.Field.Value]
-				}
-			}
+		} else {
+			targetTypeHint = sa.SemanticInfo.Types[n.Left]
 		}
 
 		if arrLit, isArrLit := n.Value.(*ast.ArrayLiteral); isArrLit && targetTypeHint != nil {
