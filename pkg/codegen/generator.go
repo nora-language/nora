@@ -40,6 +40,7 @@ type Generator struct {
 	Structs         map[string]*types.StructType
 	SumTypes        map[string]*types.SumType
 	Protocols       map[string]*types.ProtocolType
+	ArrayTypes      map[string]*types.ArrayType
 	Globals         map[string]*semantic.Symbol
 	GlobalInits     []ast.Node
 	SpawnWrappers   []string
@@ -91,6 +92,7 @@ func NewGenerator(prog *ast.Program, sem *semantic.SemanticInfo, solver *topolog
 		Structs:          make(map[string]*types.StructType),
 		SumTypes:         make(map[string]*types.SumType),
 		Protocols:        make(map[string]*types.ProtocolType),
+		ArrayTypes:       make(map[string]*types.ArrayType),
 		Globals:          make(map[string]*semantic.Symbol),
 		buf:              new(bytes.Buffer),
 		currentLine:      -1,
@@ -593,6 +595,14 @@ func (g *Generator) collectDefinitions() {
 			}
 		} else if proto, ok := t.(*types.ProtocolType); ok {
 			g.Protocols[mangled] = proto
+		}
+	}
+
+	// 1.5. Collect Array Types implicitly created
+	for _, t := range g.SemanticInfo.Types {
+		if at, isArray := t.(*types.ArrayType); isArray {
+			name := g.cType(at)
+			g.ArrayTypes[name] = at
 		}
 	}
 
@@ -1435,6 +1445,9 @@ func (g *Generator) requestAutoEq(t types.NRType) string {
 	name := "nr_eq_" + g.mangledTypeName(t)
 	if _, ok := g.AutoEqMethods[name]; !ok {
 		g.AutoEqMethods[name] = t
+		if g.PastHeaderPhase {
+			g.LatePrototypes.WriteString(fmt.Sprintf("bool %s(%s* a, %s* b);\n", name, g.cType(t), g.cType(t)))
+		}
 	}
 	return name
 }
@@ -1464,8 +1477,11 @@ func (g *Generator) getEqMethod(t types.NRType) string {
 		}
 	}
 
-	// 2. Fallback to auto-generated structural equality for structs
+	// 2. Fallback to auto-generated structural equality for structs and arrays
 	if _, ok := base.(*types.StructType); ok {
+		return g.requestAutoEq(base)
+	}
+	if _, ok := base.(*types.ArrayType); ok {
 		return g.requestAutoEq(base)
 	}
 
@@ -1511,6 +1527,17 @@ func (g *Generator) emitAutoEqMethods() {
 						} else {
 							eqCall = fmt.Sprintf("!%s(%s&(a->%s), &(b->%s))", eqMethod, args, fName, fName)
 						}
+					} else if _, isArray := ut.(*types.ArrayType); isArray {
+						eqMethod := g.getEqMethod(ut)
+						args := ""
+						if !strings.HasPrefix(eqMethod, "nr_eq_") {
+							args = "NULL, "
+						}
+						if g.isPointerTypeInC(fType) {
+							eqCall = fmt.Sprintf("!%s(%sa->%s, b->%s)", eqMethod, args, fName, fName)
+						} else {
+							eqCall = fmt.Sprintf("!%s(%s&(a->%s), &(b->%s))", eqMethod, args, fName, fName)
+						}
 					} else if ut.Name() == "str" {
 						eqCall = fmt.Sprintf("!nr_str_eq(a->%s, b->%s)", fName, fName)
 					} else if pt, ok := ut.(*types.PointerType); ok && !pt.IsArray {
@@ -1538,6 +1565,42 @@ func (g *Generator) emitAutoEqMethods() {
 					}
 					g.emit("    if (%s) return false;", eqCall)
 				}
+			} else if at, ok := t.(*types.ArrayType); ok {
+				ut := types.UnwrapLease(at.Base)
+				eqCall := ""
+				if _, isStruct := ut.(*types.StructType); isStruct {
+					eqMethod := g.getEqMethod(ut)
+					args := ""
+					if !strings.HasPrefix(eqMethod, "nr_eq_") {
+						args = "NULL, "
+					}
+					eqCall = fmt.Sprintf("!%s(%s&(a->data[i]), &(b->data[i]))", eqMethod, args)
+				} else if _, isArray := ut.(*types.ArrayType); isArray {
+					eqMethod := g.getEqMethod(ut)
+					args := ""
+					if !strings.HasPrefix(eqMethod, "nr_eq_") {
+						args = "NULL, "
+					}
+					eqCall = fmt.Sprintf("!%s(%s&(a->data[i]), &(b->data[i]))", eqMethod, args)
+				} else if ut.Name() == "str" {
+					eqCall = "!nr_str_eq(a->data[i], b->data[i])"
+				} else if pt, ok := ut.(*types.PointerType); ok && !pt.IsArray {
+					if _, isStruct := pt.Base.(*types.StructType); isStruct {
+						eqMethod := g.getEqMethod(pt.Base)
+						args := ""
+						if !strings.HasPrefix(eqMethod, "nr_eq_") {
+							args = "NULL, "
+						}
+						eqCall = fmt.Sprintf("!%s(%sa->data[i], b->data[i])", eqMethod, args)
+					} else {
+						eqCall = "a->data[i] != b->data[i]"
+					}
+				} else {
+					eqCall = "a->data[i] != b->data[i]"
+				}
+				g.emit("    for (int i = 0; i < %d; i++) {", at.Len)
+				g.emit("        if (%s) return false;", eqCall)
+				g.emit("    }")
 			}
 			g.emit("    return true;")
 			g.emit("}")

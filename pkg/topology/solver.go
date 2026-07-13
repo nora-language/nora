@@ -1435,7 +1435,13 @@ func (s *Solver) isMoveOperationForSelector(stmt ast.Statement, target *ast.Sele
 
 		if arrayLit, ok := n.(*ast.ArrayLiteral); ok {
 			arrayTypeObj := s.SemanticInfo.Types[arrayLit]
+			var elemType types.NRType
 			if at, ok := arrayTypeObj.(*types.ListType); ok {
+				elemType = at.ElementType
+			} else if at, ok := arrayTypeObj.(*types.ArrayType); ok {
+				elemType = at.Base
+			}
+			if elemType != nil {
 				for _, elem := range arrayLit.Elements {
 					if pref, ok := elem.(*ast.PrefixExpression); ok && pref.Operator == "@" {
 						if s.isSameSelector(pref.Right, target) {
@@ -1443,7 +1449,7 @@ func (s *Solver) isMoveOperationForSelector(stmt ast.Statement, target *ast.Sele
 							return false
 						}
 					}
-					if s.isImplicitMoveType(at.ElementType) && s.isSameSelector(elem, target) {
+					if s.isImplicitMoveType(elemType) && s.isSameSelector(elem, target) {
 						isMove = true
 						return false
 					}
@@ -1520,8 +1526,14 @@ func (s *Solver) recordMovesInStatement(stmt ast.Statement) {
 		// Implicit moves in array literal elements: [x, y]
 		if arrLit, ok := n.(*ast.ArrayLiteral); ok {
 			arrTypeObj := s.SemanticInfo.Types[arrLit]
-			if arrType, ok := arrTypeObj.(*types.ListType); ok {
-				if s.isImplicitMoveType(arrType.ElementType) {
+			var elemType types.NRType
+			if at, ok := arrTypeObj.(*types.ListType); ok {
+				elemType = at.ElementType
+			} else if at, ok := arrTypeObj.(*types.ArrayType); ok {
+				elemType = at.Base
+			}
+			if elemType != nil {
+				if s.isImplicitMoveType(elemType) {
 					for _, elem := range arrLit.Elements {
 						if s.isMoveCandidate(elem) {
 							s.Moves[elem] = true
@@ -1930,8 +1942,14 @@ func (s *Solver) isMoveOperation(stmt ast.Statement, target *ast.Identifier) boo
 		// Array Literal
 		if arrLit, ok := n.(*ast.ArrayLiteral); ok {
 			arrTypeObj := s.SemanticInfo.Types[arrLit]
-			if arrType, ok := arrTypeObj.(*types.ListType); ok {
-				if s.isImplicitMoveType(arrType.ElementType) {
+			var elemType types.NRType
+			if at, ok := arrTypeObj.(*types.ListType); ok {
+				elemType = at.ElementType
+			} else if at, ok := arrTypeObj.(*types.ArrayType); ok {
+				elemType = at.Base
+			}
+			if elemType != nil {
+				if s.isImplicitMoveType(elemType) {
 					for _, elem := range arrLit.Elements {
 						if isTarget(elem) {
 							s.debug("        Move detected: Array Literal owned element")

@@ -270,5 +270,10 @@ func (g *Generator) mangledTypeName(t types.NRType) string {
 		}
 	}
 
+	// 4. Check ArrayTypes
+	if at, ok := t.(*types.ArrayType); ok {
+		return g.cType(at)
+	}
+
 	return t.Name()
 }

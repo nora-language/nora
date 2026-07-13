@@ -11,11 +11,12 @@ const (
 	KindProtocol // Interfaces
 	KindList
 	KindMap
-	KindModule // <--- Add this
+	KindModule
 	KindFunction
 	KindChan
 	KindGeneric
 	KindPointer
+	KindArray
 )
 
 type LeaseKind int
@@ -99,6 +100,11 @@ func Equals(t1, t2 NRType) bool {
 		m1 := t1.(*MapType)
 		m2 := t2.(*MapType)
 		return Equals(m1.Key, m2.Key) && Equals(m1.Value, m2.Value)
+
+	case KindArray:
+		a1 := t1.(*ArrayType)
+		a2 := t2.(*ArrayType)
+		return a1.Len == a2.Len && Equals(a1.Base, a2.Base)
 
 	case KindSum:
 		return t1.Name() == t2.Name()
@@ -289,6 +295,9 @@ func IsOwnedType(t NRType) bool {
 	kind := t.GetKind()
 	if kind == KindStruct || kind == KindList || kind == KindMap || kind == KindChan || kind == KindProtocol || kind == KindFunction {
 		return true
+	}
+	if kind == KindArray {
+		return IsOwnedType(t.(*ArrayType).Base)
 	}
 	if kind == KindSum {
 		if st, ok := t.(*SumType); ok {
@@ -496,3 +505,15 @@ func UnwrapLease(t NRType) NRType {
 	}
 	return t
 }
+
+type ArrayType struct {
+	Base NRType
+	Len  int
+}
+
+func (a *ArrayType) Name() string {
+	return fmt.Sprintf("%s[%d]", a.Base.Name(), a.Len)
+}
+func (a *ArrayType) GetKind() Kind  { return KindArray }
+func (a *ArrayType) IsLeased() bool { return false }
+func (a *ArrayType) Size() int      { return a.Base.Size() * a.Len }

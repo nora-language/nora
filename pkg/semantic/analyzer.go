@@ -1508,6 +1508,15 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		// 2. Analyze Fields
 		for _, field := range n.Fields {
 			if field.Value != nil {
+				if arrLit, ok := field.Value.(*ast.ArrayLiteral); ok {
+					if stType, isStruct := sa.SemanticInfo.Types[n].(*types.StructType); isStruct {
+						if expectedType, exists := stType.Fields[field.Name.Value]; exists {
+							if arrType, isArr := expectedType.(*types.ArrayType); isArr {
+								sa.SemanticInfo.Types[arrLit] = arrType
+							}
+						}
+					}
+				}
 				sa.Analyze(field.Value)
 			} else if expr, ok := field.Type.(ast.Expression); ok {
 				// Fallback for some legacy parser cases where value might be in Type
@@ -2092,6 +2101,13 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				}
 			}
 		}
+		
+		// If it's not already an ArrayType hint, default to ListType
+		if existingType := sa.SemanticInfo.Types[n]; existingType != nil {
+			if _, ok := existingType.(*types.ArrayType); ok {
+				return
+			}
+		}
 		sa.SemanticInfo.Types[n] = &types.ListType{ElementType: elemType}
 
 	case *ast.MapLiteral:
@@ -2648,8 +2664,19 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		}
 
 	case *ast.VarStatement:
+		var explicitType types.NRType
+		if n.Type != nil {
+			explicitType = sa.resolveTypeNode(n.Type)
+		}
+
 		var rhsType types.NRType = types.Void
 		if n.Value != nil {
+			if arrLit, isArrLit := n.Value.(*ast.ArrayLiteral); isArrLit && explicitType != nil {
+				if arrType, isArr := explicitType.(*types.ArrayType); isArr {
+					sa.SemanticInfo.Types[arrLit] = arrType
+				}
+			}
+
 			// 1. Analyze the Right-Hand Side (Value)
 			sa.Analyze(n.Value)
 
@@ -2664,7 +2691,6 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		var finalType types.NRType
 
 		if n.Type != nil {
-			explicitType := sa.resolveTypeNode(n.Type)
 			if n.Value != nil {
 				sa.checkImplicitMoveLoad(n.Value, explicitType)
 				if !types.IsAssignable(explicitType, rhsType) {
@@ -2773,12 +2799,40 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			return
 		}
 
-		// 1. Analyze RHS first
-		sa.Analyze(n.Value)
-		// Only analyze LHS if it's NOT a simple identifier (to avoid false use-after-move errors during revival)
-		if _, ok := n.Left.(*ast.Identifier); !ok {
+		// Analyze LHS first if it's NOT a simple identifier (to avoid false use-after-move errors during revival)
+		if _, isIdent := n.Left.(*ast.Identifier); !isIdent {
 			sa.Analyze(n.Left)
 		}
+
+		var targetTypeHint types.NRType
+		if ident, ok := n.Left.(*ast.Identifier); ok {
+			if sym, exists := sa.CurrentScope.Resolve(ident.Value); exists {
+				targetTypeHint = sym.Type
+			}
+		} else if sel, ok := n.Left.(*ast.SelectorExpression); ok {
+			leftType := sa.SemanticInfo.Types[sel.Left]
+			if leftType != nil {
+				for {
+					if pt, ok := leftType.(*types.PointerType); ok {
+						leftType = pt.Base
+					} else {
+						break
+					}
+				}
+				if st, ok := leftType.(*types.StructType); ok && sel.Field != nil {
+					targetTypeHint = st.Fields[sel.Field.Value]
+				}
+			}
+		}
+
+		if arrLit, isArrLit := n.Value.(*ast.ArrayLiteral); isArrLit && targetTypeHint != nil {
+			if arrType, isArr := targetTypeHint.(*types.ArrayType); isArr {
+				sa.SemanticInfo.Types[arrLit] = arrType
+			}
+		}
+
+		// 1. Analyze RHS
+		sa.Analyze(n.Value)
 
 		if sa.CurrentFunction != nil {
 			if _, ok := n.Left.(*ast.Identifier); !ok {
@@ -2885,6 +2939,8 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				targetType = lt.ElementType
 			} else if mt, ok := actualType.(*types.MapType); ok {
 				targetType = mt.Value
+			} else if at, ok := actualType.(*types.ArrayType); ok {
+				targetType = at.Base
 			} else if actualType != nil && actualType.Name() == "str" {
 				if sa.isUnsafeAllowed(idx.Pos()) && sa.hasUnsafeAttr() {
 					targetType = types.I32
@@ -3059,6 +3115,16 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				}
 			}
 			sa.SemanticInfo.Types[n] = mt.Value
+			return
+		} else if at, ok := actualType.(*types.ArrayType); ok {
+			if len(n.Indices) > 0 {
+				idxExpr := n.Indices[0]
+				idxType := sa.SemanticInfo.Types[idxExpr]
+				if idxType != nil && idxType != types.ErrorType && !isIntegerType(idxType) {
+					sa.AddError(idxExpr.Pos(), "index must be an integer (got %s)", idxType.Name())
+				}
+			}
+			sa.SemanticInfo.Types[n] = at.Base
 			return
 		} else if actualType != nil && actualType.Name() == "str" {
 			if len(n.Indices) > 0 {
@@ -4752,7 +4818,19 @@ func (sa *SemanticAnalyzer) resolveTypeNode(n ast.TypeNode) types.NRType {
 			// Check if the first index is a type node or an expression
 			if _, ok := t.Indices[0].(ast.TypeNode); !ok {
 				// It's an expression (like [10]), so this is an array type T[n]
-				res := &types.PointerType{Base: baseType, IsArray: true}
+				var size int
+				if intLit, ok := t.Indices[0].(*ast.IntegerLiteral); ok {
+					size = int(intLit.Value)
+				} else {
+					sa.AddError(t.Indices[0].Pos(), "array size must be an integer literal")
+					return types.ErrorType
+				}
+				if size == 0 {
+					res := &types.PointerType{Base: baseType, IsArray: true}
+					sa.SemanticInfo.Types[n] = res
+					return res
+				}
+				res := &types.ArrayType{Base: baseType, Len: size}
 				sa.SemanticInfo.Types[n] = res
 				return res
 			}

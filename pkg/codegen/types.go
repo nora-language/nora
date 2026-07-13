@@ -2,6 +2,7 @@ package codegen
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 
 	"github.com/nora-language/nora/pkg/parser/ast"
@@ -25,6 +26,8 @@ func (g *Generator) cType(t types.NRType) string {
 		res = g.mangledTypeName(t)
 	case *types.SumType:
 		res = g.mangledTypeName(t)
+	case *types.ArrayType:
+		res = g.arrayWrapperName(t)
 	case *types.PointerType:
 		if t.Leased && !t.IsArray {
 			if !g.shouldPassByPointer(t.Base, t.Kind, false) {
@@ -53,6 +56,13 @@ func (g *Generator) cParamType(t types.NRType, l types.LeaseKind, isExtern bool)
 		return ct + "*"
 	}
 	return ct
+}
+
+func (g *Generator) arrayWrapperName(at *types.ArrayType) string {
+	baseName := g.cType(at.Base)
+	baseName = strings.ReplaceAll(baseName, "*", "_ptr")
+	baseName = strings.ReplaceAll(baseName, " ", "_")
+	return fmt.Sprintf("nr_arr_%s_%d", baseName, at.Len)
 }
 
 func (g *Generator) mapPrimitive(name string) string {
@@ -144,7 +154,7 @@ func (g *Generator) isPointerInC(e ast.Expression) bool {
 			sym = g.findSymbolByName(ident.Value)
 		}
 		if sym != nil && sym.Kind == semantic.SymParam && !g.isCaptured(sym) {
-			if _, ok := ut.(*types.StructType); ok || ut.GetKind() == types.KindProtocol {
+			if _, ok := ut.(*types.StructType); ok || ut.GetKind() == types.KindProtocol || ut.GetKind() == types.KindArray {
 				return true
 			}
 			if st, ok := ut.(*types.SumType); ok {
@@ -195,7 +205,7 @@ func (g *Generator) cPointerLevel(t types.NRType, isValue bool) int {
 		}
 		break
 	}
-	if _, isStruct := underlying.(*types.StructType); isStruct {
+	if _, isStruct := underlying.(*types.StructType); isStruct || underlying.GetKind() == types.KindArray {
 		if ptrCount > 0 {
 			return 1
 		}
@@ -287,9 +297,9 @@ func (g *Generator) shouldDereferenceInC(e ast.Expression) bool {
 			return true
 		} else {
 			// If it IS passed by pointer (e.g. LeaseWrite), we must dereference it to get the value
-			// UNLESS it's a struct/sum, where we use -> for field access instead.
+			// UNLESS it's a struct/sum/array, where we use -> for field access instead.
 			ut := types.UnwrapLease(t)
-			if _, ok := ut.(*types.StructType); !ok && ut.GetKind() != types.KindSum {
+			if _, ok := ut.(*types.StructType); !ok && ut.GetKind() != types.KindSum && ut.GetKind() != types.KindArray {
 				return true
 			}
 		}
@@ -343,7 +353,7 @@ func (g *Generator) shouldPassByPointer(t types.NRType, l types.LeaseKind, isExt
 		return false
 	}
 	if l == types.LeaseMove || l == types.LeaseRead {
-		if _, ok := t.(*types.StructType); ok || t.GetKind() == types.KindProtocol {
+		if _, ok := t.(*types.StructType); ok || t.GetKind() == types.KindProtocol || t.GetKind() == types.KindArray {
 			return true
 		}
 		if st, ok := t.(*types.SumType); ok {

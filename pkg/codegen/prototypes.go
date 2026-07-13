@@ -182,6 +182,15 @@ func (g *Generator) emitForwardDeclarations() {
 			g.emit("typedef struct %s %s;", name, name)
 		}
 	}
+
+	var arrayNames []string
+	for name := range g.ArrayTypes {
+		arrayNames = append(arrayNames, name)
+	}
+	sort.Strings(arrayNames)
+	for _, name := range arrayNames {
+		g.emit("typedef struct %s %s;", name, name)
+	}
 	g.emit("")
 }
 
@@ -262,7 +271,7 @@ func (g *Generator) emitCombinedTypeDefs() {
 	for name, st := range g.Structs {
 		for _, fType := range st.Fields {
 			ut := types.UnwrapLease(fType)
-			if ut != nil && (ut.GetKind() == types.KindStruct || ut.GetKind() == types.KindSum) {
+			if ut != nil && (ut.GetKind() == types.KindStruct || ut.GetKind() == types.KindSum || ut.GetKind() == types.KindArray) {
 				if !g.isPointerTypeInC(fType) {
 					depName := g.cType(fType)
 					deps[name] = append(deps[name], depName)
@@ -276,12 +285,23 @@ func (g *Generator) emitCombinedTypeDefs() {
 		for _, variant := range st.Variants {
 			for _, fType := range variant.Fields {
 				ut := types.UnwrapLease(fType)
-				if ut != nil && (ut.GetKind() == types.KindStruct || ut.GetKind() == types.KindSum) {
+				if ut != nil && (ut.GetKind() == types.KindStruct || ut.GetKind() == types.KindSum || ut.GetKind() == types.KindArray) {
 					if !g.isPointerTypeInC(fType) {
 						depName := g.cType(fType)
 						deps[name] = append(deps[name], depName)
 					}
 				}
+			}
+		}
+	}
+
+	// Check array type dependencies
+	for name, at := range g.ArrayTypes {
+		ut := types.UnwrapLease(at.Base)
+		if ut != nil && (ut.GetKind() == types.KindStruct || ut.GetKind() == types.KindSum || ut.GetKind() == types.KindArray) {
+			if !g.isPointerTypeInC(at.Base) {
+				depName := g.cType(at.Base)
+				deps[name] = append(deps[name], depName)
 			}
 		}
 	}
@@ -315,6 +335,9 @@ func (g *Generator) emitCombinedTypeDefs() {
 	for name := range g.SumTypes {
 		keys = append(keys, name)
 	}
+	for name := range g.ArrayTypes {
+		keys = append(keys, name)
+	}
 	sort.Strings(keys)
 
 	for _, k := range keys {
@@ -330,6 +353,11 @@ func (g *Generator) emitCombinedTypeDefs() {
 				fType := st.Fields[fName]
 				g.emit("    %s %s;", g.cType(fType), fName)
 			}
+			g.emit("};")
+			g.emit("")
+		} else if at, ok := g.ArrayTypes[name]; ok {
+			g.emit("struct %s {", name)
+			g.emit("    %s data[%d];", g.cType(at.Base), at.Len)
 			g.emit("};")
 			g.emit("")
 		} else if st, ok := g.SumTypes[name]; ok {

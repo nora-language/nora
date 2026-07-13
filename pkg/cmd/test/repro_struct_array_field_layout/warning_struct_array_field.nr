@@ -1,4 +1,5 @@
 package main
+import "std/io"
 
 pub type Particle = struct {
     pos: f32[3],
@@ -8,8 +9,9 @@ pub type Particle = struct {
 
 pub fn main() {
     var p = alloc Particle {
-        pos: alloc f32[3],
-        vel: alloc f32[3],
-        color: alloc f32[4]
+        pos: [f32(0.0), f32(0.0), f32(0.0)],
+        vel: [f32(0.0), f32(0.0), f32(0.0)],
+        color: [f32(0.0), f32(0.0), f32(0.0), f32(0.0)]
     }
+    io.PrintLn("Particle created")
 }

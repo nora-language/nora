@@ -18,10 +18,8 @@ fn main() i32 {
     io.PrintLn("\n1. Multi-dim Alloc:")
     var matrix = alloc i32[2][3]
     io.PrintLn("Outer matrix length: ${len(matrix)}")
-    matrix[0] = alloc i32[2]
-    matrix[1] = alloc i32[2]
-    matrix[0][1] = 42
-    matrix[1][0] = 100
+    matrix[0] = [0, 42]
+    matrix[1] = [100, 0]
     io.PrintLn("matrix[0][1] = ${matrix[0][1]}, matrix[1][0] = ${matrix[1][0]}")
 
     // 2. String literal copy on assignment (RAII Safety)

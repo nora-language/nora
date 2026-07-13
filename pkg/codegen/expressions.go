@@ -1668,6 +1668,27 @@ func (g *Generator) genIndexExpression(e *ast.IndexExpression) {
 			g.buf.WriteString("})))")
 			return
 		}
+
+		if _, ok := ut.(*types.ArrayType); ok {
+			isPtr := false
+			if pt, ok := t.(*types.PointerType); ok && pt.Leased {
+				isPtr = true
+			}
+			
+			g.buf.WriteString("(")
+			g.buf.WriteString("(")
+			g.genExpression(e.Left)
+			g.buf.WriteString(")")
+			
+			if isPtr {
+				g.buf.WriteString("->data[")
+			} else {
+				g.buf.WriteString(".data[")
+			}
+			g.genValueExpression(e.Indices[0])
+			g.buf.WriteString("])")
+			return
+		}
 	}
 
 	// Bounds checking
@@ -1694,9 +1715,26 @@ func (g *Generator) genArrayLiteral(e *ast.ArrayLiteral) {
 	oldNoTemp := g.NoTempWrap
 	g.NoTempWrap = false
 	defer func() { g.NoTempWrap = oldNoTemp }()
-	lt, ok := g.SemanticInfo.Types[e].(*types.ListType)
+	lt, isList := g.SemanticInfo.Types[e].(*types.ListType)
+	at, isArray := g.SemanticInfo.Types[e].(*types.ArrayType)
+
+	if isArray {
+		g.buf.WriteString(fmt.Sprintf("(%s){.data = {", g.cType(at)))
+		oldTargetIsValue := g.TargetIsValue
+		g.TargetIsValue = !g.isPointerTypeInC(at.Base)
+		for i, el := range e.Elements {
+			if i > 0 {
+				g.buf.WriteString(", ")
+			}
+			g.genOwnedValue(el, at.Base)
+		}
+		g.TargetIsValue = oldTargetIsValue
+		g.buf.WriteString("}}")
+		return
+	}
+
 	var elemType types.NRType
-	if ok {
+	if isList {
 		elemType = lt.ElementType
 	} else {
 		elemType = types.I32 // Fallback
