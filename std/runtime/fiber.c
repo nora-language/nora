@@ -779,6 +779,7 @@ typedef struct fiber_info {
     const char* name;
     const char* file;
     int line;
+    int pinned_worker_id;
     volatile bool yield_pending;
     struct fiber_info* next_global;
     struct fiber_info* prev_global;
@@ -986,6 +987,7 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
     info->name = name;
     info->file = file;
     info->line = line;
+    info->pinned_worker_id = -1;
     info->parent = nr_fiber_current();
 
     if (__nora_stepping_into_spawn) {
@@ -1018,6 +1020,16 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
 
 int get_worker_id() { return 0; }
 
+void nr_fiber_pin_thread() {
+    fiber_info_t* self = (fiber_info_t*)nr_fiber_current();
+    if (self) self->pinned_worker_id = 0;
+}
+
+void nr_fiber_unpin_thread() {
+    fiber_info_t* self = (fiber_info_t*)nr_fiber_current();
+    if (self) self->pinned_worker_id = -1;
+}
+
 #else
 // --- LINUX/POSIX RUNTIME (Global Queue) ---
 #define _GNU_SOURCE
@@ -1048,6 +1060,7 @@ typedef struct fiber_info {
     const char* name;
     const char* file;
     int line;
+    int pinned_worker_id;
     volatile bool yield_pending;
     struct fiber_info* next_global;
     struct fiber_info* prev_global;
@@ -1203,6 +1216,7 @@ fiber_info_t* deque_steal(deque_t* q) {
 }
 
 global_queue_t g_queue;
+global_queue_t g_pinned_queues[MAX_WORKERS];
 deque_t g_local_queues[MAX_WORKERS];
 int num_workers = 0;
 __thread int worker_id = -1;
@@ -1273,7 +1287,8 @@ void* worker_loop(void* arg) {
     while (g_running) {
         fiber_info_t* info = NULL;
         if (worker_id >= 0 && worker_id < num_workers) {
-            info = deque_pop(&g_local_queues[worker_id]);
+            info = (fiber_info_t*)queue_pop(&g_pinned_queues[worker_id]);
+            if (!info) info = deque_pop(&g_local_queues[worker_id]);
         }
         if (!info) {
             info = (fiber_info_t*)queue_pop(&g_queue);
@@ -1367,6 +1382,7 @@ void scheduler_init() {
     NR_MUTEX_INIT(&g_fiber_list_lock);
     queue_init(&g_queue);
     for (int i = 0; i < MAX_WORKERS; i++) {
+        queue_init(&g_pinned_queues[i]);
         deque_init(&g_local_queues[i]);
     }
 
@@ -1400,7 +1416,8 @@ void scheduler_run_loop() {
         fiber_info_t* info = NULL;
         int id = worker_id;
         if (id >= 0 && id < num_workers) {
-            info = deque_pop(&g_local_queues[id]);
+            info = (fiber_info_t*)queue_pop(&g_pinned_queues[id]);
+            if (!info) info = deque_pop(&g_local_queues[id]);
         }
         if (!info) {
             info = (fiber_info_t*)queue_pop(&g_queue);
@@ -1543,9 +1560,11 @@ void resume(fiber_info_t* info) {
     if (atomic_compare_exchange_strong(&info->state, &expected, 0)) { // PARKED -> READY
         int id = worker_id;
         if (id >= 0 && id < num_workers && num_workers > 1 && !is_yield) {
-            deque_push(&g_local_queues[id], info);
+            if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+            else deque_push(&g_local_queues[id], info);
         } else {
-            queue_push(&g_queue, info);
+            if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+            else queue_push(&g_queue, info);
         }
         sem_post(&g_worker_sem);
     } else {
@@ -1555,9 +1574,11 @@ void resume(fiber_info_t* info) {
             if (atomic_fetch_sub(&info->resume_pending, 1) > 0) {
                 int id = worker_id;
                 if (id >= 0 && id < num_workers && num_workers > 1 && !is_yield) {
-                    deque_push(&g_local_queues[id], info);
+                    if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+                    else deque_push(&g_local_queues[id], info);
                 } else {
-                    queue_push(&g_queue, info);
+                    if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+                    else queue_push(&g_queue, info);
                 }
                 sem_post(&g_worker_sem);
             }
@@ -1625,6 +1646,7 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
     info->name = name;
     info->file = file;
     info->line = line;
+    info->pinned_worker_id = -1;
     info->parent = nr_fiber_current();
 
     if (__nora_stepping_into_spawn) {
@@ -1691,6 +1713,20 @@ void* nr_load_ptr(void* p) {
     return NULL;
 }
 
+void nr_fiber_pin_thread() {
+    fiber_info_t* self = (fiber_info_t*)nr_fiber_current();
+    if (self && worker_id >= 0) {
+        self->pinned_worker_id = worker_id;
+    }
+}
+
+void nr_fiber_unpin_thread() {
+    fiber_info_t* self = (fiber_info_t*)nr_fiber_current();
+    if (self) {
+        self->pinned_worker_id = -1;
+    }
+}
+
 #endif
 #else // __EMSCRIPTEN__
 #include <emscripten.h>
@@ -1729,6 +1765,7 @@ typedef struct fiber_info {
     const char* name;
     const char* file;
     int line;
+    int pinned_worker_id;
     volatile bool yield_pending;
     struct fiber_info* next_global;
     struct fiber_info* prev_global;
@@ -1958,6 +1995,7 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
     info->name = name;
     info->file = file;
     info->line = line;
+    info->pinned_worker_id = -1;
     info->parent = nr_fiber_current();
 
     if (__nora_stepping_into_spawn) {
@@ -2009,6 +2047,16 @@ int nr_load_i32(void* p) {
 void* nr_load_ptr(void* p) {
     if (p) return *(void* volatile*)p;
     return NULL;
+}
+
+void nr_fiber_pin_thread() {
+    fiber_info_t* self = (fiber_info_t*)nr_fiber_current();
+    if (self) self->pinned_worker_id = 0;
+}
+
+void nr_fiber_unpin_thread() {
+    fiber_info_t* self = (fiber_info_t*)nr_fiber_current();
+    if (self) self->pinned_worker_id = -1;
 }
 
 #endif
