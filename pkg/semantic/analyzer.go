@@ -893,7 +893,6 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 			}
 			if attr := ast.GetAttribute(n.Attributes, "repr"); attr != nil && len(attr.Args) > 0 {
 				sumType.IsPrimitiveEnum = true
-				fmt.Printf("[DEBUG-ANALYZER] Set IsPrimitiveEnum for %s\n", sumType.TypeName)
 				if attr.Args[0] == "i8" || attr.Args[0] == "u8" || attr.Args[0] == "i16" || attr.Args[0] == "u16" || attr.Args[0] == "i32" || attr.Args[0] == "u32" || attr.Args[0] == "i64" || attr.Args[0] == "u64" || attr.Args[0] == "int" || attr.Args[0] == "uint" {
 					sumType.PrimitiveType = sa.resolveTypeNode(&ast.Identifier{Value: attr.Args[0]})
 				}
