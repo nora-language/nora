@@ -642,6 +642,19 @@ void WINAPI fiber_wrapper(LPVOID p) {
 }
 
 void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char* file, int line) {
+    NR_MUTEX_LOCK(&g_fiber_list_lock);
+    fiber_info_t* curr = g_terminated_fibers_head;
+    while (curr) {
+        fiber_info_t* next = curr->next_global;
+#ifdef _WIN32
+        if (curr->handle) DeleteFiber(curr->handle);
+#endif
+        free(curr);
+        curr = next;
+    }
+    g_terminated_fibers_head = NULL;
+    NR_MUTEX_UNLOCK(&g_fiber_list_lock);
+
     fiber_info_t* info = (fiber_info_t*)malloc(sizeof(fiber_info_t) + sizeof(spawn_data_t));
     memset(info, 0, sizeof(fiber_info_t) + sizeof(spawn_data_t));
     NR_ATOMIC_STORE(&info->state, 0); // READY
@@ -956,6 +969,16 @@ void fiber_wrapper(void* p) {
 }
 
 void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char* file, int line) {
+    NR_MUTEX_LOCK(&g_fiber_list_lock);
+    fiber_info_t* curr = g_terminated_fibers_head;
+    while (curr) {
+        fiber_info_t* next = curr->next_global;
+        free(curr);
+        curr = next;
+    }
+    g_terminated_fibers_head = NULL;
+    NR_MUTEX_UNLOCK(&g_fiber_list_lock);
+
     fiber_info_t* info = (fiber_info_t*)malloc(sizeof(fiber_info_t));
     memset(info, 0, sizeof(fiber_info_t));
     info->data.fn = fn;
@@ -1578,6 +1601,16 @@ void fiber_wrapper() {
 }
 
 void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char* file, int line) {
+    NR_MUTEX_LOCK(&g_fiber_list_lock);
+    fiber_info_t* curr = g_terminated_fibers_head;
+    while (curr) {
+        fiber_info_t* next = curr->next_global;
+        free(curr);
+        curr = next;
+    }
+    g_terminated_fibers_head = NULL;
+    NR_MUTEX_UNLOCK(&g_fiber_list_lock);
+
     size_t info_size = (sizeof(fiber_info_t) + sizeof(spawn_data_t) + 15) & ~15;
     fiber_info_t* info = (fiber_info_t*)malloc(info_size + NR_FIBER_STACK_SIZE);
     if (!info) {
@@ -1906,6 +1939,17 @@ void fiber_entry(fiber_info_t* info) {
 }
 
 void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char* file, int line) {
+    NR_MUTEX_LOCK(&g_fiber_list_lock);
+    fiber_info_t* curr = g_terminated_fibers_head;
+    while (curr) {
+        fiber_info_t* next = curr->next_global;
+        if (curr->asyncify_buf.stack_ptr) free(curr->asyncify_buf.stack_ptr);
+        free(curr);
+        curr = next;
+    }
+    g_terminated_fibers_head = NULL;
+    NR_MUTEX_UNLOCK(&g_fiber_list_lock);
+
     fiber_info_t* info = (fiber_info_t*)malloc(sizeof(fiber_info_t));
     memset(info, 0, sizeof(fiber_info_t));
     NR_ATOMIC_STORE(&info->state, 0); // READY
