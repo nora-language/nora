@@ -2231,6 +2231,15 @@ func (g *Generator) genSendExpression(e *ast.SendExpression) {
 	if t == nil {
 		t = types.I32
 	}
+	sendArg := "&_send_val"
+	freeSuffix := ""
+	elemType := g.getChanElemType(g.SemanticInfo.Types[e.Left])
+	if elemType != nil && !g.isPointerTypeInC(elemType) && !strings.HasSuffix(g.cType(elemType), "*") {
+		if g.isPointerTypeInC(t) || strings.HasSuffix(g.cType(t), "*") {
+			sendArg = "(void*)_send_val"
+			freeSuffix = "; nr_free(_send_val)"
+		}
+	}
 	g.buf.WriteString("({ ")
 	g.buf.WriteString("channel_t* _c = ")
 	if g.shouldDereferenceInC(e.Left) {
@@ -2240,7 +2249,7 @@ func (g *Generator) genSendExpression(e *ast.SendExpression) {
 	g.buf.WriteString("; ")
 	g.buf.WriteString(fmt.Sprintf("%s _send_val = ", g.cType(t)))
 	g.genExpression(e.Right)
-	g.buf.WriteString("; channel_send(_c, &_send_val); })")
+	g.buf.WriteString(fmt.Sprintf("; channel_send(_c, %s)%s; })", sendArg, freeSuffix))
 }
 
 func (g *Generator) genParallelExpression(e *ast.ParallelExpression) {

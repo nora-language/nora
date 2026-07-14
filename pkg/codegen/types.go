@@ -510,3 +510,17 @@ func (g *Generator) isChanType(t types.NRType) bool {
 	_, ok := t.(*types.ChanType)
 	return ok
 }
+
+func (g *Generator) getChanElemType(t types.NRType) types.NRType {
+	if t == nil {
+		return nil
+	}
+	t = types.UnwrapLease(t)
+	if pt, ok := t.(*types.PointerType); ok {
+		return g.getChanElemType(pt.Base)
+	}
+	if ct, ok := t.(*types.ChanType); ok {
+		return ct.Elem
+	}
+	return nil
+}

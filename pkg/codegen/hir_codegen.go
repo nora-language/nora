@@ -1412,8 +1412,17 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 		if t == nil {
 			t = types.I32
 		}
-		return fmt.Sprintf("({ channel_t* _c = %s; %s _send_val = %s; channel_send(_c, &_send_val); })",
-			g.hirOperandStr(i.Chan), g.cType(t), g.hirOperandStr(i.Val))
+		sendArg := "&_send_val"
+		freeSuffix := ""
+		elemType := g.getChanElemType(i.Chan.GetType())
+		if elemType != nil && !g.isPointerTypeInC(elemType) && !strings.HasSuffix(g.cType(elemType), "*") {
+			if g.isPointerTypeInC(t) || strings.HasSuffix(g.cType(t), "*") {
+				sendArg = "(void*)_send_val"
+				freeSuffix = "; nr_free(_send_val)"
+			}
+		}
+		return fmt.Sprintf("({ channel_t* _c = %s; %s _send_val = %s; channel_send(_c, %s)%s; })",
+			g.hirOperandStr(i.Chan), g.cType(t), g.hirOperandStr(i.Val), sendArg, freeSuffix)
 	case *hir.ChanRecv:
 		return fmt.Sprintf("({ %s _res; channel_recv(%s, &_res); _res; })",
 			g.cType(i.Type), g.hirOperandStr(i.Chan))
