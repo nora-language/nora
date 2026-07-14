@@ -351,7 +351,7 @@ func (g *Generator) genReturnStatement(s *ast.ReturnStatement) {
 	}
 	defer func() { g.TargetIsValue = oldTargetIsValue }()
 
-	if hasDrops {
+	if hasDrops || len(g.ActiveDefers) > 0 {
 		if s.ReturnValue != nil {
 			// Save return expression to _ret temp
 			retCType := "void*"
@@ -381,14 +381,24 @@ func (g *Generator) genReturnStatement(s *ast.ReturnStatement) {
 			g.NoTempWrap = oldNoTemp
 			g.emit(";")
 
+			// Emit active defers LIFO
+			for i := len(g.ActiveDefers) - 1; i >= 0; i-- {
+				g.genExpression(g.ActiveDefers[i])
+				g.emit(";")
+			}
+
 			// Emit drops
 			g.emitReturnDrops(drops)
 
 			g.emit("    return _ret;")
 			g.emit("}")
 		} else {
-			// No return value, just emit drops and return
+			// No return value, emit active defers LIFO and drops, then return
 			g.emit("{")
+			for i := len(g.ActiveDefers) - 1; i >= 0; i-- {
+				g.genExpression(g.ActiveDefers[i])
+				g.emit(";")
+			}
 			g.emitReturnDrops(drops)
 			g.emit("    return;")
 			g.emit("}")
@@ -1038,7 +1048,9 @@ func (g *Generator) genExpressionStatement(s *ast.ExpressionStatement) {
 }
 
 func (g *Generator) genDeferStatement(s *ast.DeferStatement) {
-	g.emit("/* defer not implemented in direct codegen */")
+	if s.Call != nil {
+		g.ActiveDefers = append(g.ActiveDefers, s.Call)
+	}
 }
 
 // --- RAII DROP EMISSION ---

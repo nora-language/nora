@@ -63,6 +63,8 @@ type Generator struct {
 
 	CurrentBlock     *ast.BlockStatement
 	CurrentStmtIndex int
+	ActiveDefers     []ast.Expression
+
 
 	LatePrototypes *bytes.Buffer // Stores prototypes discovered after GenerateHeader
 	PastHeaderPhase bool
@@ -978,6 +980,10 @@ func (g *Generator) genFunction(sym *semantic.Symbol, fn *ast.FunctionStatement)
 	}
 
 	g.CurrentFunc = sym
+	prevDefers := g.ActiveDefers
+	g.ActiveDefers = nil
+	defer func() { g.ActiveDefers = prevDefers }()
+
 	g.emitLine(fn)
 	g.emit("%s %s(%s) ", retType, name, params)
 
@@ -1027,6 +1033,19 @@ func (g *Generator) genFunction(sym *semantic.Symbol, fn *ast.FunctionStatement)
 
 	g.CurrentBlock = oldBlock
 	g.CurrentStmtIndex = oldIdx
+
+	hasTrailingReturn := false
+	if len(fn.Body.Statements) > 0 {
+		if _, ok := fn.Body.Statements[len(fn.Body.Statements)-1].(*ast.ReturnStatement); ok {
+			hasTrailingReturn = true
+		}
+	}
+	if !hasTrailingReturn && len(g.ActiveDefers) > 0 {
+		for i := len(g.ActiveDefers) - 1; i >= 0; i-- {
+			g.genExpression(g.ActiveDefers[i])
+			g.emit(";")
+		}
+	}
 
 	// [NEW] If this is a 'drop' method and the receiver is owned (@T),
 	// we MUST free the receiver itself at the very end.
