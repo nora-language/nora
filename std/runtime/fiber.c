@@ -364,6 +364,18 @@ void worker_loop(void* arg) {
                     nr_panic("deadlock", "runtime", 0);
                 }
             }
+            bool other_pinned_work = false;
+            for (int k = 0; k < num_workers; k++) {
+                if (k != worker_id && g_pinned_queues[k].count > 0) {
+                    other_pinned_work = true;
+                    break;
+                }
+            }
+            if (other_pinned_work) {
+                ReleaseSemaphore(g_worker_sem, 1, NULL);
+                SwitchToThread();
+                continue;
+            }
             WaitForSingleObject(g_worker_sem, INFINITE);
             NR_ATOMIC_DEC(&g_sleeping_workers);
         }
@@ -494,6 +506,18 @@ void scheduler_run_loop() {
                     nr_fiber_report();
                     nr_panic("deadlock", "runtime", 0);
                 }
+            }
+            bool other_pinned_work = false;
+            for (int k = 0; k < num_workers; k++) {
+                if (k != worker_id && g_pinned_queues[k].count > 0) {
+                    other_pinned_work = true;
+                    break;
+                }
+            }
+            if (other_pinned_work) {
+                ReleaseSemaphore(g_worker_sem, 1, NULL);
+                SwitchToThread();
+                continue;
             }
             WaitForSingleObject(g_worker_sem, INFINITE);
             NR_ATOMIC_DEC(&g_sleeping_workers);
@@ -1354,6 +1378,18 @@ void* worker_loop(void* arg) {
                     nr_panic("deadlock", "runtime", 0);
                 }
             }
+            bool other_pinned_work = false;
+            for (int k = 0; k < num_workers; k++) {
+                if (k != worker_id && g_pinned_queues[k].count > 0) {
+                    other_pinned_work = true;
+                    break;
+                }
+            }
+            if (other_pinned_work) {
+                sem_post(&g_worker_sem);
+                sched_yield();
+                continue;
+            }
             sem_wait(&g_worker_sem);
             NR_ATOMIC_DEC(&g_sleeping_workers);
         }
@@ -1482,6 +1518,18 @@ void scheduler_run_loop() {
                     nr_fiber_report();
                     nr_panic("deadlock", "runtime", 0);
                 }
+            }
+            bool other_pinned_work = false;
+            for (int k = 0; k < num_workers; k++) {
+                if (k != worker_id && g_pinned_queues[k].count > 0) {
+                    other_pinned_work = true;
+                    break;
+                }
+            }
+            if (other_pinned_work) {
+                sem_post(&g_worker_sem);
+                sched_yield();
+                continue;
             }
             sem_wait(&g_worker_sem);
             NR_ATOMIC_DEC(&g_sleeping_workers);
