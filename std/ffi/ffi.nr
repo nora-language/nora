@@ -23,6 +23,61 @@ pub fn IntoRaw[T](val: @T) ptr {
     return val
 }
 
+extern fn nr_write_u8(p: ptr, val: u8)
+extern fn nr_read_u8(p: ptr) u8
+pub fn WriteU8(p: ptr, val: u8) { nr_write_u8(p, val) }
+pub fn ReadU8(p: ptr) u8 { return nr_read_u8(p) }
+
+extern fn nr_write_i8(p: ptr, val: i8)
+extern fn nr_read_i8(p: ptr) i8
+pub fn WriteI8(p: ptr, val: i8) { nr_write_i8(p, val) }
+pub fn ReadI8(p: ptr) i8 { return nr_read_i8(p) }
+
+extern fn nr_write_u16(p: ptr, val: u16)
+extern fn nr_read_u16(p: ptr) u16
+pub fn WriteU16(p: ptr, val: u16) { nr_write_u16(p, val) }
+pub fn ReadU16(p: ptr) u16 { return nr_read_u16(p) }
+
+extern fn nr_write_i16(p: ptr, val: i16)
+extern fn nr_read_i16(p: ptr) i16
+pub fn WriteI16(p: ptr, val: i16) { nr_write_i16(p, val) }
+pub fn ReadI16(p: ptr) i16 { return nr_read_i16(p) }
+
+extern fn nr_write_u32(p: ptr, val: u32)
+extern fn nr_read_u32(p: ptr) u32
+pub fn WriteU32(p: ptr, val: u32) { nr_write_u32(p, val) }
+pub fn ReadU32(p: ptr) u32 { return nr_read_u32(p) }
+
+extern fn nr_write_i32(p: ptr, val: i32)
+extern fn nr_read_i32(p: ptr) i32
+pub fn WriteI32(p: ptr, val: i32) { nr_write_i32(p, val) }
+pub fn ReadI32(p: ptr) i32 { return nr_read_i32(p) }
+
+extern fn nr_write_u64(p: ptr, val: u64)
+extern fn nr_read_u64(p: ptr) u64
+pub fn WriteU64(p: ptr, val: u64) { nr_write_u64(p, val) }
+pub fn ReadU64(p: ptr) u64 { return nr_read_u64(p) }
+
+extern fn nr_write_i64(p: ptr, val: i64)
+extern fn nr_read_i64(p: ptr) i64
+pub fn WriteI64(p: ptr, val: i64) { nr_write_i64(p, val) }
+pub fn ReadI64(p: ptr) i64 { return nr_read_i64(p) }
+
+extern fn nr_write_f32(p: ptr, val: f32)
+extern fn nr_read_f32(p: ptr) f32
+pub fn WriteF32(p: ptr, val: f32) { nr_write_f32(p, val) }
+pub fn ReadF32(p: ptr) f32 { return nr_read_f32(p) }
+
+extern fn nr_write_f64(p: ptr, val: f64)
+extern fn nr_read_f64(p: ptr) f64
+pub fn WriteF64(p: ptr, val: f64) { nr_write_f64(p, val) }
+pub fn ReadF64(p: ptr) f64 { return nr_read_f64(p) }
+
+extern fn nr_write_ptr(p: ptr, val: ptr)
+extern fn nr_read_ptr(p: ptr) ptr
+pub fn WritePtr(p: ptr, val: ptr) { nr_write_ptr(p, val) }
+pub fn ReadPtr(p: ptr) ptr { return nr_read_ptr(p) }
+
 // BorrowToRaw takes a read-only borrow and returns a raw ptr.
 [intrinsic("borrow_to_raw")]
 [NoEmit]

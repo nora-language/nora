@@ -1,6 +1,8 @@
 #include "runtime.h"
 
 #include "base.c"
+
+#include "ffi.c"
 #include "memory.c"
 #include "fiber.c"
 #include "string.c"
