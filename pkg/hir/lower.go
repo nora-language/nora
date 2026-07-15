@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -1302,12 +1303,149 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 
 	case *ast.TryExpression:
 		valOp := l.lowerExpression(e.Value)
-		tryInst := &Try{
-			ASTNode: e,
-			Val:     valOp,
-			Type:    t,
+		valSt, ok := valOp.GetType().(*types.SumType)
+		if !ok {
+			return &LiteralOperand{Value: "/* error */ 0", Type: t}
 		}
-		return &InstOperand{Inst: tryInst}
+
+		tempName := l.makeTempName()
+		l.CurrentBlock.AddInst(&Alloca{Name: tempName, Type: valSt})
+		tempVar := &VarOperand{Name: tempName, Type: valSt}
+		l.CurrentBlock.AddInst(&Store{Dest: tempVar, Val: valOp})
+
+		isResult := valSt.CoreIntrinsic == "Result"
+		isOption := valSt.CoreIntrinsic == "Option"
+
+		var vNames []string
+		for k := range valSt.Variants {
+			vNames = append(vNames, k)
+		}
+		sort.Strings(vNames)
+
+		var okTag int = 0
+		targetName := ""
+		if isResult {
+			targetName = "Ok"
+		} else if isOption {
+			targetName = "Some"
+		}
+		for i, n := range vNames {
+			if n == targetName {
+				okTag = i
+				break
+			}
+		}
+
+		tagAccess := &InstOperand{Inst: &FieldAccess{
+			Base:      tempVar,
+			FieldName: "tag",
+			Type:      types.I32,
+		}}
+
+		condOp := &InstOperand{Inst: &BinOp{
+			Left:  tagAccess,
+			Op:    "!=",
+			Right: &LiteralOperand{Value: strconv.Itoa(okTag), Type: types.I32},
+			Type:  types.Bool,
+		}}
+
+		thenBlock := NewHIRBlock()
+
+		if l.Solver != nil && l.Solver.TryDrops[e] != nil {
+			for _, d := range l.Solver.TryDrops[e] {
+				thenBlock.AddInst(&Drop{
+					Symbol: d.Symbol,
+					Field:  d.Field,
+					Index:  d.Index,
+					Lambda: d.Lambda,
+					Expr:   d.Expr,
+				})
+			}
+		}
+
+		if l.CurrentFunc != nil {
+			ft := l.CurrentFunc.Type.(*types.FunctionType)
+			retSt, okRet := ft.Return.(*types.SumType)
+			if okRet {
+				if isResult {
+					dataAccess := &InstOperand{Inst: &FieldAccess{
+						Base:      tempVar,
+						FieldName: "data",
+						Type:      types.Void,
+					}}
+					var errType types.NRType = types.Void
+					if valSt.Variants["Err"] != nil {
+						v := valSt.Variants["Err"]
+						if len(v.FieldNames) > 0 {
+							errType = v.Fields[v.FieldNames[0]]
+						}
+					}
+					errAccess := &InstOperand{Inst: &FieldAccess{
+						Base:      dataAccess,
+						FieldName: "Err",
+						Type:      errType,
+					}}
+					retVal := &InstOperand{Inst: &VariantConstructor{
+						SumType:     retSt,
+						VariantName: "Err",
+						Args:        []Operand{errAccess},
+						Type:        retSt,
+					}}
+					thenBlock.AddInst(&Ret{Val: retVal})
+				} else if isOption {
+					retVal := &InstOperand{Inst: &VariantConstructor{
+						SumType:     retSt,
+						VariantName: "None",
+						Args:        []Operand{},
+						Type:        retSt,
+					}}
+					thenBlock.AddInst(&Ret{Val: retVal})
+				} else {
+					thenBlock.AddInst(&Ret{})
+				}
+			} else {
+				thenBlock.AddInst(&Ret{})
+			}
+		} else {
+			thenBlock.AddInst(&Ret{})
+		}
+
+		elseBlock := NewHIRBlock()
+		var payloadOp Operand
+		if isResult {
+			dataAccess := &InstOperand{Inst: &FieldAccess{
+				Base:      tempVar,
+				FieldName: "data",
+				Type:      types.Void,
+			}}
+			payloadOp = &InstOperand{Inst: &FieldAccess{
+				Base:      dataAccess,
+				FieldName: "Ok",
+				Type:      t,
+			}}
+		} else if isOption {
+			dataAccess := &InstOperand{Inst: &FieldAccess{
+				Base:      tempVar,
+				FieldName: "data",
+				Type:      types.Void,
+			}}
+			payloadOp = &InstOperand{Inst: &FieldAccess{
+				Base:      dataAccess,
+				FieldName: "Some",
+				Type:      t,
+			}}
+		} else {
+			payloadOp = &LiteralOperand{Value: "0", Type: t}
+		}
+
+		hirIf := &HIRIf{
+			Condition: condOp,
+			Then:      thenBlock,
+			Else:      elseBlock,
+		}
+		l.CurrentBlock.AddElement(hirIf)
+
+		return payloadOp
 
 	case *ast.AssignmentStatement:
 		destOp := l.lowerExpression(e.Left)
