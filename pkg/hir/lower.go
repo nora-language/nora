@@ -1544,6 +1544,19 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 		}
 		return &InstOperand{Inst: inst}
 
+	case *ast.MapLiteral:
+		inst := &MapConstructor{
+			Type:  t,
+			Pos:   e.Pos(),
+			Pairs: []MapPair{},
+		}
+		for k, v := range e.Pairs {
+			kOp := l.lowerExpression(k)
+			vOp := l.lowerExpression(v)
+			inst.Pairs = append(inst.Pairs, MapPair{Key: kOp, Value: vOp})
+		}
+		return &InstOperand{Inst: inst}
+
 	default:
 		l.collectHiddenLambdas(expr)
 		astExpr := &ASTExpr{ASTNode: expr, Type: t}

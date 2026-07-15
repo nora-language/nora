@@ -1036,6 +1036,56 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 			}
 			return fmt.Sprintf("array_make(0, sizeof(%s), \"%s\", %d)", ctype, filename, i.Pos.Line)
 		}
+	case *hir.MapConstructor:
+		mt := i.Type.(*types.MapType)
+		isStrKey := mt.Key.Name() == "str"
+
+		type stringPair struct {
+			kStr, vStr string
+			kOp, vOp   hir.Operand
+		}
+		var pairs []stringPair
+
+		oldNoTemp := g.NoTempWrap
+		g.NoTempWrap = true
+		for _, p := range i.Pairs {
+			oldTargetVal := g.TargetIsValue
+			
+			g.TargetIsValue = !g.isPointerTypeInC(mt.Key)
+			kStr := g.hirOperandStr(p.Key)
+
+			g.TargetIsValue = !g.isPointerTypeInC(mt.Value)
+			vStr := g.hirOperandStr(p.Value)
+			
+			g.TargetIsValue = oldTargetVal
+
+			pairs = append(pairs, stringPair{kStr, vStr, p.Key, p.Value})
+		}
+		g.NoTempWrap = oldNoTemp
+
+		// Sort for deterministic output
+		sort.Slice(pairs, func(idx1, idx2 int) bool {
+			return pairs[idx1].kStr < pairs[idx2].kStr
+		})
+
+		filename := strings.ReplaceAll(i.Pos.Filename, "\\", "/")
+
+		var buf strings.Builder
+		buf.WriteString("({ ")
+		buf.WriteString(fmt.Sprintf("void* _m = map_make(sizeof(%s), sizeof(%s), %v, \"%s\", %d); ", g.cType(mt.Key), g.cType(mt.Value), isStrKey, filename, i.Pos.Line))
+
+		for _, p := range pairs {
+			buf.WriteString("map_set(_m, ")
+			buf.WriteString(fmt.Sprintf("&(%s){", g.cType(mt.Key)))
+			buf.WriteString(p.kStr)
+			buf.WriteString("}, ")
+			buf.WriteString(fmt.Sprintf("&(%s){", g.cType(mt.Value)))
+			buf.WriteString(p.vStr)
+			buf.WriteString("}); ")
+		}
+		buf.WriteString("_m; })")
+
+		return buf.String()
 	case *hir.StructConstructor:
 		var fieldsStr []string
 		oldNoTemp := g.NoTempWrap

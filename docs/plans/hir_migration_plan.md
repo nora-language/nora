@@ -37,7 +37,7 @@ To decouple the compiler from legacy codegen, we must build native HIR lowering 
 **Data Structures & Literals:**
 - [x] Lower `ast.StructLiteral` (currently falls back in `lower.go:1396`).
 - [x] Lower `ast.ArrayLiteral` (currently falls back in `lower.go:1416`).
-- [ ] Lower `ast.MapLiteral` (currently caught by the `default` fallback).
+- [x] Lower `ast.MapLiteral` (currently caught by the `default` fallback).
 - [ ] Lower `ast.InterfaceLiteral` (if applicable).
 - [ ] Lower `ast.SliceExpression` (if not natively handled by bounds checking yet).
 

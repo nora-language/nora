@@ -87,8 +87,7 @@ func (g *Generator) genExpression(expr ast.Expression) {
 		g.genIndexExpression(e)
 	case *ast.ArrayLiteral:
 		g.genArrayLiteral(e)
-	case *ast.MapLiteral:
-		g.genMapLiteral(e)
+
 	case *ast.StructLiteral:
 		g.genStructLiteral(e)
 	case *ast.RangeExpression:
@@ -1862,38 +1861,7 @@ func (g *Generator) genOwnedValue(expr ast.Expression, targetType types.NRType) 
 	g.NoTempWrap = oldNoTemp
 }
 
-func (g *Generator) genMapLiteral(e *ast.MapLiteral) {
-	oldNoTemp := g.NoTempWrap
-	g.NoTempWrap = false
-	defer func() { g.NoTempWrap = oldNoTemp }()
-	mt := g.SemanticInfo.Types[e].(*types.MapType)
-	isStrKey := mt.Key.Name() == "str"
-	g.buf.WriteString("({ ")
-	g.buf.WriteString(fmt.Sprintf("void* _m = map_make(sizeof(%s), sizeof(%s), %v, \"%s\", %d); ", g.cType(mt.Key), g.cType(mt.Value), isStrKey, strings.ReplaceAll(e.Pos().Filename, "\\", "/"), e.Pos().Line))
 
-	// Sort keys for deterministic output
-	type pair struct {
-		k, v ast.Expression
-	}
-	var pairs []pair
-	for k, v := range e.Pairs {
-		pairs = append(pairs, pair{k, v})
-	}
-	sort.Slice(pairs, func(i, j int) bool {
-		return pairs[i].k.String() < pairs[j].k.String()
-	})
-
-	for _, p := range pairs {
-		g.buf.WriteString("map_set(_m, ")
-		g.buf.WriteString(fmt.Sprintf("&(%s){", g.cType(mt.Key)))
-		g.genOwnedValue(p.k, mt.Key)
-		g.buf.WriteString("}, ")
-		g.buf.WriteString(fmt.Sprintf("&(%s){", g.cType(mt.Value)))
-		g.genOwnedValue(p.v, mt.Value)
-		g.buf.WriteString("}); ")
-	}
-	g.buf.WriteString("_m; })")
-}
 
 func (g *Generator) genStructLiteral(e *ast.StructLiteral) {
 	oldNoTemp := g.NoTempWrap

@@ -30,6 +30,7 @@ const (
 	InstVariantConstructor
 	InstStructConstructor
 	InstArrayConstructor
+	InstMapConstructor
 	InstAlloc
 	InstTry
 	InstASTExpr
@@ -308,6 +309,24 @@ func (a *Alloc) String() string {
 		return fmt.Sprintf("alloc %s[%s]", a.Type.Name(), a.Val.String())
 	}
 	return fmt.Sprintf("alloc %s(%s)", a.Type.Name(), a.Val.String())
+}
+
+// MapConstructor: creates a new map from key-value pairs
+type MapPair struct {
+	Key   Operand
+	Value Operand
+}
+
+type MapConstructor struct {
+	Type  types.NRType
+	Pos   token.Position
+	Pairs []MapPair
+}
+
+func (m *MapConstructor) GetInstructionKind() InstructionKind { return InstMapConstructor }
+func (m *MapConstructor) GetType() types.NRType               { return m.Type }
+func (m *MapConstructor) String() string {
+	return fmt.Sprintf("map_make(%d pairs)", len(m.Pairs))
 }
 
 type Try struct {
