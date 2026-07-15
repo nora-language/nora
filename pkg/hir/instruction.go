@@ -27,6 +27,7 @@ const (
 	InstBinOp
 	InstUnOp
 	InstVariantConstructor
+	InstStructConstructor
 	InstAlloc
 	InstTry
 	InstASTExpr
@@ -261,6 +262,22 @@ func (vc *VariantConstructor) String() string {
 		argsStr[i] = arg.String()
 	}
 	return fmt.Sprintf("variant %s::%s(%s)", vc.SumType.Name(), vc.VariantName, strings.Join(argsStr, ", "))
+}
+
+type StructConstructor struct {
+	Type          types.NRType
+	FieldNames    []string
+	FieldOperands []Operand
+}
+
+func (sc *StructConstructor) GetInstructionKind() InstructionKind { return InstStructConstructor }
+func (sc *StructConstructor) GetType() types.NRType               { return sc.Type }
+func (sc *StructConstructor) String() string {
+	var fields []string
+	for i, name := range sc.FieldNames {
+		fields = append(fields, fmt.Sprintf("%s: %s", name, sc.FieldOperands[i].String()))
+	}
+	return fmt.Sprintf("struct %s { %s }", sc.Type.Name(), strings.Join(fields, ", "))
 }
 
 type Alloc struct {

@@ -24,9 +24,9 @@ Completely migrate the Nora compiler backend to exclusively use the High-level I
 To decouple the compiler from legacy codegen, we must build native HIR lowering for every AST node that currently falls back to `hir.ASTExpr` or is completely unhandled by `lower.go`.
 
 **Missing Statements (Currently ignored or crashing in HIR):**
-- [ ] Lower `ast.DeferStatement` (Currently missing native HIR statement support).
+- [x] Lower `ast.DeferStatement` (Currently missing native HIR statement support).
 - [ ] Lower `ast.MatchExpression` (Complex pattern matching, heavily relies on legacy codegen `genMatchExpression`).
-- [ ] Lower `ast.SelectStatement` channels (Needs verification if fully lowered or relies on fallback).
+- [x] Lower `ast.SelectStatement` channels (Needs verification if fully lowered or relies on fallback).
 - [ ] Lower `ast.PinStatement` (if applicable to HIR lowering).
 
 **Control Flow & Operators:**
@@ -35,7 +35,7 @@ To decouple the compiler from legacy codegen, we must build native HIR lowering 
 - [ ] Lower `ast.RangeExpression` (`a..b`) into proper struct initialization.
 
 **Data Structures & Literals:**
-- [ ] Lower `ast.StructLiteral` (currently falls back in `lower.go:1396`).
+- [x] Lower `ast.StructLiteral` (currently falls back in `lower.go:1396`).
 - [ ] Lower `ast.ArrayLiteral` (currently falls back in `lower.go:1416`).
 - [ ] Lower `ast.MapLiteral` (currently caught by the `default` fallback).
 - [ ] Lower `ast.InterfaceLiteral` (if applicable).

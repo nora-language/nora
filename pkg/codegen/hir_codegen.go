@@ -1004,6 +1004,41 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 			return fmt.Sprintf("%s_%s", g.mangledTypeName(i.SumType), i.VariantName)
 		}
 		return fmt.Sprintf("%s_%s_make(%s)", g.mangledTypeName(i.SumType), i.VariantName, strings.Join(argsStr, ", "))
+	case *hir.StructConstructor:
+		var fieldsStr []string
+		oldNoTemp := g.NoTempWrap
+		g.NoTempWrap = true
+		oldTargetVal := g.TargetIsValue
+		for idx, fName := range i.FieldNames {
+			var fieldType types.NRType
+			if st, ok := i.Type.(*types.StructType); ok {
+				fieldType = st.Fields[fName]
+				g.TargetIsValue = !g.isPointerTypeInC(fieldType)
+			} else {
+				g.TargetIsValue = true
+			}
+			valStr := g.hirOperandStr(i.FieldOperands[idx])
+			
+			// If the operand is a pointer in C but the field expects a value, we must dereference it
+			if fieldType != nil {
+				valIsPtr := g.isOperandPointerInC(i.FieldOperands[idx])
+				destIsPtr := g.isPointerTypeInC(fieldType)
+				if valIsPtr && !destIsPtr {
+					if g.isHIRTemporaryHeapPointer(i.FieldOperands[idx]) {
+						valStr = g.wrapHIRTemporaryHeapPointer(i.FieldOperands[idx], valStr)
+					} else {
+						// Dereference the pointer
+						valStr = "*(" + valStr + ")"
+					}
+				}
+			}
+
+			fieldsStr = append(fieldsStr, fmt.Sprintf(".%s = %s", fName, valStr))
+		}
+		g.TargetIsValue = oldTargetVal
+		g.NoTempWrap = oldNoTemp
+		ctype := g.cType(i.Type)
+		return fmt.Sprintf("(%s){%s}", ctype, strings.Join(fieldsStr, ", "))
 	case *hir.Alloc:
 		if i.IsArray {
 			pt := i.Type.(*types.PointerType)

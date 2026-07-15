@@ -1513,26 +1513,22 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 		return &VarOperand{Name: tempName, Type: t, Symbol: sym}
 
 	case *ast.StructLiteral:
-		for _, f := range e.Fields {
-			if f.Value != nil {
-				if l.UnconsumedTemps[f.Value] {
-					tempName := l.makeTempName()
-					ft := l.getType(f.Value)
-					sym := &semantic.Symbol{Name: tempName, Type: ft, Kind: semantic.SymVar}
-					l.ExprTemps[f.Value] = sym
-					l.CurrentBlock.AddInst(&Alloca{Symbol: sym, Type: ft})
-					l.CurrentBlock.AddInst(&Store{
-						Dest: &VarOperand{Name: tempName, Type: ft, Symbol: sym},
-						Val:  l.lowerExpression(f.Value),
-					})
-					f.Value = &ast.Identifier{Value: tempName}
-				} else {
-					l.lowerExpression(f.Value)
-				}
+		t := l.getType(e)
+		inst := &StructConstructor{
+			Type:          t,
+			FieldNames:    []string{},
+			FieldOperands: []Operand{},
+		}
+		for _, field := range e.Fields {
+			inst.FieldNames = append(inst.FieldNames, field.Name.Value)
+			if field.Value != nil {
+				inst.FieldOperands = append(inst.FieldOperands, l.lowerExpression(field.Value))
+			} else {
+				// Shorthand field initialization or missing value
+				inst.FieldOperands = append(inst.FieldOperands, l.lowerExpression(field.Name))
 			}
 		}
-		astExpr := &ASTExpr{ASTNode: e, Type: t}
-		return &InstOperand{Inst: astExpr}
+		return &InstOperand{Inst: inst}
 
 	case *ast.ArrayLiteral:
 		for i, el := range e.Elements {
