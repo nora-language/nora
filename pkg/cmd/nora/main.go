@@ -46,7 +46,7 @@ func isPlatformCompatible(filename string, targetOS string) bool {
 		return true
 	}
 	base := strings.TrimSuffix(filepath.Base(filename), ".nr")
-	knownOSes := []string{"windows", "linux", "darwin", "wasm", "wasi"}
+	knownOSes := []string{"windows", "linux", "darwin", "android", "ios", "freebsd", "wasm", "wasi"}
 	for _, osName := range knownOSes {
 		if strings.HasSuffix(base, "_"+osName) {
 			return osName == targetOS
