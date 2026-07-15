@@ -21,7 +21,7 @@ Completely migrate the Nora compiler backend to exclusively use the High-level I
 ## Implementation Checklist
 
 ### Phase 1: Complete HIR Lowering (Eliminate `ASTExpr` Fallbacks)
-To decouple the compiler from legacy codegen, we must build native HIR lowering for every AST node that currently falls back to `hir.ASTExpr` or is completely unhandled by `lower.go`.
+To decouple the compiler from legacy codegen, we must build native HIR lowering for every AST node that currently falls back to `hir.ASTExpr` or is completely unhandled by `lower.go` (this includes fully lowering macro arguments and struct operator overloads).
 
 **Missing Statements (Currently ignored or crashing in HIR):**
 - [x] Lower `ast.DeferStatement` (Currently missing native HIR statement support).
