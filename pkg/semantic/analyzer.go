@@ -1152,7 +1152,8 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		switch node.(type) {
 		case *ast.BlockStatement, *ast.IfExpression, *ast.MatchExpression,
 			*ast.ReturnStatement, *ast.VarStatement, *ast.ConstStatement, *ast.AssignmentStatement,
-			*ast.ExpressionStatement, *ast.ForStatement, *ast.WhileStatement:
+			*ast.ExpressionStatement, *ast.ForStatement, *ast.WhileStatement,
+			*ast.ArrayLiteral:
 			reanalyze = true
 		}
 		if !reanalyze {

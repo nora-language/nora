@@ -6,6 +6,7 @@ import (
 
 	"github.com/nora-language/nora/pkg/parser/ast"
 	"github.com/nora-language/nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/token"
 	"github.com/nora-language/nora/pkg/types"
 )
 
@@ -28,6 +29,7 @@ const (
 	InstUnOp
 	InstVariantConstructor
 	InstStructConstructor
+	InstArrayConstructor
 	InstAlloc
 	InstTry
 	InstASTExpr
@@ -279,6 +281,17 @@ func (sc *StructConstructor) String() string {
 	}
 	return fmt.Sprintf("struct %s { %s }", sc.Type.Name(), strings.Join(fields, ", "))
 }
+
+type ArrayConstructor struct {
+	Type     types.NRType
+	Elements []Operand
+	IsList   bool
+	Pos      token.Position
+}
+
+func (a *ArrayConstructor) GetInstructionKind() InstructionKind { return InstArrayConstructor }
+func (a *ArrayConstructor) GetType() types.NRType               { return a.Type }
+func (a *ArrayConstructor) String() string                      { return "array_constructor" }
 
 type Alloc struct {
 	Type    types.NRType

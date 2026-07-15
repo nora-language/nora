@@ -1004,6 +1004,38 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 			return fmt.Sprintf("%s_%s", g.mangledTypeName(i.SumType), i.VariantName)
 		}
 		return fmt.Sprintf("%s_%s_make(%s)", g.mangledTypeName(i.SumType), i.VariantName, strings.Join(argsStr, ", "))
+	case *hir.ArrayConstructor:
+		var elemsStr []string
+		oldNoTemp := g.NoTempWrap
+		g.NoTempWrap = true
+		for _, elOp := range i.Elements {
+			var elemType types.NRType
+			if i.IsList {
+				elemType = i.Type.(*types.ListType).ElementType
+			} else {
+				elemType = i.Type.(*types.ArrayType).Base
+			}
+			oldTargetVal := g.TargetIsValue
+			g.TargetIsValue = !g.isPointerTypeInC(elemType)
+
+			elStr := g.hirOperandStr(elOp)
+			g.TargetIsValue = oldTargetVal
+			elemsStr = append(elemsStr, elStr)
+		}
+		g.NoTempWrap = oldNoTemp
+
+		if !i.IsList {
+			ctype := g.cType(i.Type)
+			return fmt.Sprintf("(%s){.data = {%s}}", ctype, strings.Join(elemsStr, ", "))
+		} else {
+			elemType := i.Type.(*types.ListType).ElementType
+			ctype := g.cType(elemType)
+			filename := strings.ReplaceAll(i.Pos.Filename, "\\", "/")
+			if len(elemsStr) > 0 {
+				return fmt.Sprintf("array_make(%d, sizeof(%s), \"%s\", %d, %s)", len(i.Elements), ctype, filename, i.Pos.Line, strings.Join(elemsStr, ", "))
+			}
+			return fmt.Sprintf("array_make(0, sizeof(%s), \"%s\", %d)", ctype, filename, i.Pos.Line)
+		}
 	case *hir.StructConstructor:
 		var fieldsStr []string
 		oldNoTemp := g.NoTempWrap

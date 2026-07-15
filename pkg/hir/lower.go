@@ -1531,24 +1531,18 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 		return &InstOperand{Inst: inst}
 
 	case *ast.ArrayLiteral:
-		for i, el := range e.Elements {
-			if l.UnconsumedTemps[el] {
-				tempName := l.makeTempName()
-				et := l.getType(el)
-				sym := &semantic.Symbol{Name: tempName, Type: et, Kind: semantic.SymVar}
-				l.ExprTemps[el] = sym
-				l.CurrentBlock.AddInst(&Alloca{Symbol: sym, Type: et})
-				l.CurrentBlock.AddInst(&Store{
-					Dest: &VarOperand{Name: tempName, Type: et, Symbol: sym},
-					Val:  l.lowerExpression(el),
-				})
-				e.Elements[i] = &ast.Identifier{Value: tempName}
-			} else {
-				l.lowerExpression(el)
-			}
+		t := l.getType(e)
+		_, isList := t.(*types.ListType)
+		inst := &ArrayConstructor{
+			Type:     t,
+			Elements: []Operand{},
+			IsList:   isList,
+			Pos:      e.Pos(),
 		}
-		astExpr := &ASTExpr{ASTNode: e, Type: t}
-		return &InstOperand{Inst: astExpr}
+		for _, el := range e.Elements {
+			inst.Elements = append(inst.Elements, l.lowerExpression(el))
+		}
+		return &InstOperand{Inst: inst}
 
 	default:
 		l.collectHiddenLambdas(expr)
