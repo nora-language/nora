@@ -84,7 +84,7 @@ func (g *Generator) genExpression(expr ast.Expression) {
 	case *ast.SelectorExpression:
 		g.genSelectorExpression(e)
 	case *ast.IndexExpression:
-		g.genIndexExpression(e)
+		panic("ast.IndexExpression should be lowered to hir.IndexAccess or hir.SliceAccess")
 	case *ast.ArrayLiteral:
 		g.genArrayLiteral(e)
 
@@ -1567,148 +1567,6 @@ func (g *Generator) genSelectorString(leftExpr ast.Expression, field string) str
 	return fmt.Sprintf("%s%s%s", leftStr, op, field)
 }
 
-func (g *Generator) genIndexExpression(e *ast.IndexExpression) {
-	// [NEW] Handle implicit moves for IndexExpression
-	if g.Solver != nil && g.Solver.Moves[e] && !g.InMoveOperator {
-		t := g.SemanticInfo.Types[e]
-		g.buf.WriteString("({ ")
-		g.buf.WriteString(fmt.Sprintf("%s _tmp = ", g.cType(t)))
-		if g.isPointerInC(e) && !strings.HasSuffix(g.cType(t), "*") {
-			g.buf.WriteString("*")
-		}
-		oldInMove := g.InMoveOperator
-		g.InMoveOperator = true
-		g.genIndexExpression(e)
-		g.InMoveOperator = oldInMove
-		g.buf.WriteString("; ")
-
-		if g.isPointerTypeInC(t) && strings.HasSuffix(g.cType(t), "*") {
-			if e.NoBoundsCheck {
-				g.buf.WriteString(fmt.Sprintf("((((%s*)%s)[%s]) = NULL; ",
-					g.cType(t), g.exprToString(e.Left), g.exprToString(e.Indices[0])))
-			} else {
-				g.buf.WriteString(fmt.Sprintf("(*((%s*)array_bounds_check(%s, %s, \"%s\", %d))) = NULL; ",
-					g.cType(t), g.exprToString(e.Left), g.exprToString(e.Indices[0]),
-					strings.ReplaceAll(e.Pos().Filename, "\\", "/"), e.Pos().Line))
-			}
-		} else {
-			if e.NoBoundsCheck {
-				g.buf.WriteString(fmt.Sprintf("memset(&(((%s*)%s)[%s]), 0, sizeof(%s)); ",
-					g.cType(t), g.exprToString(e.Left), g.exprToString(e.Indices[0]), g.cType(t)))
-			} else {
-				g.buf.WriteString(fmt.Sprintf("memset(array_bounds_check(%s, %s, \"%s\", %d), 0, sizeof(%s)); ",
-					g.exprToString(e.Left), g.exprToString(e.Indices[0]),
-					strings.ReplaceAll(e.Pos().Filename, "\\", "/"), e.Pos().Line, g.cType(t)))
-			}
-		}
-		g.buf.WriteString(" _tmp; })")
-		return
-	}
-
-	if len(e.Indices) == 0 {
-		g.genExpression(e.Left)
-		return
-	}
-
-	// [NEW] Check for generic variant constructor: None[i32]
-	if st, vName := g.isVariantConstructor(e); st != nil {
-		if st.IsPrimitiveEnum {
-			g.buf.WriteString(fmt.Sprintf("%s_%s", g.mangledTypeName(st), vName))
-		} else {
-			g.buf.WriteString(fmt.Sprintf("%s_%s_make()", g.mangledTypeName(st), vName))
-		}
-		return
-	}
-
-	// Check if it's a slice: arr[start:end]
-	if se, ok := e.Indices[0].(*ast.SliceExpression); ok {
-		g.genSliceExpression(e.Left, se)
-		return
-	}
-
-	t := g.SemanticInfo.Types[e.Left]
-	if t != nil {
-		ut := t
-		if pt, ok := t.(*types.PointerType); ok && !pt.IsArray {
-			ut = pt.Base
-		}
-
-		// Struct operator overload: index
-		if st, ok := ut.(*types.StructType); ok && len(e.Indices) == 1 {
-			if methodType, exists := st.Methods["index"]; exists {
-				if mt, ok := methodType.(*types.FunctionType); ok && len(mt.Params) == 1 {
-					g.buf.WriteString(g.mangledTypeName(st) + "_index(NULL, ")
-					g.emitArgument(e.Left, st, mt.ReceiverLease, false)
-					g.buf.WriteString(", ")
-					g.emitArgument(e.Indices[0], mt.Params[0], mt.ParamLeases[0], false)
-					g.buf.WriteString(")")
-					return
-				}
-			}
-		}
-
-		if ut.Name() == "str" {
-			g.buf.WriteString("((char*)")
-			g.genExpression(e.Left)
-			g.buf.WriteString(")[")
-			g.genExpression(e.Indices[0])
-			g.buf.WriteString("]")
-			return
-		}
-
-		if mt, ok := ut.(*types.MapType); ok {
-			g.buf.WriteString("(*(")
-			g.buf.WriteString(fmt.Sprintf("(%s*)", g.cType(mt.Value)))
-			g.buf.WriteString("map_get(")
-			g.genValueExpression(e.Left)
-			g.buf.WriteString(", ")
-			g.buf.WriteString(fmt.Sprintf("&(%s){", g.cType(mt.Key)))
-			g.genExpression(e.Indices[0])
-			g.buf.WriteString("})))")
-			return
-		}
-
-		if _, ok := ut.(*types.ArrayType); ok {
-			isPtr := false
-			if pt, ok := t.(*types.PointerType); ok && pt.Leased {
-				isPtr = true
-			}
-			
-			g.buf.WriteString("(")
-			g.buf.WriteString("(")
-			g.genExpression(e.Left)
-			g.buf.WriteString(")")
-			
-			if isPtr {
-				g.buf.WriteString("->data[")
-			} else {
-				g.buf.WriteString(".data[")
-			}
-			g.genValueExpression(e.Indices[0])
-			g.buf.WriteString("])")
-			return
-		}
-	}
-
-	// Bounds checking
-	if e.NoBoundsCheck {
-		g.buf.WriteString("(((")
-		g.buf.WriteString(fmt.Sprintf("%s*)", g.cType(g.SemanticInfo.Types[e])))
-		g.genValueExpression(e.Left)
-		g.buf.WriteString(")[")
-		g.genValueExpression(e.Indices[0])
-		g.buf.WriteString("])")
-		return
-	}
-
-	g.buf.WriteString("(*(")
-	g.buf.WriteString(fmt.Sprintf("(%s*)", g.cType(g.SemanticInfo.Types[e])))
-	g.buf.WriteString("array_bounds_check(")
-	g.genValueExpression(e.Left)
-	g.buf.WriteString(", ")
-	g.genValueExpression(e.Indices[0])
-	g.buf.WriteString(fmt.Sprintf(", \"%s\", %d)))", strings.ReplaceAll(e.Pos().Filename, "\\", "/"), e.Pos().Line))
-}
 
 func (g *Generator) genArrayLiteral(e *ast.ArrayLiteral) {
 	oldNoTemp := g.NoTempWrap
@@ -1894,49 +1752,6 @@ func (g *Generator) genStructLiteral(e *ast.StructLiteral) {
 	g.buf.WriteString("}")
 }
 
-func (g *Generator) genSliceExpression(left ast.Expression, e *ast.SliceExpression) {
-	t := g.SemanticInfo.Types[left]
-	if t != nil && t.Name() == "str" {
-		g.buf.WriteString("string_slice(")
-		g.genExpression(left)
-		g.buf.WriteString(", ")
-		if e.Start != nil {
-			g.genExpression(e.Start)
-		} else {
-			g.buf.WriteString("0")
-		}
-		g.buf.WriteString(", ")
-		if e.End != nil {
-			g.genExpression(e.End)
-		} else {
-			g.buf.WriteString("-1")
-		}
-		g.buf.WriteString(")")
-		return
-	}
-
-	var elemType types.NRType
-	if lt, ok := t.(*types.ListType); ok {
-		elemType = lt.ElementType
-	} else {
-		elemType = types.I32
-	}
-	g.buf.WriteString("array_slice(")
-	g.genExpression(left)
-	g.buf.WriteString(", ")
-	if e.Start != nil {
-		g.genExpression(e.Start)
-	} else {
-		g.buf.WriteString("0")
-	}
-	g.buf.WriteString(", ")
-	if e.End != nil {
-		g.genExpression(e.End)
-	} else {
-		g.buf.WriteString("-1")
-	}
-	g.buf.WriteString(fmt.Sprintf(", sizeof(%s))", g.cType(elemType)))
-}
 
 func (g *Generator) unwrapSpawnArgType(t types.NRType) types.NRType {
 	if t == nil {

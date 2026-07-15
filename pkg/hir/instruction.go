@@ -22,6 +22,7 @@ const (
 	InstRet
 	InstFieldAccess
 	InstIndexAccess
+	InstSliceAccess
 	InstCast
 	InstAssign
 	InstExpression
@@ -187,12 +188,35 @@ type IndexAccess struct {
 	Index         Operand
 	Type          types.NRType
 	NoBoundsCheck bool
+	IsLValue      bool
 }
 
 func (i *IndexAccess) GetInstructionKind() InstructionKind { return InstIndexAccess }
 func (i *IndexAccess) GetType() types.NRType               { return i.Type }
 func (i *IndexAccess) String() string {
 	return fmt.Sprintf("%s[%s]", i.Base.String(), i.Index.String())
+}
+
+// SliceAccess: arr[start:end]
+type SliceAccess struct {
+	Base  Operand
+	Start Operand
+	End   Operand
+	Type  types.NRType
+}
+
+func (s *SliceAccess) GetInstructionKind() InstructionKind { return InstSliceAccess }
+func (s *SliceAccess) GetType() types.NRType               { return s.Type }
+func (s *SliceAccess) String() string {
+	startStr := ""
+	if s.Start != nil {
+		startStr = s.Start.String()
+	}
+	endStr := ""
+	if s.End != nil {
+		endStr = s.End.String()
+	}
+	return fmt.Sprintf("%s[%s:%s]", s.Base.String(), startStr, endStr)
 }
 
 // Cast: explicitly convert type of Val

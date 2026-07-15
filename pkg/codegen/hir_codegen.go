@@ -367,6 +367,26 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 		}
 		g.emit(fmt.Sprintf("    %s %s;", g.cType(i.Type), name))
 	case *hir.Store:
+		if instOp, ok := i.Dest.(*hir.InstOperand); ok {
+			if idxAcc, ok := instOp.Inst.(*hir.IndexAccess); ok {
+				t := idxAcc.Base.GetType()
+				if pt, ok := t.(*types.PointerType); ok && !pt.IsArray {
+					t = pt.Base
+				}
+				if mt, ok := t.(*types.MapType); ok {
+					mapStr := g.hirOperandStr(idxAcc.Base)
+					keyStr := g.hirOperandStr(idxAcc.Index)
+					oldNoTemp := g.NoTempWrap
+					g.NoTempWrap = true
+					valStr := g.hirOperandStr(i.Val)
+					g.NoTempWrap = oldNoTemp
+					g.emit(fmt.Sprintf("    map_set(%s, &(%s){%s}, &(%s){%s});",
+						mapStr, g.cType(mt.Key), keyStr, g.cType(mt.Value), valStr))
+					break
+				}
+			}
+		}
+
 		isMapOrIndexSet := false
 		if instOp, ok := i.Dest.(*hir.InstOperand); ok {
 			if astExpr, ok := instOp.Inst.(*hir.ASTExpr); ok {
@@ -1175,11 +1195,100 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 		// fmt.Printf("[DEBUG] hirInstructionStr FieldAccess: %s -> %s\n", i.String(), res)
 		return res
 	case *hir.IndexAccess:
-		cElemType := g.cType(i.Type)
-		if i.NoBoundsCheck {
-			return fmt.Sprintf("((((%s*)%s)[%s]))", cElemType, g.hirOperandStr(i.Base), g.hirOperandStr(i.Index))
+		ut := i.Base.GetType()
+		if pt, ok := ut.(*types.PointerType); ok && !pt.IsArray {
+			ut = pt.Base
 		}
-		return fmt.Sprintf("(*((%s*)array_bounds_check(%s, %s, \"\", 0)))", cElemType, g.hirOperandStr(i.Base), g.hirOperandStr(i.Index))
+		if st, ok := ut.(*types.StructType); ok {
+			if i.IsLValue {
+				if _, exists := st.Methods["index_mut"]; exists {
+					baseStr := g.hirOperandStr(i.Base)
+					if !g.isPointerTypeInC(i.Base.GetType()) {
+						baseStr = "&(" + baseStr + ")"
+					}
+					return fmt.Sprintf("(*%s_index_mut(NULL, %s, %s))", g.mangledTypeName(st), baseStr, g.hirOperandStr(i.Index))
+				}
+			}
+			if _, exists := st.Methods["index"]; exists {
+				baseStr := g.hirOperandStr(i.Base)
+				if !g.isPointerTypeInC(i.Base.GetType()) {
+					baseStr = "&(" + baseStr + ")"
+				}
+				return fmt.Sprintf("%s_index(NULL, %s, %s)", g.mangledTypeName(st), baseStr, g.hirOperandStr(i.Index))
+			}
+		}
+		if ut != nil && ut.Name() == "str" {
+			return fmt.Sprintf("(((char*)%s)[%s])", g.hirOperandStr(i.Base), g.hirOperandStr(i.Index))
+		}
+
+		if mt, ok := ut.(*types.MapType); ok {
+			return fmt.Sprintf("(*((%s*)map_get(%s, &(%s){%s})))",
+				g.cType(mt.Value), g.hirOperandStr(i.Base), g.cType(mt.Key), g.hirOperandStr(i.Index))
+		}
+
+		if _, ok := ut.(*types.ArrayType); ok {
+			baseStr := g.hirOperandStr(i.Base)
+			// For fixed-size arrays, we access the internal .data array directly
+			if g.isOperandPointerInC(i.Base) {
+				return fmt.Sprintf("((%s)->data[%s])", baseStr, g.hirOperandStr(i.Index))
+			}
+			return fmt.Sprintf("((%s).data[%s])", baseStr, g.hirOperandStr(i.Index))
+		}
+
+		cElemType := g.cType(i.Type)
+		baseStr := g.hirOperandStr(i.Base)
+		baseCType := g.cTypeOfOperand(i.Base)
+		expectedCType := g.cType(ut)
+		if strings.Count(baseCType, "*") > strings.Count(expectedCType, "*") {
+			diff := strings.Count(baseCType, "*") - strings.Count(expectedCType, "*")
+			for j := 0; j < diff; j++ {
+				baseStr = "(*" + baseStr + ")"
+			}
+		}
+
+		if i.NoBoundsCheck {
+			return fmt.Sprintf("((((%s*)%s)[%s]))", cElemType, baseStr, g.hirOperandStr(i.Index))
+		}
+		// Include pos info if available. Since IndexAccess doesn't store pos currently, default to "" and 0
+		return fmt.Sprintf("(*((%s*)array_bounds_check(%s, %s, \"\", 0)))", cElemType, baseStr, g.hirOperandStr(i.Index))
+
+	case *hir.SliceAccess:
+		ut := i.Base.GetType()
+		if pt, ok := ut.(*types.PointerType); ok && !pt.IsArray {
+			ut = pt.Base
+		}
+
+		startStr := "0"
+		if i.Start != nil {
+			startStr = g.hirOperandStr(i.Start)
+		}
+		endStr := "-1"
+		if i.End != nil {
+			endStr = g.hirOperandStr(i.End)
+		}
+
+		if ut != nil && ut.Name() == "str" {
+			return fmt.Sprintf("string_slice(%s, %s, %s)", g.hirOperandStr(i.Base), startStr, endStr)
+		}
+
+		var elemType types.NRType = types.I32
+		if lt, ok := ut.(*types.ListType); ok {
+			elemType = lt.ElementType
+		} else if pt, ok := ut.(*types.PointerType); ok && pt.IsArray {
+			elemType = pt.Base
+		}
+		
+		baseStr := g.hirOperandStr(i.Base)
+		baseCType := g.cTypeOfOperand(i.Base)
+		expectedCType := g.cType(ut)
+		if strings.Count(baseCType, "*") > strings.Count(expectedCType, "*") {
+			diff := strings.Count(baseCType, "*") - strings.Count(expectedCType, "*")
+			for j := 0; j < diff; j++ {
+				baseStr = "(*" + baseStr + ")"
+			}
+		}
+
+		return fmt.Sprintf("array_slice(%s, %s, %s, sizeof(%s))", baseStr, startStr, endStr, g.cType(elemType))
 	case *hir.Cast:
 		if _, isFn := i.Val.GetType().(*types.FunctionType); isFn {
 			if pt, isPrim := i.Type.(*types.PrimitiveType); isPrim && pt.Name() == "ptr" {
@@ -1199,6 +1308,15 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 		leftStr := g.hirOperandStr(i.Left)
 		rightStr := g.hirOperandStr(i.Right)
 		if i.Op == "==" || i.Op == "!=" {
+			ult := types.UnwrapLease(i.Left.GetType())
+			urt := types.UnwrapLease(i.Right.GetType())
+			if ult != nil && ult.Name() == "str" && urt != nil && urt.Name() == "str" {
+				if i.Op == "==" {
+					return fmt.Sprintf("nr_str_eq(%s, %s)", leftStr, rightStr)
+				}
+				return fmt.Sprintf("!nr_str_eq(%s, %s)", leftStr, rightStr)
+			}
+
 			if rightStr == "NULL" {
 				ptrLevel := strings.Count(g.cType(i.Left.GetType()), "*")
 				if ptrLevel >= 2 {

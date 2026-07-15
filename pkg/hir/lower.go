@@ -391,6 +391,15 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 
 	case *ast.AssignmentStatement:
 		destOp := l.lowerExpression(s.Left)
+		if instOp, ok := destOp.(*InstOperand); ok {
+			if idxAcc, ok := instOp.Inst.(*IndexAccess); ok {
+				idxAcc.IsLValue = true
+			} else {
+				fmt.Printf("[DEBUG] Assignment destOp is InstOperand, but Inst is %T\n", instOp.Inst)
+			}
+		} else {
+			fmt.Printf("[DEBUG] Assignment destOp is %T\n", destOp)
+		}
 		valOp := l.lowerExpression(s.Value)
 		if proto, ok := destOp.GetType().(*types.ProtocolType); ok {
 			valType := l.getType(s.Value)
@@ -869,6 +878,43 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 		fieldAcc := &FieldAccess{Base: baseOp, FieldName: e.Field.Value, Type: t}
 		return &InstOperand{Inst: fieldAcc}
 
+	case *ast.IndexExpression:
+		if st, vName := l.isVariantConstructor(e); st != nil {
+			vc := &VariantConstructor{SumType: st, VariantName: vName, Args: nil, Type: t}
+			return &InstOperand{Inst: vc}
+		}
+
+		if len(e.Indices) == 0 {
+			return l.lowerExpression(e.Left)
+		}
+
+		// Handle SliceExpression: arr[start:end]
+		if se, ok := e.Indices[0].(*ast.SliceExpression); ok {
+			baseOp := l.lowerExpression(e.Left)
+			var startOp, endOp Operand
+			if se.Start != nil {
+				startOp = l.lowerExpression(se.Start)
+			}
+			if se.End != nil {
+				endOp = l.lowerExpression(se.End)
+			}
+			return &InstOperand{Inst: &SliceAccess{
+				Base:  baseOp,
+				Start: startOp,
+				End:   endOp,
+				Type:  t,
+			}}
+		}
+
+		baseOp := l.lowerExpression(e.Left)
+		idxOp := l.lowerExpression(e.Indices[0])
+		return &InstOperand{Inst: &IndexAccess{
+			Base:          baseOp,
+			Index:         idxOp,
+			Type:          t,
+			NoBoundsCheck: e.NoBoundsCheck,
+		}}
+
 	case *ast.CallExpression:
 		if st, isSum := t.(*types.SumType); isSum && st.IsPrimitiveEnum {
 			if len(e.Arguments) == 1 {
@@ -1203,7 +1249,6 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 		urt := types.UnwrapLease(rt)
 
 		isStrConcat := e.Operator == "+" && (lt != nil && lt.Name() == "str" || rt != nil && rt.Name() == "str")
-		isStrEq := (e.Operator == "==" || e.Operator == "!=") && (ult != nil && ult.Name() == "str" && urt != nil && urt.Name() == "str")
 		isFuncEq := (e.Operator == "==" || e.Operator == "!=") && (ult != nil && ult.GetKind() == types.KindFunction && urt != nil && urt.GetKind() == types.KindFunction)
 
 		_, isStructL := ult.(*types.StructType)
@@ -1211,7 +1256,7 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 		isStructEq := (e.Operator == "==" || e.Operator == "!=") && isStructL && isStructR && lt.GetKind() != types.KindPointer && rt.GetKind() != types.KindPointer
 		isStructOp := e.Operator != "==" && e.Operator != "!=" && isStructL
 
-		if isStrConcat || isStrEq || isFuncEq || isStructEq || isStructOp {
+		if isStrConcat || isFuncEq || isStructEq || isStructOp {
 			astExpr := &ASTExpr{ASTNode: e, Type: t}
 			return &InstOperand{Inst: astExpr}
 		}
@@ -1449,6 +1494,11 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 
 	case *ast.AssignmentStatement:
 		destOp := l.lowerExpression(e.Left)
+		if instOp, ok := destOp.(*InstOperand); ok {
+			if idxAcc, ok := instOp.Inst.(*IndexAccess); ok {
+				idxAcc.IsLValue = true
+			}
+		}
 		valOp := l.lowerExpression(e.Value)
 		store := &Store{
 			Dest:         destOp,

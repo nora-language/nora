@@ -39,7 +39,8 @@ To decouple the compiler from legacy codegen, we must build native HIR lowering 
 - [x] Lower `ast.ArrayLiteral` (currently falls back in `lower.go:1416`).
 - [x] Lower `ast.MapLiteral` (currently caught by the `default` fallback).
 - [ ] Lower `ast.InterfaceLiteral` (if applicable).
-- [ ] Lower `ast.SliceExpression` (if not natively handled by bounds checking yet).
+- [x] Lower `ast.SliceExpression` (if not natively handled by bounds checking yet).
+- [x] Lower `ast.IndexExpression` (including `IndexAccess`, array bounds checking, and struct overloads).
 
 **Advanced Expressions:**
 - [ ] Lower `ast.InterpolatedString` (Currently missing, relies on `genInterpolatedString`).
