@@ -23,6 +23,6 @@ native:
   include_dirs:
     - runtime
   headers:
-    - runtime.h
+    - runtime/runtime.h
   source_files:
     - runtime/nora_runtime.c

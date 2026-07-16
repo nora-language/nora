@@ -398,8 +398,9 @@ func (n *NativeConfig) Merge(other NativeConfig, baseDir string) {
 		}
 	}
 	for _, hdr := range other.Headers {
-		if !contains(n.Headers, hdr) {
-			n.Headers = append(n.Headers, hdr)
+		resolved := filepath.ToSlash(resolvePath(hdr))
+		if !contains(n.Headers, resolved) {
+			n.Headers = append(n.Headers, resolved)
 		}
 	}
 	for _, src := range other.SourceFiles {
@@ -1625,6 +1626,11 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 	for _, src := range loader.CollectedNative.SourceFiles {
 		if !contains(opts.Native.SourceFiles, src) {
 			opts.Native.SourceFiles = append(opts.Native.SourceFiles, src)
+		}
+	}
+	for _, cf := range loader.CollectedNative.CFlags {
+		if !contains(activeConfig.CFlags, cf) {
+			activeConfig.CFlags = append(activeConfig.CFlags, cf)
 		}
 	}
 
