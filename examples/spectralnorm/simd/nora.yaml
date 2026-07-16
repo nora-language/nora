@@ -1,0 +1,5 @@
+name: spectralnorm_simd
+version: 1.0.0
+dependencies: {}
+native:
+  cflags: ["-mavx"]

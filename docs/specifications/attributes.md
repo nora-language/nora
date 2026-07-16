@@ -64,7 +64,24 @@ pub type WGPUTextureFormat = enum {
 }
 ```
 
-### 5. Simple Custom Attributes
+### 5. Built-in Attributes: `[native("type")]`
+
+The `[native("type")]` attribute is used on `struct` declarations to indicate that the struct maps directly to a native C type (such as a compiler intrinsic like `__m256d`). When a struct is marked as `[native]`:
+1. **Move Semantics:** The semantic analyzer treats the struct as a primitive, copyable value (like an `i32` or `f64`), rather than an owned type. This prevents "use of moved value" errors when passing the struct by value.
+2. **Code Generation:** The C generator skips emitting `typedef struct` forward declarations for the struct, avoiding redefinition errors if the type is already defined in a C header.
+3. **Equality Operators:** The C generator uses `memcmp` for equality checks (`a == b`) instead of generating invalid field-by-field comparisons.
+
+```nora
+[native("__m256d")]
+pub type Vec4d = struct {
+    v0: f64
+    v1: f64
+    v2: f64
+    v3: f64
+}
+```
+
+### 6. Simple Custom Attributes
 
 You can attach arbitrary simple identifiers as metadata for compiler plugins or reflection.
 
@@ -75,7 +92,7 @@ type MyStruct = struct {
 }
 ```
 
-### 4. Parameterized Custom Attributes
+### 7. Parameterized Custom Attributes
 
 Attributes can carry string arguments. This is incredibly useful for providing metadata like custom JSON field names, routing paths for HTTP handler plugins, or FFI mapping names.
 

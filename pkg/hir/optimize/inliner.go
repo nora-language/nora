@@ -5,6 +5,7 @@ import (
 
 	"github.com/nora-language/nora/pkg/hir"
 	"github.com/nora-language/nora/pkg/semantic"
+	"github.com/nora-language/nora/pkg/types"
 )
 
 // Optimizer provides a suite of compiler passes that operate on HIR.
@@ -176,7 +177,7 @@ func (inl *Inliner) processInstruction(inst hir.Instruction, targetBlock *hir.HI
 			}
 
 			// Allocate return variable
-			if i.Type != nil {
+			if i.Type != nil && !types.Equals(i.Type, types.Void) {
 				targetBlock.AddInst(&hir.Alloca{
 					Name: retVar,
 					Type: i.Type,
@@ -199,11 +200,10 @@ func (inl *Inliner) processInstruction(inst hir.Instruction, targetBlock *hir.HI
 				delete(inl.cloner.varMap, paramName)
 			}
 
-			// The "Call" instruction itself is replaced by reading from retVar
-			// Since we might be inside an expression, we return a mock expression
-			// that will be converted to a VarOperand by the caller.
-			// Using "_inline_ret_" prefix to identify it.
-			return &hir.Expression{Expr: retVar, Type: i.Type}
+			if i.Type != nil && !types.Equals(i.Type, types.Void) {
+				return &hir.Expression{Expr: retVar, Type: i.Type}
+			}
+			return nil
 		}
 
 		for idx, arg := range i.Args {

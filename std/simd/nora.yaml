@@ -1,0 +1,7 @@
+name: simd
+version: 1.0.0
+description: Hardware SIMD intrinsics library
+dependencies: {}
+native:
+  cflags: ["-mavx"]
+  headers: ["../../std/simd/nora_simd.h"]

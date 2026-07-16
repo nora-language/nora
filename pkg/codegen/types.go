@@ -353,7 +353,13 @@ func (g *Generator) shouldPassByPointer(t types.NRType, l types.LeaseKind, isExt
 		return false
 	}
 	if l == types.LeaseMove || l == types.LeaseRead {
-		if _, ok := t.(*types.StructType); ok || t.GetKind() == types.KindProtocol || t.GetKind() == types.KindArray {
+		if st, ok := t.(*types.StructType); ok {
+			if st.NativeType != "" {
+				return false
+			}
+			return true
+		}
+		if t.GetKind() == types.KindProtocol || t.GetKind() == types.KindArray {
 			return true
 		}
 		if st, ok := t.(*types.SumType); ok {

@@ -166,6 +166,10 @@ func (g *Generator) emitForwardDeclarations() {
 	}
 	sort.Strings(structNames)
 	for _, name := range structNames {
+		st := g.Structs[name]
+		if st.NativeType != "" {
+			continue
+		}
 		g.emit("typedef struct %s %s;", name, name)
 	}
 
@@ -347,6 +351,9 @@ func (g *Generator) emitCombinedTypeDefs() {
 	// Emit full definitions in top-sorted order
 	for _, name := range order {
 		if st, ok := g.Structs[name]; ok {
+			if st.NativeType != "" {
+				continue
+			}
 			g.emit("struct %s {", name)
 			fieldNames := st.FieldNames
 			for _, fName := range fieldNames {

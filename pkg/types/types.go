@@ -293,7 +293,13 @@ func IsOwnedType(t NRType) bool {
 		return false
 	}
 	kind := t.GetKind()
-	if kind == KindStruct || kind == KindList || kind == KindMap || kind == KindChan || kind == KindProtocol || kind == KindFunction {
+	if kind == KindStruct {
+		if st, ok := t.(*StructType); ok && st.NativeType != "" {
+			return false
+		}
+		return true
+	}
+	if kind == KindList || kind == KindMap || kind == KindChan || kind == KindProtocol || kind == KindFunction {
 		return true
 	}
 	if kind == KindArray {

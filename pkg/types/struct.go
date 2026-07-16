@@ -13,6 +13,7 @@ type StructType struct {
 	BaseType   *StructType       // Pointer to the base generic struct
 	IsShared   bool              // Marked with [shared] attribute
 	CoreIntrinsic string         // Extracted from [core_intrinsic("name")]
+	NativeType string            // Extracted from [native("type")]
 }
 
 func NewStructType(name string) *StructType {

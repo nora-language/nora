@@ -1530,59 +1530,63 @@ func (g *Generator) emitAutoEqMethods() {
 			g.emit("    if (a == NULL || b == NULL) return false;")
 
 			if st, ok := t.(*types.StructType); ok {
-				for _, fName := range st.FieldNames {
-					fType := st.Fields[fName]
-					ut := types.UnwrapLease(fType)
+				if st.NativeType != "" {
+					g.emit("    if (memcmp(a, b, sizeof(%s)) != 0) return false;", g.cType(t))
+				} else {
+					for _, fName := range st.FieldNames {
+						fType := st.Fields[fName]
+						ut := types.UnwrapLease(fType)
 
-					eqCall := ""
-					if _, isStruct := ut.(*types.StructType); isStruct {
-						eqMethod := g.getEqMethod(ut)
-						args := ""
-						if !strings.HasPrefix(eqMethod, "nr_eq_") {
-							args = "NULL, "
-						}
-						if g.isPointerTypeInC(fType) {
-							eqCall = fmt.Sprintf("!%s(%sa->%s, b->%s)", eqMethod, args, fName, fName)
-						} else {
-							eqCall = fmt.Sprintf("!%s(%s&(a->%s), &(b->%s))", eqMethod, args, fName, fName)
-						}
-					} else if _, isArray := ut.(*types.ArrayType); isArray {
-						eqMethod := g.getEqMethod(ut)
-						args := ""
-						if !strings.HasPrefix(eqMethod, "nr_eq_") {
-							args = "NULL, "
-						}
-						if g.isPointerTypeInC(fType) {
-							eqCall = fmt.Sprintf("!%s(%sa->%s, b->%s)", eqMethod, args, fName, fName)
-						} else {
-							eqCall = fmt.Sprintf("!%s(%s&(a->%s), &(b->%s))", eqMethod, args, fName, fName)
-						}
-					} else if ut.Name() == "str" {
-						eqCall = fmt.Sprintf("!nr_str_eq(a->%s, b->%s)", fName, fName)
-					} else if pt, ok := ut.(*types.PointerType); ok && !pt.IsArray {
-						// For pointers, we compare values if it's a struct pointer, else reference
-						if _, isStruct := pt.Base.(*types.StructType); isStruct {
-							eqMethod := g.getEqMethod(pt.Base)
+						eqCall := ""
+						if _, isStruct := ut.(*types.StructType); isStruct {
+							eqMethod := g.getEqMethod(ut)
 							args := ""
 							if !strings.HasPrefix(eqMethod, "nr_eq_") {
 								args = "NULL, "
 							}
-							eqCall = fmt.Sprintf("!%s(%sa->%s, b->%s)", eqMethod, args, fName, fName)
+							if g.isPointerTypeInC(fType) {
+								eqCall = fmt.Sprintf("!%s(%sa->%s, b->%s)", eqMethod, args, fName, fName)
+							} else {
+								eqCall = fmt.Sprintf("!%s(%s&(a->%s), &(b->%s))", eqMethod, args, fName, fName)
+							}
+						} else if _, isArray := ut.(*types.ArrayType); isArray {
+							eqMethod := g.getEqMethod(ut)
+							args := ""
+							if !strings.HasPrefix(eqMethod, "nr_eq_") {
+								args = "NULL, "
+							}
+							if g.isPointerTypeInC(fType) {
+								eqCall = fmt.Sprintf("!%s(%sa->%s, b->%s)", eqMethod, args, fName, fName)
+							} else {
+								eqCall = fmt.Sprintf("!%s(%s&(a->%s), &(b->%s))", eqMethod, args, fName, fName)
+							}
+						} else if ut.Name() == "str" {
+							eqCall = fmt.Sprintf("!nr_str_eq(a->%s, b->%s)", fName, fName)
+						} else if pt, ok := ut.(*types.PointerType); ok && !pt.IsArray {
+							// For pointers, we compare values if it's a struct pointer, else reference
+							if _, isStruct := pt.Base.(*types.StructType); isStruct {
+								eqMethod := g.getEqMethod(pt.Base)
+								args := ""
+								if !strings.HasPrefix(eqMethod, "nr_eq_") {
+									args = "NULL, "
+								}
+								eqCall = fmt.Sprintf("!%s(%sa->%s, b->%s)", eqMethod, args, fName, fName)
+							} else {
+								eqCall = fmt.Sprintf("a->%s != b->%s", fName, fName)
+							}
+						} else if _, isFunc := ut.(*types.FunctionType); isFunc {
+							eqCall = fmt.Sprintf("(a->%s.env != b->%s.env || a->%s.fn_ptr != b->%s.fn_ptr)", fName, fName, fName, fName)
+						} else if _, isProto := ut.(*types.ProtocolType); isProto {
+							if g.isPointerTypeInC(fType) {
+								eqCall = fmt.Sprintf("(a->%s->data != b->%s->data || a->%s->vtable != b->%s->vtable)", fName, fName, fName, fName)
+							} else {
+								eqCall = fmt.Sprintf("(a->%s.data != b->%s.data || a->%s.vtable != b->%s.vtable)", fName, fName, fName, fName)
+							}
 						} else {
 							eqCall = fmt.Sprintf("a->%s != b->%s", fName, fName)
 						}
-					} else if _, isFunc := ut.(*types.FunctionType); isFunc {
-						eqCall = fmt.Sprintf("(a->%s.env != b->%s.env || a->%s.fn_ptr != b->%s.fn_ptr)", fName, fName, fName, fName)
-					} else if _, isProto := ut.(*types.ProtocolType); isProto {
-						if g.isPointerTypeInC(fType) {
-							eqCall = fmt.Sprintf("(a->%s->data != b->%s->data || a->%s->vtable != b->%s->vtable)", fName, fName, fName, fName)
-						} else {
-							eqCall = fmt.Sprintf("(a->%s.data != b->%s.data || a->%s.vtable != b->%s.vtable)", fName, fName, fName, fName)
-						}
-					} else {
-						eqCall = fmt.Sprintf("a->%s != b->%s", fName, fName)
+						g.emit("    if (%s) return false;", eqCall)
 					}
-					g.emit("    if (%s) return false;", eqCall)
 				}
 			} else if at, ok := t.(*types.ArrayType); ok {
 				ut := types.UnwrapLease(at.Base)

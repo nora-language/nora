@@ -141,13 +141,18 @@ func (g *Generator) genHIRFunction(hf *hir.Function) {
 	}
 
 	// Drop flags initialization for parameters and receiver
+	declaredVars := make(map[string]bool)
 	if hasFn && fn.Receiver != nil {
 		sym := g.SemanticInfo.Defs[fn.Receiver.Name]
 		if sym == nil {
 			sym = g.SemanticInfo.Uses[fn.Receiver.Name]
 		}
 		if sym != nil && g.hasDropFlag(sym) {
-			g.emit("    bool %s = true;", g.dropFlagName(sym))
+			dfName := g.dropFlagName(sym)
+			if !declaredVars[dfName] {
+				g.emit("    bool %s = true;", dfName)
+				declaredVars[dfName] = true
+			}
 		}
 	}
 	if hasFn {
@@ -158,7 +163,11 @@ func (g *Generator) genHIRFunction(hf *hir.Function) {
 					sym = g.SemanticInfo.Uses[param.Name]
 				}
 				if sym != nil && g.hasDropFlag(sym) {
-					g.emit("    bool %s = true;", g.dropFlagName(sym))
+					dfName := g.dropFlagName(sym)
+					if !declaredVars[dfName] {
+						g.emit("    bool %s = true;", dfName)
+						declaredVars[dfName] = true
+					}
 				}
 			}
 		}
@@ -171,25 +180,38 @@ func (g *Generator) genHIRFunction(hf *hir.Function) {
 					sym = g.SemanticInfo.Uses[param.Name]
 				}
 				if sym != nil && g.hasDropFlag(sym) {
-					g.emit("    bool %s = true;", g.dropFlagName(sym))
+					dfName := g.dropFlagName(sym)
+					if !declaredVars[dfName] {
+						g.emit("    bool %s = true;", dfName)
+						declaredVars[dfName] = true
+					}
 				}
 			}
 		}
 	}
 
-	// Drop flags initialization for local variables
 	allAllocas := collectAllocas(hf.Body)
-	declaredDropFlags := make(map[string]bool)
+
 	for _, alloca := range allAllocas {
-		sym := alloca.Symbol
-		if sym != nil && g.hasDropFlag(sym) {
-			dfName := g.dropFlagName(sym)
-			if !declaredDropFlags[dfName] {
-				g.emit(fmt.Sprintf("    bool %s = false;", dfName))
-				declaredDropFlags[dfName] = true
+		// Emit C variable declaration
+		name := alloca.Name
+		if alloca.Symbol != nil {
+			name = g.variableName(alloca.Symbol)
+		}
+		if !declaredVars[name] {
+			g.emit(fmt.Sprintf("    %s %s;", g.cType(alloca.Type), name))
+			declaredVars[name] = true
+			
+			if alloca.Symbol != nil && g.hasDropFlag(alloca.Symbol) {
+				dfName := g.dropFlagName(alloca.Symbol)
+				if !declaredVars[dfName] {
+					g.emit(fmt.Sprintf("    bool %s = false;", dfName))
+					declaredVars[dfName] = true
+				}
 			}
 		}
 	}
+
 
 	// Generate block elements
 	g.genHIRBlock(hf.Body)
@@ -361,11 +383,8 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 			g.emitLine(i.ASTNode)
 		}
 	case *hir.Alloca:
-		name := i.Name
-		if i.Symbol != nil {
-			name = g.variableName(i.Symbol)
-		}
-		g.emit(fmt.Sprintf("    %s %s;", g.cType(i.Type), name))
+		// Variable declarations are now hoisted to the top of the function.
+		// We still emit line directives for debug symbols if necessary.
 	case *hir.Store:
 		isMapOrIndexSet := false
 		if instOp, ok := i.Dest.(*hir.InstOperand); ok {

@@ -827,6 +827,9 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 			if attr := ast.GetAttribute(n.Attributes, "core_intrinsic"); attr != nil && len(attr.Args) > 0 {
 				structType.CoreIntrinsic = attr.Args[0]
 			}
+			if attr := ast.GetAttribute(n.Attributes, "native"); attr != nil && len(attr.Args) > 0 {
+				structType.NativeType = attr.Args[0]
+			}
 			for _, tp := range n.TypeParameters {
 				structType.TypeParams = append(structType.TypeParams, &types.TypeParam{
 					Name: tp.Name.Value,

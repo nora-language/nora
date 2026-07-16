@@ -9,12 +9,14 @@ import (
 
 type Cloner struct {
 	varMap map[string]string
+	symMap map[*semantic.Symbol]*semantic.Symbol
 	tempID int
 }
 
 func NewCloner() *Cloner {
 	return &Cloner{
 		varMap: make(map[string]string),
+		symMap: make(map[*semantic.Symbol]*semantic.Symbol),
 	}
 }
 
@@ -92,6 +94,10 @@ func (c *Cloner) CloneOperand(op hir.Operand) hir.Operand {
 		var newSym *semantic.Symbol
 		if newName == o.Name {
 			newSym = o.Symbol
+		} else if o.Symbol != nil {
+			if mappedSym, ok := c.symMap[o.Symbol]; ok {
+				newSym = mappedSym
+			}
 		}
 		return &hir.VarOperand{
 			Name:   newName,
@@ -112,10 +118,21 @@ func (c *Cloner) CloneInstruction(inst hir.Instruction) hir.Instruction {
 	case *hir.Alloca:
 		newName := c.NextTemp()
 		c.varMap[i.Name] = newName
+		var newSym *semantic.Symbol
+		if i.Symbol != nil {
+			newSym = &semantic.Symbol{
+				Name:      newName,
+				Type:      i.Symbol.Type,
+				Kind:      i.Symbol.Kind,
+				LeaseKind: i.Symbol.LeaseKind,
+				WritePerm: i.Symbol.WritePerm,
+			}
+			c.symMap[i.Symbol] = newSym
+		}
 		return &hir.Alloca{
 			Name:   newName,
 			Type:   i.Type,
-			Symbol: nil,
+			Symbol: newSym,
 		}
 	case *hir.Load:
 		return &hir.Load{
@@ -179,7 +196,7 @@ func (c *Cloner) CloneInstruction(inst hir.Instruction) hir.Instruction {
 		}
 	case *hir.Expression:
 		return &hir.Expression{
-			Expr: i.Expr,
+			Expr: c.mapVarName(i.Expr),
 			Type: i.Type,
 		}
 	case *hir.BinOp:
@@ -226,8 +243,14 @@ func (c *Cloner) CloneInstruction(inst hir.Instruction) hir.Instruction {
 			Type:    i.Type,
 		}
 	case *hir.Drop:
+		newSym := i.Symbol
+		if i.Symbol != nil {
+			if mappedSym, ok := c.symMap[i.Symbol]; ok {
+				newSym = mappedSym
+			}
+		}
 		return &hir.Drop{
-			Symbol: i.Symbol,
+			Symbol: newSym,
 			Field:  i.Field,
 			Index:  i.Index,
 		}

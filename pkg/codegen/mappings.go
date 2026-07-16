@@ -225,13 +225,16 @@ func (g *Generator) mangledTypeName(t types.NRType) string {
 		return erased
 	}
 
+	if st, ok := t.(*types.StructType); ok && st.NativeType != "" {
+		return st.NativeType
+	}
+
 	// 1. Check Structs
 	for mangled, st := range g.Structs {
 		if types.Equals(st, t) {
 			return mangled
 		}
 	}
-
 	if st, ok := t.(*types.StructType); ok && st.BaseType != nil {
 		for mangled, base := range g.Structs {
 			if base == st.BaseType {
