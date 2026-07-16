@@ -5946,6 +5946,7 @@ func (sa *SemanticAnalyzer) handleGenericCall(n *ast.CallExpression, fnStmt *ast
 	if len(n.TypeArguments) == 0 {
 		typeArgs = sa.inferTypeArguments(fnStmt, n)
 		if typeArgs == nil {
+			sa.SemanticInfo.Types[n] = types.ErrorType
 			return // Inference failed
 		}
 	} else {
