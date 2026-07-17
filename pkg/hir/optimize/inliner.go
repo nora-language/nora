@@ -27,24 +27,29 @@ func (opt *Optimizer) OptimizeProgram(prog *hir.Program) *hir.Program {
 
 // Inliner performs the inline pass on the HIR program.
 type Inliner struct {
-	opt      *Optimizer
-	hirFuncs map[string]*hir.Function
-	cloner   *Cloner
+	opt         *Optimizer
+	hirBySymbol map[*semantic.Symbol]*hir.Function
+	hirByName   map[string]*hir.Function
+	cloner      *Cloner
 }
 
 func (opt *Optimizer) runInlinePass(prog *hir.Program) *hir.Program {
 	inliner := &Inliner{
-		opt:      opt,
-		hirFuncs: make(map[string]*hir.Function),
-		cloner:   NewCloner(),
+		opt:         opt,
+		hirBySymbol: make(map[*semantic.Symbol]*hir.Function),
+		hirByName:   make(map[string]*hir.Function),
+		cloner:      NewCloner(),
 	}
 
 	for _, hf := range prog.Functions {
+		if hf.FuncSymbol != nil {
+			inliner.hirBySymbol[hf.FuncSymbol] = hf
+		}
 		name := hf.Name
 		if hf.FuncSymbol != nil {
 			name = hf.FuncSymbol.Name
 		}
-		inliner.hirFuncs[name] = hf
+		inliner.hirByName[name] = hf
 	}
 
 	for _, hf := range prog.Functions {
@@ -150,12 +155,19 @@ func (inl *Inliner) processInstruction(inst hir.Instruction, targetBlock *hir.HI
 		return i
 	case *hir.Call:
 		// Check if it's an inline call
-		targetName := i.FuncName
+		var targetFunc *hir.Function
+		var exists bool
 		if i.FuncSymbol != nil {
-			targetName = i.FuncSymbol.Name
+			targetFunc, exists = inl.hirBySymbol[i.FuncSymbol]
+		}
+		if !exists {
+			targetName := i.FuncName
+			if i.FuncSymbol != nil {
+				targetName = i.FuncSymbol.Name
+			}
+			targetFunc, exists = inl.hirByName[targetName]
 		}
 
-		targetFunc, exists := inl.hirFuncs[targetName]
 		if exists && targetFunc.FuncSymbol != nil && targetFunc.FuncSymbol.IsInline {
 			// INLINE THIS FUNCTION!
 			retVar := inl.cloner.NextTemp()
