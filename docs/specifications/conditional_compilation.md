@@ -57,9 +57,10 @@ pub fn my_function() { ... }
 
 **Valid condition keys:**
 
-| Key    | Description                        | Example               |
-|--------|------------------------------------|-----------------------|
-| `os=`  | Match the current target OS string | `[cfg("os=windows")]` |
+| Key                | Description                        | Example               |
+|--------------------|------------------------------------|-----------------------|
+| `os=`              | Match the current target OS string | `[cfg("os=windows")]` |
+| `target_feature=`  | Match an active hardware feature   | `[cfg("target_feature=avx")]` |
 
 **Examples:**
 

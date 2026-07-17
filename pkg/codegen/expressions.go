@@ -406,6 +406,8 @@ func (g *Generator) genInfixExpression(e *ast.InfixExpression) {
 			if pt.Name() == "f32" || pt.Name() == "f64" {
 				isFloat = true
 			}
+		} else if st, ok := types.UnwrapLease(lt).(*types.StructType); ok && st.VectorSize != "" {
+			isFloat = true // Skip zero check for SIMD vectors
 		}
 		if !isFloat {
 			g.buf.WriteString("({ __auto_type _left = ")

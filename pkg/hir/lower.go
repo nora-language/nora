@@ -1208,9 +1208,7 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 		_, isStructL := ult.(*types.StructType)
 		_, isStructR := urt.(*types.StructType)
 		isStructEq := (e.Operator == "==" || e.Operator == "!=") && isStructL && isStructR && lt.GetKind() != types.KindPointer && rt.GetKind() != types.KindPointer
-		isStructOp := e.Operator != "==" && e.Operator != "!=" && isStructL
-
-		if isStrConcat || isStrEq || isFuncEq || isStructEq || isStructOp {
+		if isStrConcat || isStrEq || isFuncEq || isStructEq {
 			astExpr := &ASTExpr{ASTNode: e, Type: t}
 			return &InstOperand{Inst: astExpr}
 		}

@@ -170,6 +170,14 @@ func (g *Generator) emitForwardDeclarations() {
 		if st.NativeType != "" {
 			continue
 		}
+		if st.VectorSize != "" {
+			if len(st.FieldNames) > 0 {
+				baseType := st.Fields[st.FieldNames[0]]
+				cBase := g.cType(baseType)
+				g.emit("typedef %s %s __attribute__((vector_size(%s)));", cBase, name, st.VectorSize)
+			}
+			continue
+		}
 		g.emit("typedef struct %s %s;", name, name)
 	}
 
@@ -351,7 +359,7 @@ func (g *Generator) emitCombinedTypeDefs() {
 	// Emit full definitions in top-sorted order
 	for _, name := range order {
 		if st, ok := g.Structs[name]; ok {
-			if st.NativeType != "" {
+			if st.NativeType != "" || st.VectorSize != "" {
 				continue
 			}
 			g.emit("struct %s {", name)

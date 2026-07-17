@@ -2,6 +2,7 @@ package optimize
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/nora-language/nora/pkg/hir"
 	"github.com/nora-language/nora/pkg/semantic"
@@ -196,7 +197,7 @@ func (c *Cloner) CloneInstruction(inst hir.Instruction) hir.Instruction {
 		}
 	case *hir.Expression:
 		return &hir.Expression{
-			Expr: c.mapVarName(i.Expr),
+			Expr: c.mapExpressionString(i.Expr),
 			Type: i.Type,
 		}
 	case *hir.BinOp:
@@ -295,4 +296,34 @@ func (c *Cloner) CloneInstruction(inst hir.Instruction) hir.Instruction {
 		}
 	}
 	return inst
+}
+
+func (c *Cloner) mapExpressionString(expr string) string {
+	var result strings.Builder
+	var currentWord strings.Builder
+	for _, ch := range expr {
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' {
+			currentWord.WriteRune(ch)
+		} else {
+			if currentWord.Len() > 0 {
+				word := currentWord.String()
+				if newName, ok := c.varMap[word]; ok {
+					result.WriteString(newName)
+				} else {
+					result.WriteString(word)
+				}
+				currentWord.Reset()
+			}
+			result.WriteRune(ch)
+		}
+	}
+	if currentWord.Len() > 0 {
+		word := currentWord.String()
+		if newName, ok := c.varMap[word]; ok {
+			result.WriteString(newName)
+		} else {
+			result.WriteString(word)
+		}
+	}
+	return result.String()
 }

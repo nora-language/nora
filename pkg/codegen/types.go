@@ -354,7 +354,7 @@ func (g *Generator) shouldPassByPointer(t types.NRType, l types.LeaseKind, isExt
 	}
 	if l == types.LeaseMove || l == types.LeaseRead {
 		if st, ok := t.(*types.StructType); ok {
-			if st.NativeType != "" {
+			if st.NativeType != "" || st.VectorSize != "" {
 				return false
 			}
 			return true

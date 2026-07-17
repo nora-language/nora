@@ -14,6 +14,7 @@ type Platform struct {
 	CFlags    []string
 	ExeSuffix string
 	Wasm      bool
+	Features  []string
 }
 
 var (

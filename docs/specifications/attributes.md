@@ -18,12 +18,23 @@ The `[inline]` attribute acts as a strong hint to the compiler's code-generator 
 
 ```nora
 [inline]
-pub fn add_five(x: i32) i32 {
-    return x + 5
+pub fn fast_add(a: i32, b: i32) i32 {
+    return a + b
 }
 ```
 
-### 2. Built-in Attributes: `[NoEmit]`
+### 2. Built-in Attributes: `[vector_size(N)]`
+
+The `[vector_size(N)]` attribute enables hardware-native SIMD optimizations for struct types. It instructs the compiler to generate C `__attribute__((vector_size(N)))` extensions for the struct, aligning the data to `N` bytes and enabling native CPU SIMD instructions for arithmetic operators (`+`, `-`, `*`, `/`) and equality checks.
+
+```nora
+[vector_size(32)]
+pub type Vec4d = struct {
+    x: f64, y: f64, z: f64, w: f64
+}
+```
+
+### 3. Built-in Attributes: `[NoEmit]`
 
 The `[NoEmit]` attribute instructs the C-generator to skip emitting C declarations (forward declarations, struct bodies, and function prototypes) for specific structs and `extern fn`s. This is crucial for preventing type collisions when a C header (like `<windows.h>`) already defines these symbols.
 

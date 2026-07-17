@@ -294,8 +294,10 @@ func IsOwnedType(t NRType) bool {
 	}
 	kind := t.GetKind()
 	if kind == KindStruct {
-		if st, ok := t.(*StructType); ok && st.NativeType != "" {
-			return false
+		if st, ok := t.(*StructType); ok {
+			if st.NativeType != "" || st.VectorSize != "" || st.IsShared {
+				return false
+			}
 		}
 		return true
 	}

@@ -8,17 +8,15 @@ import "simd"
 
 [unsafe]
 [inline]
-fn eval_A_vec(i: simd.Vec4d, j: simd.Vec4d) simd.Vec4d {
+fn eval_A_vec(v_i: simd.Vec4d, v_j: simd.Vec4d) simd.Vec4d {
     var ONE = simd.Set1(1.0)
     var TWO = simd.Set1(2.0)
     
-    var ipj = simd.Add(i, j)
-    var ipjp1 = simd.Add(ipj, ONE)
-    var ip1 = simd.Add(i, ONE)
+    var ipj = v_i + v_j
+    var ipjp1 = ipj + ONE
+    var ip1 = v_i + ONE
     
-    var a = simd.Mul(ipj, ipjp1)
-    a = simd.Div(a, TWO)
-    a = simd.Add(a, ip1)
+    var a = (ipj * ipjp1) / TWO + ip1
     
     return a
 }
@@ -49,20 +47,20 @@ fn eval_A_times_u_worker(start: i32, end: i32, N: i32, u: #f64[], Au: &f64[]) {
             var denoms2 = eval_A_vec(vi2, j_idx)
             var denoms3 = eval_A_vec(vi3, j_idx)
             
-            var inv_denoms0 = simd.Div(ONE, denoms0)
-            var inv_denoms1 = simd.Div(ONE, denoms1)
-            var inv_denoms2 = simd.Div(ONE, denoms2)
-            var inv_denoms3 = simd.Div(ONE, denoms3)
+            var inv_denoms0 = ONE / denoms0
+            var inv_denoms1 = ONE / denoms1
+            var inv_denoms2 = ONE / denoms2
+            var inv_denoms3 = ONE / denoms3
             
-            var terms0 = simd.Mul(inv_denoms0, vj)
-            var terms1 = simd.Mul(inv_denoms1, vj)
-            var terms2 = simd.Mul(inv_denoms2, vj)
-            var terms3 = simd.Mul(inv_denoms3, vj)
+            var terms0 = inv_denoms0 * vj
+            var terms1 = inv_denoms1 * vj
+            var terms2 = inv_denoms2 * vj
+            var terms3 = inv_denoms3 * vj
             
-            s0 = simd.Add(s0, terms0)
-            s1 = simd.Add(s1, terms1)
-            s2 = simd.Add(s2, terms2)
-            s3 = simd.Add(s3, terms3)
+            s0 = s0 + terms0
+            s1 = s1 + terms1
+            s2 = s2 + terms2
+            s3 = s3 + terms3
             
             j = j + 4
         }
@@ -107,20 +105,20 @@ fn eval_At_times_u_worker(start: i32, end: i32, N: i32, u: #f64[], Au: &f64[]) {
             var denoms2 = eval_A_vec(j_idx, vi2)
             var denoms3 = eval_A_vec(j_idx, vi3)
             
-            var inv_denoms0 = simd.Div(ONE, denoms0)
-            var inv_denoms1 = simd.Div(ONE, denoms1)
-            var inv_denoms2 = simd.Div(ONE, denoms2)
-            var inv_denoms3 = simd.Div(ONE, denoms3)
+            var inv_denoms0 = ONE / denoms0
+            var inv_denoms1 = ONE / denoms1
+            var inv_denoms2 = ONE / denoms2
+            var inv_denoms3 = ONE / denoms3
             
-            var terms0 = simd.Mul(inv_denoms0, vj)
-            var terms1 = simd.Mul(inv_denoms1, vj)
-            var terms2 = simd.Mul(inv_denoms2, vj)
-            var terms3 = simd.Mul(inv_denoms3, vj)
+            var terms0 = inv_denoms0 * vj
+            var terms1 = inv_denoms1 * vj
+            var terms2 = inv_denoms2 * vj
+            var terms3 = inv_denoms3 * vj
             
-            s0 = simd.Add(s0, terms0)
-            s1 = simd.Add(s1, terms1)
-            s2 = simd.Add(s2, terms2)
-            s3 = simd.Add(s3, terms3)
+            s0 = s0 + terms0
+            s1 = s1 + terms1
+            s2 = s2 + terms2
+            s3 = s3 + terms3
             
             j = j + 4
         }
@@ -186,8 +184,8 @@ fn main() i32 {
     var n = 5500
     if (args.Len[str]() > 1) {
         var parsed = strconv.Atoi(#args.Get[str](1))
-        if (!parsed.IsErr[i32]()) {
-            n = parsed.Unwrap[i32]()
+        if (!parsed.IsErr[i32, str]()) {
+            n = parsed.Unwrap[i32, str]()
         }
     }
 

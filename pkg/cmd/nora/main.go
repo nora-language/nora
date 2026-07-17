@@ -898,6 +898,7 @@ func runBuild(args []string) {
 	outputFile := buildFlags.String("o", "", "Output executable name")
 	pluginFlag := buildFlags.String("p", "", "Comma-separated list of additional plugins")
 	targetFlag := buildFlags.String("target", "", "Target platform (e.g., windows-amd64, wasm, wasi)")
+	targetFeatureFlag := buildFlags.String("target-feature", "", "Comma-separated list of target features (e.g., avx, neon)")
 	wasmFlag := buildFlags.Bool("wasm", false, "Target WebAssembly (shorthand for --target wasm)")
 	wasiFlag := buildFlags.Bool("wasi", false, "Target WebAssembly WASI (shorthand for --target wasi)")
 	releaseFlag := buildFlags.Bool("release", false, "Build in release mode")
@@ -964,6 +965,10 @@ func runBuild(args []string) {
 		t, _ = target.Get("wasm")
 	} else {
 		t = target.Discover()
+	}
+
+	if *targetFeatureFlag != "" {
+		t.Features = strings.Split(*targetFeatureFlag, ",")
 	}
 
 	// Default mode logic
@@ -1097,6 +1102,7 @@ func runRun(args []string) {
 
 	pluginFlag := runFlags.String("p", "", "Comma-separated list of additional plugins")
 	targetFlag := runFlags.String("target", "", "Target platform")
+	targetFeatureFlag := runFlags.String("target-feature", "", "Comma-separated list of target features (e.g., avx, neon)")
 	wasmFlag := runFlags.Bool("wasm", false, "Run as WebAssembly (via internal runner)")
 	wasiFlag := runFlags.Bool("wasi", false, "Run as WebAssembly WASI")
 	debugMemFlag := runFlags.Bool("debug-memory", false, "Enable runtime memory leak tracking")
@@ -1156,6 +1162,10 @@ func runRun(args []string) {
 		t, _ = target.Get("wasm")
 	} else {
 		t = target.Discover()
+	}
+
+	if *targetFeatureFlag != "" {
+		t.Features = strings.Split(*targetFeatureFlag, ",")
 	}
 
 	var inputFile string
@@ -1461,6 +1471,8 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 		targetOS = runtime.GOOS
 	}
 	analyzer.TargetOS = targetOS
+	analyzer.TargetArch = opts.Target.Arch
+	analyzer.TargetFeatures = opts.Target.Features
 	
 	loader := &FileLoader{
 		Cache:             make(map[string]*semantic.Scope),
@@ -2057,6 +2069,11 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 
 	// 4. Parse target CFlags to extract libraries/linker-paths for MSVC or preserve warning/target options for POSIX
 	var filteredTargetFlags []string
+	for _, feat := range opts.Target.Features {
+		if !isMSVC {
+			filteredTargetFlags = append(filteredTargetFlags, "-m"+feat)
+		}
+	}
 	for _, flag := range opts.Target.CFlags {
 		if flag == "-O3" || flag == "-O0" || flag == "-g" || flag == "-s" {
 			continue

@@ -1530,7 +1530,7 @@ func (g *Generator) emitAutoEqMethods() {
 			g.emit("    if (a == NULL || b == NULL) return false;")
 
 			if st, ok := t.(*types.StructType); ok {
-				if st.NativeType != "" {
+				if st.NativeType != "" || st.VectorSize != "" {
 					g.emit("    if (memcmp(a, b, sizeof(%s)) != 0) return false;", g.cType(t))
 				} else {
 					for _, fName := range st.FieldNames {

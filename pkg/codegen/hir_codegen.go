@@ -1120,6 +1120,8 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				if pt.Name() == "f32" || pt.Name() == "f64" {
 					isFloat = true
 				}
+			} else if st, ok := types.UnwrapLease(i.Type).(*types.StructType); ok && st.VectorSize != "" {
+				isFloat = true // Skip zero check for SIMD vectors
 			}
 			if !isFloat {
 				return fmt.Sprintf("({ __auto_type _left = %s; __auto_type _right = %s; if (_right == 0) nr_panic(\"division by zero\", \"\", 0); _left %s _right; })", leftStr, rightStr, i.Op)

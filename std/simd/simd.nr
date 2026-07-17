@@ -1,11 +1,9 @@
 package simd
 
-[native("__m256d")]
+[shared]
+[vector_size("32")]
 pub type Vec4d = struct {
-    v0: f64,
-    v1: f64,
-    v2: f64,
-    v3: f64
+    v0: f64
 }
 
 pub fn SetZero() Vec4d {
@@ -20,17 +18,16 @@ extern fn nr_simd_add(a: Vec4d, b: Vec4d) Vec4d
 extern fn nr_simd_sub(a: Vec4d, b: Vec4d) Vec4d
 extern fn nr_simd_mul(a: Vec4d, b: Vec4d) Vec4d
 extern fn nr_simd_div(a: Vec4d, b: Vec4d) Vec4d
-extern fn nr_simd_hadd(a: Vec4d, b: Vec4d) Vec4d
-extern fn nr_simd_blend_1100(a: Vec4d, b: Vec4d) Vec4d
-extern fn nr_simd_blend_1010(a: Vec4d, b: Vec4d) Vec4d
-extern fn nr_simd_blend_0011(a: Vec4d, b: Vec4d) Vec4d
-extern fn nr_simd_permute_0101(a: Vec4d) Vec4d
-extern fn nr_simd_permute2f128_01(a: Vec4d) Vec4d
-extern fn nr_simd_permute2f128_1(a: Vec4d) Vec4d
-extern fn nr_simd_permute2f128_21(a: Vec4d, b: Vec4d) Vec4d
-extern fn nr_simd_unpacklo(a: Vec4d) Vec4d
-extern fn nr_simd_unpackhi(a: Vec4d) Vec4d
-extern fn nr_simd_approx_recip(z: Vec4d) Vec4d
+[cfg("target_feature=avx")] extern fn nr_simd_hadd(a: Vec4d, b: Vec4d) Vec4d
+[cfg("target_feature=avx")] extern fn nr_simd_blend_1100(a: Vec4d, b: Vec4d) Vec4d
+[cfg("target_feature=avx")] extern fn nr_simd_blend_1010(a: Vec4d, b: Vec4d) Vec4d
+[cfg("target_feature=avx")] extern fn nr_simd_blend_0011(a: Vec4d, b: Vec4d) Vec4d
+[cfg("target_feature=avx")] extern fn nr_simd_permute_0101(a: Vec4d) Vec4d
+[cfg("target_feature=avx")] extern fn nr_simd_permute2f128_01(a: Vec4d) Vec4d
+[cfg("target_feature=avx")] extern fn nr_simd_permute2f128_1(a: Vec4d) Vec4d
+[cfg("target_feature=avx")] extern fn nr_simd_permute2f128_21(a: Vec4d, b: Vec4d) Vec4d
+[cfg("target_feature=avx")] extern fn nr_simd_unpacklo(a: Vec4d) Vec4d
+[cfg("target_feature=avx")] extern fn nr_simd_unpackhi(a: Vec4d) Vec4d
 extern fn nr_simd_slice_ptr(slice: #f64[], index: i32) ptr
 
 [inline]
@@ -59,76 +56,83 @@ pub fn Set4(v0: f64, v1: f64, v2: f64, v3: f64) Vec4d {
 }
 
 [inline]
-pub fn Add(a: Vec4d, b: Vec4d) Vec4d {
-    return nr_simd_add(a, b)
+pub fn Add(v_a: Vec4d, v_b: Vec4d) Vec4d {
+    return v_a + v_b
 }
 
 [inline]
-pub fn Sub(a: Vec4d, b: Vec4d) Vec4d {
-    return nr_simd_sub(a, b)
+pub fn Sub(v_a: Vec4d, v_b: Vec4d) Vec4d {
+    return v_a - v_b
 }
 
 [inline]
-pub fn Mul(a: Vec4d, b: Vec4d) Vec4d {
-    return nr_simd_mul(a, b)
+pub fn Mul(v_a: Vec4d, v_b: Vec4d) Vec4d {
+    return v_a * v_b
 }
 
 [inline]
-pub fn Div(a: Vec4d, b: Vec4d) Vec4d {
-    return nr_simd_div(a, b)
+pub fn Div(v_a: Vec4d, v_b: Vec4d) Vec4d {
+    return v_a / v_b
 }
 
+[cfg("target_feature=avx")]
 [inline]
 pub fn Hadd(a: Vec4d, b: Vec4d) Vec4d {
     return nr_simd_hadd(a, b)
 }
 
+[cfg("target_feature=avx")]
 [inline]
 pub fn Blend1100(a: Vec4d, b: Vec4d) Vec4d {
     return nr_simd_blend_1100(a, b)
 }
 
+[cfg("target_feature=avx")]
 [inline]
 pub fn Blend1010(a: Vec4d, b: Vec4d) Vec4d {
     return nr_simd_blend_1010(a, b)
 }
 
+[cfg("target_feature=avx")]
 [inline]
 pub fn Blend0011(a: Vec4d, b: Vec4d) Vec4d {
     return nr_simd_blend_0011(a, b)
 }
 
+[cfg("target_feature=avx")]
 [inline]
 pub fn Permute0101(a: Vec4d) Vec4d {
     return nr_simd_permute_0101(a)
 }
 
+[cfg("target_feature=avx")]
 [inline]
 pub fn Permute2F128_01(a: Vec4d) Vec4d {
     return nr_simd_permute2f128_01(a)
 }
 
+[cfg("target_feature=avx")]
 [inline]
 pub fn Permute2F128_1(a: Vec4d) Vec4d {
     return nr_simd_permute2f128_1(a)
 }
 
+[cfg("target_feature=avx")]
 [inline]
 pub fn Permute2F128_21(a: Vec4d, b: Vec4d) Vec4d {
     return nr_simd_permute2f128_21(a, b)
 }
 
+[cfg("target_feature=avx")]
 [inline]
 pub fn UnpackLo(a: Vec4d) Vec4d {
     return nr_simd_unpacklo(a)
 }
 
+[cfg("target_feature=avx")]
 [inline]
 pub fn UnpackHi(a: Vec4d) Vec4d {
     return nr_simd_unpackhi(a)
 }
 
-[inline]
-pub fn ApproxRecip(z: Vec4d) Vec4d {
-    return nr_simd_approx_recip(z)
-}
+

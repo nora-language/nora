@@ -78,6 +78,8 @@ type SemanticAnalyzer struct {
 	CurrentFunction   *ast.FunctionStatement
 	CurrentLambda     *ast.LambdaExpression
 	TargetOS          string            // <--- Set by compiler flag
+	TargetArch        string            // <--- Set by compiler flag
+	TargetFeatures    []string          // <--- Set by compiler flag
 	AllowUnsafe       bool              // <--- Set by compiler flag
 	AllowedUnsafeDirs []string          // <--- Set from Project Manifest
 	PackageScopes     map[string]*Scope // <--- Track scopes by package name
@@ -830,6 +832,9 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 			if attr := ast.GetAttribute(n.Attributes, "native"); attr != nil && len(attr.Args) > 0 {
 				structType.NativeType = attr.Args[0]
 			}
+			if attr := ast.GetAttribute(n.Attributes, "vector_size"); attr != nil && len(attr.Args) > 0 {
+				structType.VectorSize = attr.Args[0]
+			}
 			for _, tp := range n.TypeParameters {
 				structType.TypeParams = append(structType.TypeParams, &types.TypeParam{
 					Name: tp.Name.Value,
@@ -1173,6 +1178,8 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 
 	// --- ENTRY POINT ---
 	case *ast.Program:
+		// 0. Filter AST nodes based on target configuration
+		FilterCfg(n, sa.TargetOS, sa.TargetArch, sa.TargetFeatures)
 
 		// 1. Setup Package Scope (Shared by all files in the entry package)
 		// Note: sa.CurrentScope is currently GlobalScope
@@ -1383,7 +1390,15 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				}
 			}
 
-			// 2. Fallback to primitive arithmetic
+			// 2. Support for Generic SIMD Vectors
+			if stL, ok := leftBase.(*types.StructType); ok && stL.VectorSize != "" {
+				if types.Equals(leftBase, rightBase) {
+					sa.SemanticInfo.Types[n] = leftBase
+					return
+				}
+			}
+
+			// 3. Fallback to primitive arithmetic
 			if !types.Equals(leftBase, rightBase) {
 				// Special Case: String Concatenation with Booleans
 				if n.Operator == "+" && (leftBase == types.String || rightBase == types.String) {

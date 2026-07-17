@@ -14,6 +14,7 @@ type StructType struct {
 	IsShared   bool              // Marked with [shared] attribute
 	CoreIntrinsic string         // Extracted from [core_intrinsic("name")]
 	NativeType string            // Extracted from [native("type")]
+	VectorSize string            // Extracted from [vector_size("N")]
 }
 
 func NewStructType(name string) *StructType {
