@@ -65,9 +65,9 @@ func evaluateCfgArgs(args []string, targetOS string, targetArch string, targetFe
 
 	match := false
 	switch key {
-	case "target_os":
+	case "target_os", "os":
 		match = targetOS == val
-	case "target_arch":
+	case "target_arch", "arch":
 		match = targetArch == val
 	case "target_feature":
 		for _, f := range targetFeatures {

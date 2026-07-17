@@ -1205,10 +1205,20 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 		isStrEq := (e.Operator == "==" || e.Operator == "!=") && (ult != nil && ult.Name() == "str" && urt != nil && urt.Name() == "str")
 		isFuncEq := (e.Operator == "==" || e.Operator == "!=") && (ult != nil && ult.GetKind() == types.KindFunction && urt != nil && urt.GetKind() == types.KindFunction)
 
-		_, isStructL := ult.(*types.StructType)
+		stL, isStructL := ult.(*types.StructType)
 		_, isStructR := urt.(*types.StructType)
 		isStructEq := (e.Operator == "==" || e.Operator == "!=") && isStructL && isStructR && lt.GetKind() != types.KindPointer && rt.GetKind() != types.KindPointer
-		if isStrConcat || isStrEq || isFuncEq || isStructEq {
+		
+		isStructOp := false
+		if isStructL && e.Operator != "==" && e.Operator != "!=" {
+			// If it's a struct and NOT a SIMD vector, we must lower it as ASTExpr
+			// so the generator emits it as an overloaded function call.
+			if stL.VectorSize == "" {
+				isStructOp = true
+			}
+		}
+
+		if isStrConcat || isStrEq || isFuncEq || isStructEq || isStructOp {
 			astExpr := &ASTExpr{ASTNode: e, Type: t}
 			return &InstOperand{Inst: astExpr}
 		}
