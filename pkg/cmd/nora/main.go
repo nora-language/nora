@@ -341,7 +341,11 @@ func (n *NativeConfig) Merge(other NativeConfig, baseDir string) {
 		if filepath.IsAbs(p) || strings.HasPrefix(p, "http") {
 			return p
 		}
-		return filepath.Clean(filepath.Join(baseDir, p))
+		joined := filepath.Join(baseDir, p)
+		if abs, err := filepath.Abs(joined); err == nil {
+			return abs
+		}
+		return filepath.Clean(joined)
 	}
 
 	if n.Compiler == "" {
