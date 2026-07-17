@@ -1163,6 +1163,9 @@ static inline double nr_simd_reduce_add_4d(simd_Vec4d a) {
 }
 
 // Phase 7: Transcendental Math Approximations
+#ifdef __clang__
+#pragma clang attribute push (__attribute__((target("avx,avx2,fma"))), apply_to=function)
+#endif
 static inline simd_Vec8f nr_simd_exp_8f(simd_Vec8f x) {
     simd_Vec8f min_val = _mm256_set1_ps(-87.3365f);
     simd_Vec8f max_val = _mm256_set1_ps(88.7228f);
@@ -1261,5 +1264,9 @@ static inline simd_Vec8f nr_simd_log_8f(simd_Vec8f x) {
     simd_Vec8f l2 = nr_simd_log2_8f(x);
     return _mm256_mul_ps(l2, _mm256_set1_ps(0.69314718056f)); 
 }
+
+#ifdef __clang__
+#pragma clang attribute pop
+#endif
 
 #endif
