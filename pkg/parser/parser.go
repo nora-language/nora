@@ -543,7 +543,7 @@ func (p *Parser) parseAttributeStatement() ast.Statement {
 			p.nextToken() // move to '('
 
 			// read args
-			for p.peekTokenIs(token.STR) {
+			for p.peekTokenIs(token.STR) || p.peekTokenIs(token.INT) {
 				p.nextToken()
 				args = append(args, p.curToken.Literal)
 				if p.peekTokenIs(token.COMMA) {
@@ -1152,7 +1152,7 @@ func (p *Parser) parseFieldDefinition() *ast.FieldDefinition {
 			p.nextToken() // move to '('
 
 			// read args
-			for p.peekTokenIs(token.STR) {
+			for p.peekTokenIs(token.STR) || p.peekTokenIs(token.INT) {
 				p.nextToken()
 				args = append(args, p.curToken.Literal)
 				if p.peekTokenIs(token.COMMA) {
