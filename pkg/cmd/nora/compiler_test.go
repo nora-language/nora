@@ -100,6 +100,7 @@ func TestCompilerWithTestFolder(t *testing.T) {
 				analyzer := semantic.NewAnalyzer()
 				analyzer.AllowUnsafe = true // Allow unsafe for integration tests that compile stdlib
 				analyzer.TargetOS = runtime.GOOS
+				analyzer.TargetFeatures = []string{"avx", "avx2", "fma"}
 				parsedFiles := make(map[string]*ast.File)
 				parsedFiles[filepath.Clean(inputFile)] = parsedFile
 
@@ -204,7 +205,7 @@ func TestCompilerWithTestFolder(t *testing.T) {
 				if runtime.GOOS == "windows" {
 					exeFile += ".exe"
 				}
-				args := []string{cFilePath, "-o", exeFile, "-Wno-pointer-sign", "-Wno-deprecated-declarations", "-Wno-parentheses-equality", "-Wno-unused-value"}
+				args := []string{cFilePath, "-o", exeFile, "-mavx", "-mavx2", "-mfma", "-mstackrealign", "-Wno-pointer-sign", "-Wno-deprecated-declarations", "-Wno-parentheses-equality", "-Wno-unused-value"}
 				for _, dir := range loader.CollectedNative.IncludeDirs {
 					args = append(args, "-I"+dir)
 				}

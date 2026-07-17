@@ -8,9 +8,9 @@ import "simd"
 
 [unsafe]
 [inline]
-fn eval_A_vec(v_i: simd.Vec4d, v_j: simd.Vec4d) simd.Vec4d {
-    var ONE = simd.VecSet1(1.0)
-    var TWO = simd.VecSet1(2.0)
+fn eval_A_vec(v_i: simd.Vec8d, v_j: simd.Vec8d) simd.Vec8d {
+    var ONE = simd.Set1_8d(1.0)
+    var TWO = simd.Set1_8d(2.0)
     
     var ipj = v_i + v_j
     var ipjp1 = ipj + ONE
@@ -25,22 +25,22 @@ fn eval_A_vec(v_i: simd.Vec4d, v_j: simd.Vec4d) simd.Vec4d {
 fn eval_A_times_u_worker(start: i32, end: i32, N: i32, u: #f64[], Au: &f64[]) {
     var i = start
     while (i < end) {
-        var vi0 = simd.VecSet1(f64(i))
-        var vi1 = simd.VecSet1(f64(i+1))
-        var vi2 = simd.VecSet1(f64(i+2))
-        var vi3 = simd.VecSet1(f64(i+3))
+        var vi0 = simd.Set1_8d(f64(i))
+        var vi1 = simd.Set1_8d(f64(i+1))
+        var vi2 = simd.Set1_8d(f64(i+2))
+        var vi3 = simd.Set1_8d(f64(i+3))
         
         var j = 0
-        var s0 = simd.VecSet1(0.0)
-        var s1 = simd.VecSet1(0.0)
-        var s2 = simd.VecSet1(0.0)
-        var s3 = simd.VecSet1(0.0)
-        var ONE = simd.VecSet1(1.0)
+        var s0 = simd.Set1_8d(0.0)
+        var s1 = simd.Set1_8d(0.0)
+        var s2 = simd.Set1_8d(0.0)
+        var s3 = simd.Set1_8d(0.0)
+        var ONE = simd.Set1_8d(1.0)
         
         while (j < N) {
-            var vj = simd.VecLoad(simd.VecSlicePtr(u, j))
+            var vj = simd.Load8d(simd.VecSlicePtr(u, j))
             
-            var j_idx = simd.VecSet4(f64(j), f64(j+1), f64(j+2), f64(j+3))
+            var j_idx = simd.VecSet8(f64(j), f64(j+1), f64(j+2), f64(j+3), f64(j+4), f64(j+5), f64(j+6), f64(j+7))
             
             var denoms0 = eval_A_vec(vi0, j_idx)
             var denoms1 = eval_A_vec(vi1, j_idx)
@@ -62,17 +62,14 @@ fn eval_A_times_u_worker(start: i32, end: i32, N: i32, u: #f64[], Au: &f64[]) {
             s2 = s2 + terms2
             s3 = s3 + terms3
             
-            j = j + 4
+            j = j + 8
         }
         
         // Sum each s[i] horizontally and store
-        var t0 = simd.VecHadd(s0, s1) // [s0_0+s0_1, s1_0+s1_1, s0_2+s0_3, s1_2+s1_3]
-        var t1 = simd.VecHadd(s2, s3)
-        var x = simd.VecPermute2F128_21(t0, t1)
-        var y = simd.VecBlend1100(t0, t1)
-        var z = simd.VecAdd(x, y)
-        
-        simd.VecStore(simd.VecSlicePtr(Au, i), z)
+        Au[i] = simd.VecReduceAdd8d(s0)
+        Au[i+1] = simd.VecReduceAdd8d(s1)
+        Au[i+2] = simd.VecReduceAdd8d(s2)
+        Au[i+3] = simd.VecReduceAdd8d(s3)
         
         i = i + 4
     }
@@ -82,22 +79,22 @@ fn eval_A_times_u_worker(start: i32, end: i32, N: i32, u: #f64[], Au: &f64[]) {
 fn eval_At_times_u_worker(start: i32, end: i32, N: i32, u: #f64[], Au: &f64[]) {
     var i = start
     while (i < end) {
-        var vi0 = simd.VecSet1(f64(i))
-        var vi1 = simd.VecSet1(f64(i+1))
-        var vi2 = simd.VecSet1(f64(i+2))
-        var vi3 = simd.VecSet1(f64(i+3))
+        var vi0 = simd.Set1_8d(f64(i))
+        var vi1 = simd.Set1_8d(f64(i+1))
+        var vi2 = simd.Set1_8d(f64(i+2))
+        var vi3 = simd.Set1_8d(f64(i+3))
         
         var j = 0
-        var s0 = simd.VecSet1(0.0)
-        var s1 = simd.VecSet1(0.0)
-        var s2 = simd.VecSet1(0.0)
-        var s3 = simd.VecSet1(0.0)
-        var ONE = simd.VecSet1(1.0)
+        var s0 = simd.Set1_8d(0.0)
+        var s1 = simd.Set1_8d(0.0)
+        var s2 = simd.Set1_8d(0.0)
+        var s3 = simd.Set1_8d(0.0)
+        var ONE = simd.Set1_8d(1.0)
         
         while (j < N) {
-            var vj = simd.VecLoad(simd.VecSlicePtr(u, j))
+            var vj = simd.Load8d(simd.VecSlicePtr(u, j))
             
-            var j_idx = simd.VecSet4(f64(j), f64(j+1), f64(j+2), f64(j+3))
+            var j_idx = simd.VecSet8(f64(j), f64(j+1), f64(j+2), f64(j+3), f64(j+4), f64(j+5), f64(j+6), f64(j+7))
             
             // For At, we swap i and j in eval_A_vec(j, i)
             var denoms0 = eval_A_vec(j_idx, vi0)
@@ -120,17 +117,14 @@ fn eval_At_times_u_worker(start: i32, end: i32, N: i32, u: #f64[], Au: &f64[]) {
             s2 = s2 + terms2
             s3 = s3 + terms3
             
-            j = j + 4
+            j = j + 8
         }
         
         // Sum each s[i] horizontally and store
-        var t0 = simd.VecHadd(s0, s1)
-        var t1 = simd.VecHadd(s2, s3)
-        var x = simd.VecPermute2F128_21(t0, t1)
-        var y = simd.VecBlend1100(t0, t1)
-        var z = simd.VecAdd(x, y)
-        
-        simd.VecStore(simd.VecSlicePtr(Au, i), z)
+        Au[i] = simd.VecReduceAdd8d(s0)
+        Au[i+1] = simd.VecReduceAdd8d(s1)
+        Au[i+2] = simd.VecReduceAdd8d(s2)
+        Au[i+3] = simd.VecReduceAdd8d(s3)
         
         i = i + 4
     }
@@ -190,8 +184,8 @@ fn main() i32 {
     }
 
     // Allocate overhang buffer for SIMD to prevent out of bounds loads
-    var u = alloc f64[n+4]
-    var v = alloc f64[n+4]
+    var u = alloc f64[n+8]
+    var v = alloc f64[n+8]
     
     var i = 0
     while (i < n) {

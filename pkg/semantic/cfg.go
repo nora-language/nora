@@ -6,17 +6,22 @@ import (
 	"github.com/nora-language/nora/pkg/parser/ast"
 )
 
-// EvaluateCfg filters out AST nodes that do not match the current build configuration.
+// FilterCfg filters out AST nodes that do not match the current build configuration.
 func FilterCfg(program *ast.Program, targetOS string, targetArch string, targetFeatures []string) {
 	for _, file := range program.Files {
-		var filtered []ast.Statement
-		for _, stmt := range file.Statements {
-			if evaluateStmtCfg(stmt, targetOS, targetArch, targetFeatures) {
-				filtered = append(filtered, stmt)
-			}
-		}
-		file.Statements = filtered
+		FilterFileCfg(file, targetOS, targetArch, targetFeatures)
 	}
+}
+
+// FilterFileCfg filters out AST nodes for a single file.
+func FilterFileCfg(file *ast.File, targetOS string, targetArch string, targetFeatures []string) {
+	var filtered []ast.Statement
+	for _, stmt := range file.Statements {
+		if evaluateStmtCfg(stmt, targetOS, targetArch, targetFeatures) {
+			filtered = append(filtered, stmt)
+		}
+	}
+	file.Statements = filtered
 }
 
 func evaluateStmtCfg(stmt ast.Statement, targetOS string, targetArch string, targetFeatures []string) bool {

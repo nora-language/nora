@@ -608,6 +608,9 @@ func (f *FileLoader) Load(path string, basePath string) (*semantic.Scope, error)
 					f.Program.Files = append(f.Program.Files, file)
 					f.ParsedFiles[fullFilePath] = file
 
+					// Filter AST nodes based on target configuration before collection
+					semantic.FilterFileCfg(file, f.Analyzer.TargetOS, f.Analyzer.TargetArch, f.Analyzer.TargetFeatures)
+
 					// First pass: collect symbols
 					f.Analyzer.CollectSymbols(file)
 
@@ -656,6 +659,9 @@ func (f *FileLoader) Load(path string, basePath string) (*semantic.Scope, error)
 
 	f.Program.Files = append(f.Program.Files, file)
 	f.ParsedFiles[path] = file
+
+	// Filter AST nodes based on target configuration before collection
+	semantic.FilterFileCfg(file, f.Analyzer.TargetOS, f.Analyzer.TargetArch, f.Analyzer.TargetFeatures)
 
 	f.Analyzer.CollectSymbols(file)
 	pkgName := f.Analyzer.GetPackageName(file)
@@ -3167,6 +3173,13 @@ func compileCToObject(compiler string, srcPath string, objPath string, isMSVC bo
 
 	// Custom compiler flags
 	objArgs = append(objArgs, activeConfig.CFlags...)
+
+	// Target Features (for clang/gcc)
+	if !isMSVC {
+		for _, feat := range opts.Target.Features {
+			objArgs = append(objArgs, "-m"+feat)
+		}
+	}
 
 	// Wasm experimental or specific sysroots
 	if opts.Target.Wasm && (strings.Contains(strings.ToLower(activeConfig.Compiler), "clang") || strings.Contains(strings.ToLower(activeConfig.Compiler), "wasi-sdk")) {
