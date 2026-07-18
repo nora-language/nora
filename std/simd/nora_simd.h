@@ -1,9 +1,5 @@
 #ifndef NORA_SIMD_H
 #define NORA_SIMD_H
-#pragma GCC target("avx,avx2,fma")
-#ifdef __clang__
-#pragma clang attribute push (__attribute__((target("avx,avx2,fma"))), apply_to=function)
-#endif
 #include <x86intrin.h>
 #include <stdint.h>
 
@@ -198,9 +194,6 @@ static inline simd_Vec4i nr_simd_add_i32x4(simd_Vec4i a, simd_Vec4i b) { return 
 static inline simd_Vec4i nr_simd_sub_i32x4(simd_Vec4i a, simd_Vec4i b) { return _mm_sub_epi32(a, b); }
 static inline simd_Vec4i nr_simd_mul_i32x4(simd_Vec4i a, simd_Vec4i b) { return _mm_mullo_epi32(a, b); }
 
-#ifdef __clang__
-#pragma clang attribute pop
-#endif
 
 
 // --- GENERATED BINDINGS ---

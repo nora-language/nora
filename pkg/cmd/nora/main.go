@@ -1727,12 +1727,18 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 	}
 
 	cflagsStr := strings.Join(activeConfig.CFlags, " ")
+	sortedFeatures := make([]string, len(opts.Target.Features))
+	copy(sortedFeatures, opts.Target.Features)
+	sort.Strings(sortedFeatures)
+	featuresStr := strings.Join(sortedFeatures, " ")
+
 	configChanged := catalog.Compiler != compilerName ||
 		catalog.Target != opts.Target.Name ||
 		catalog.Release != opts.Release ||
 		catalog.DebugMemory != opts.DebugMemory ||
 		catalog.DebugFiber != opts.DebugFiber ||
-		catalog.CFlags != cflagsStr
+		catalog.CFlags != cflagsStr ||
+		catalog.Features != featuresStr
 
 	if configChanged {
 		if opts.Verbose {
@@ -1745,6 +1751,7 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 			DebugMemory: opts.DebugMemory,
 			DebugFiber:  opts.DebugFiber,
 			CFlags:      cflagsStr,
+			Features:    featuresStr,
 			Packages:    make(map[string]PackageCacheEntry),
 		}
 	}
@@ -1937,8 +1944,8 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 			continue
 		}
 
-		// Calculate a hash/key of the file properties (path, size, modification time)
-		fileKey := fmt.Sprintf("%s_%d_%d", absSrcPath, info.Size(), info.ModTime().UnixNano())
+		// Calculate a hash/key of the file properties (path, size, modification time, cflags, features)
+		fileKey := fmt.Sprintf("%s_%d_%d_%s_%s", absSrcPath, info.Size(), info.ModTime().UnixNano(), cflagsStr, featuresStr)
 		hashBytes := sha256.Sum256([]byte(fileKey))
 		hashKey := fmt.Sprintf("%x", hashBytes)[:16]
 
@@ -3086,6 +3093,7 @@ type BuildCacheCatalog struct {
 	DebugMemory       bool                         `json:"debug_memory"`
 	DebugFiber        bool                         `json:"debug_fiber"`
 	CFlags            string                       `json:"cflags"`
+	Features          string                       `json:"features"`
 	GlobalsHash       string                       `json:"globals_hash"`
 	GlobalsObjectPath string                       `json:"globals_object_path"`
 	Packages          map[string]PackageCacheEntry `json:"packages"`
