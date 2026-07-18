@@ -1386,8 +1386,9 @@ void* worker_loop(void* arg) {
                 }
             }
             if (other_pinned_work) {
+                NR_ATOMIC_DEC(&g_sleeping_workers);
                 sem_post(&g_worker_sem);
-                sched_yield();
+                usleep(1000);
                 continue;
             }
             sem_wait(&g_worker_sem);
