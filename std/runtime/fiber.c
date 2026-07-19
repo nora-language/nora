@@ -717,6 +717,7 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
     info->next_global = g_fibers_head;
     if (g_fibers_head) g_fibers_head->prev_global = info;
     g_fibers_head = info;
+    info->prev_global = NULL;
     NR_MUTEX_UNLOCK(&g_fiber_list_lock);
 
     long old_count = NR_ATOMIC_ADD(&g_active_fibers, 1);
@@ -726,11 +727,20 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
     data->fn = fn;
     data->arg = arg;
     info->handle = CreateFiber(NR_FIBER_STACK_SIZE, (LPFIBER_START_ROUTINE)fiber_wrapper, info);
-    int id = worker_id;
-    if (id >= 0 && id < num_workers && num_workers > 1) {
-        deque_push(&g_local_queues[id], info);
+
+    if (name && strcmp(name, "main") == 0) {
+        info->pinned_worker_id = 0;
+    }
+
+    if (info->pinned_worker_id >= 0) {
+        queue_push(&g_pinned_queues[info->pinned_worker_id], info);
     } else {
-        queue_push(&g_queue, info);
+        int id = worker_id;
+        if (id >= 0 && id < num_workers && num_workers > 1) {
+            deque_push(&g_local_queues[id], info);
+        } else {
+            queue_push(&g_queue, info);
+        }
     }
     return (fiber_t)info;
 }
@@ -1065,6 +1075,7 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
     info->next_global = g_fibers_head;
     if (g_fibers_head) g_fibers_head->prev_global = info;
     g_fibers_head = info;
+    info->prev_global = NULL;
     NR_MUTEX_UNLOCK(&g_fiber_list_lock);
 
     long old_count = NR_ATOMIC_ADD(&g_active_fibers, 1);
@@ -2176,6 +2187,7 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
     info->next_global = g_fibers_head;
     if (g_fibers_head) g_fibers_head->prev_global = info;
     g_fibers_head = info;
+    info->prev_global = NULL;
     NR_MUTEX_UNLOCK(&g_fiber_list_lock);
     
     bool is_main = (NR_ATOMIC_LOAD(&g_active_fibers) == 0);
