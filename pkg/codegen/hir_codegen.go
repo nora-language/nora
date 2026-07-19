@@ -753,6 +753,10 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 					return fmt.Sprintf("({ %s _tmp = %s; %s_tmp; })", cType2, opStr, nullifyStr)
 				}
 			}
+
+			if g.isOperandPointerInC(i.Val) {
+				return opStr
+			}
 		}
 
 		if cType1 == cType2 {

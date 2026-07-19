@@ -34,11 +34,10 @@ pub fn Parse(s: #str) Result[JsonValue, str] {
     }
     p.skipWhitespace()
     var val_res = p.parseValue()
-    if (val_res.IsErr()) {
+    if (val_res.IsErr[JsonValue, str]()) {
         return Err[JsonValue, str](val_res.UnwrapErr())
     }
     p.skipWhitespace()
-    io.PrintLn("DEBUG Parse: pos=${p.pos}, len=${p.len}, input='${p.input}'")
     if (p.pos < p.len) {
         return Err[JsonValue, str]("Unexpected trailing characters after JSON")
     }
@@ -63,10 +62,10 @@ pub fn Stringify(v: #JsonValue) str {
             return escapeString(s)
         }
         JsonArray(arr) => {
-            var parts = collections.NewVector[str](arr.Len())
+            var parts = collections.NewVector[str](arr.Len[JsonValue]())
             var i = 0
-            while (i < arr.Len()) {
-                var item = arr.Get(i)
+            while (i < arr.Len[JsonValue]()) {
+                var item = arr.Get[JsonValue](i)
                 parts.Push(Stringify(#item))
                 i = i + 1
             }
@@ -74,10 +73,10 @@ pub fn Stringify(v: #JsonValue) str {
             return "[${inner}]"
         }
         JsonObject(obj) => {
-            var parts = collections.NewVector[str](obj.Len())
+            var parts = collections.NewVector[str](obj.Len[JsonProperty]())
             var i = 0
-            while (i < obj.Len()) {
-                var prop = obj.Get(i)
+            while (i < obj.Len[JsonProperty]()) {
+                var prop = obj.Get[JsonProperty](i)
                 var escaped_key = escapeString(#prop.name)
                 var val_str = Stringify(#prop.value)
                 parts.Push("${escaped_key}: ${val_str}")
@@ -155,7 +154,7 @@ fn (self: &Parser) parseValue() Result[JsonValue, str] {
     }
     if (c == 34) {
         var str_res = self.parseString()
-        if (str_res.IsErr()) {
+        if (str_res.IsErr[str, str]()) {
             return Err[JsonValue, str](str_res.UnwrapErr())
         }
         return Ok[JsonValue, str](JsonString(str_res.Unwrap()))
@@ -300,7 +299,7 @@ fn (self: &Parser) parseArray() Result[JsonValue, str] {
     while (self.pos < self.len) {
         self.skipWhitespace()
         var val_res = self.parseValue()
-        if (val_res.IsErr()) {
+        if (val_res.IsErr[JsonValue, str]()) {
             return Err[JsonValue, str](val_res.UnwrapErr())
         }
         vec.Push(val_res.Unwrap())
@@ -342,7 +341,7 @@ fn (self: &Parser) parseObject() Result[JsonValue, str] {
             return Err[JsonValue, str]("Expected string key in object")
         }
         var key_res = self.parseString()
-        if (key_res.IsErr()) {
+        if (key_res.IsErr[str, str]()) {
             return Err[JsonValue, str](key_res.UnwrapErr())
         }
         var key = key_res.Unwrap()
@@ -355,7 +354,7 @@ fn (self: &Parser) parseObject() Result[JsonValue, str] {
 
         self.skipWhitespace()
         var val_res = self.parseValue()
-        if (val_res.IsErr()) {
+        if (val_res.IsErr[JsonValue, str]()) {
             return Err[JsonValue, str](val_res.UnwrapErr())
         }
         var val = val_res.Unwrap()
