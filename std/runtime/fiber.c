@@ -1287,7 +1287,7 @@ global_queue_t g_queue;
 global_queue_t g_pinned_queues[MAX_WORKERS];
 deque_t g_local_queues[MAX_WORKERS];
 int num_workers = 0;
-__thread int worker_id = -1;
+__thread volatile int worker_id = -1;
 __thread int g_yield_ticks = 0;
 typedef struct {
     _Alignas(64) ucontext_t context;
@@ -1712,17 +1712,16 @@ void resume(fiber_info_t* info) {
         atomic_fetch_add(&info->resume_pending, 1);
         expected = 3;
         if (atomic_compare_exchange_strong(&info->state, &expected, 0)) {
-            if (atomic_fetch_sub(&info->resume_pending, 1) > 0) {
-                int id = worker_id;
-                if (id >= 0 && id < num_workers && num_workers > 1 && !is_yield) {
-                    if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
-                    else deque_push(&g_local_queues[id], info);
-                } else {
-                    if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
-                    else queue_push(&g_queue, info);
-                }
-                sem_post(&g_worker_sem);
+            atomic_fetch_sub(&info->resume_pending, 1);
+            int id = worker_id;
+            if (id >= 0 && id < num_workers && num_workers > 1 && !is_yield) {
+                if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+                else deque_push(&g_local_queues[id], info);
+            } else {
+                if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+                else queue_push(&g_queue, info);
             }
+            sem_post(&g_worker_sem);
         }
     }
 }
@@ -1806,6 +1805,7 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
     info->next_global = g_fibers_head;
     if (g_fibers_head) g_fibers_head->prev_global = info;
     g_fibers_head = info;
+    info->prev_global = NULL;
     NR_MUTEX_UNLOCK(&g_fiber_list_lock);
     
     long old_count = atomic_fetch_add(&g_active_fibers, 1);
@@ -1821,11 +1821,19 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
     info->context.uc_link = NULL;
     makecontext(&info->context, fiber_wrapper, 0);
 
-    int id = worker_id;
-    if (id >= 0 && id < num_workers && num_workers > 1) {
-        deque_push(&g_local_queues[id], info);
+    if (name && strcmp(name, "main") == 0) {
+        info->pinned_worker_id = 0;
+    }
+
+    if (info->pinned_worker_id >= 0) {
+        queue_push(&g_pinned_queues[info->pinned_worker_id], info);
     } else {
-        queue_push(&g_queue, info);
+        int id = worker_id;
+        if (id >= 0 && id < num_workers && num_workers > 1) {
+            deque_push(&g_local_queues[id], info);
+        } else {
+            queue_push(&g_queue, info);
+        }
     }
     sem_post(&g_worker_sem);
     return (fiber_t)info;
