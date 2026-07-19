@@ -183,16 +183,17 @@ void nr_cooperative_yield();
 // g_active_fibers tracks the number of SPAWNED (non-main) fibers currently alive.
 // Declared here so the yield checkpoint macro can read it without a function call overhead.
 extern NR_ATOMIC_LONG g_active_fibers;
+extern int num_workers;
 
 // Cooperative yield checkpoint inserted by the compiler into function prologues.
 // 
-// Fix B: Skip yielding when only the main fiber is running (g_active_fibers <= 1).
-// NOTE: nr_main itself is spawned as a fiber, so g_active_fibers == 1 during
-// normal single-fiber execution. User-spawned fibers make it 2+.
-// A single-fiber program (e.g. a game/render loop) pays zero scheduling overhead.
-// When user fibers ARE spawned (> 1), the standard tick-based yield kicks in.
+// Fix B: Skip yielding when active fibers <= num_workers + 1.
+// NOTE: nr_main itself is spawned as a fiber, and when it spawns num_workers parallel worker
+// fibers and parks in a waitgroup, total g_active_fibers is num_workers + 1.
+// In that state, every worker fiber has its own dedicated CPU core and zero waiting fibers exist.
+// Only when g_active_fibers > num_workers + 1 does cooperative yielding kick in to share cores.
 #define NR_COOPERATIVE_YIELD_CHECKPOINT() do { \
-    if (NR_ATOMIC_LOAD(&g_active_fibers) > 1 && ++g_yield_ticks >= 1000) { \
+    if (NR_ATOMIC_LOAD(&g_active_fibers) > (num_workers + 1) && ++g_yield_ticks >= 1000) { \
         g_yield_ticks = 0; \
         nr_cooperative_yield(); \
     } \
@@ -288,6 +289,7 @@ void* nr_malloc_debug(size_t size, const char* file, int line);
 void* nr_malloc_untracked(int size);
 void nr_free(void* ptr);
 void nr_free_untracked(void* p);
+void nr_untracked_cleanup(void);
 #define nr_malloc(s) nr_malloc_debug(s, __FILE__, __LINE__)
 
 void nr_panic(const char* msg, const char* file, int line) __attribute__((noreturn));
@@ -298,6 +300,7 @@ typedef void* fiber_t;
 struct fiber_info;
 void park();
 void resume(struct fiber_info* info);
+void nr_fiber_finish_scoped(void* _wg);
 
 // First-class function closure fat pointer
 typedef struct {

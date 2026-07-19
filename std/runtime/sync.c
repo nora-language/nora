@@ -132,25 +132,29 @@ void nr_sync_waitgroup_add(void* w, int32_t delta) {
     nr_fiber_waitgroup_t* wg = (nr_fiber_waitgroup_t*)w;
     if (!wg) return;
     
-    long prev = NR_ATOMIC_ADD(&wg->counter, delta);
+    NR_MUTEX_LOCK(&wg->queue_lock);
+    long prev = wg->counter;
     long current = prev + delta;
-    
     if (current < 0) {
-        nr_panic("negative WaitGroup counter", "sync", 0);
-    }
-    
-    if (current == 0) {
-        NR_MUTEX_LOCK(&wg->queue_lock);
-        fiber_waiter_t* curr = wg->waiters_head;
-        wg->waiters_head = wg->waiters_tail = NULL;
         NR_MUTEX_UNLOCK(&wg->queue_lock);
-        
-        while (curr) {
-            fiber_waiter_t* next = curr->next;
-            resume(curr->fiber);
-            free(curr);
-            curr = next;
-        }
+        nr_panic("negative WaitGroup counter", "sync", 0);
+        return;
+    }
+    NR_ATOMIC_STORE(&wg->counter, current);
+    
+    fiber_waiter_t* curr = NULL;
+    if (current == 0) {
+        curr = wg->waiters_head;
+        wg->waiters_head = wg->waiters_tail = NULL;
+    }
+    NR_MUTEX_UNLOCK(&wg->queue_lock);
+    
+    while (curr) {
+        fiber_waiter_t* next = curr->next;
+        fiber_t f = curr->fiber;
+        free(curr);
+        resume(f);
+        curr = next;
     }
 }
 
@@ -176,15 +180,22 @@ void nr_sync_waitgroup_wait(void* w) {
     nr_fiber_waitgroup_t* wg = (nr_fiber_waitgroup_t*)w;
     if (!wg) return;
     
+    NR_MUTEX_LOCK(&wg->queue_lock);
     if (NR_ATOMIC_LOAD(&wg->counter) == 0) {
-        if (wg->has_panic) {
-            nr_panic(wg->panic_msg, wg->panic_file, wg->panic_line);
+        bool hp = wg->has_panic;
+        const char* pm = wg->panic_msg;
+        const char* pf = wg->panic_file;
+        int pl = wg->panic_line;
+        NR_MUTEX_UNLOCK(&wg->queue_lock);
+        if (hp) {
+            nr_panic(pm, pf, pl);
         }
         return;
     }
     
     fiber_info_t* self = (fiber_info_t*)GetFiberData();
     if (!self) {
+        NR_MUTEX_UNLOCK(&wg->queue_lock);
         while (NR_ATOMIC_LOAD(&wg->counter) > 0) {
 #ifdef _WIN32
             Sleep(1);
@@ -201,16 +212,6 @@ void nr_sync_waitgroup_wait(void* w) {
     fiber_waiter_t* waiter = (fiber_waiter_t*)malloc(sizeof(fiber_waiter_t));
     waiter->fiber = self;
     waiter->next = NULL;
-    
-    NR_MUTEX_LOCK(&wg->queue_lock);
-    if (NR_ATOMIC_LOAD(&wg->counter) == 0) {
-        NR_MUTEX_UNLOCK(&wg->queue_lock);
-        free(waiter);
-        if (wg->has_panic) {
-            nr_panic(wg->panic_msg, wg->panic_file, wg->panic_line);
-        }
-        return;
-    }
     
     if (wg->waiters_tail) {
         wg->waiters_tail->next = waiter;
@@ -230,13 +231,16 @@ void nr_sync_waitgroup_wait(void* w) {
 void nr_sync_waitgroup_destroy(void* w) {
     nr_fiber_waitgroup_t* wg = (nr_fiber_waitgroup_t*)w;
     if (wg) {
-        NR_MUTEX_DESTROY(&wg->queue_lock);
+        NR_MUTEX_LOCK(&wg->queue_lock);
         fiber_waiter_t* curr = wg->waiters_head;
+        wg->waiters_head = wg->waiters_tail = NULL;
+        NR_MUTEX_UNLOCK(&wg->queue_lock);
         while (curr) {
             fiber_waiter_t* next = curr->next;
             free(curr);
             curr = next;
         }
+        NR_MUTEX_DESTROY(&wg->queue_lock);
         free(wg);
     }
 }

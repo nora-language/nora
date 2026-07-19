@@ -2139,9 +2139,12 @@ func (g *Generator) genSpawnExpression(e *ast.SpawnExpression) {
 	}
 	sb.WriteString("    nr_flush_temps();\n")
 	if hasScope {
-		sb.WriteString("    nr_sync_waitgroup_done(args->_scope_wg);\n")
+		sb.WriteString("    void* _wg = args->_scope_wg;\n")
 	}
 	sb.WriteString("    nr_free_untracked(args);\n")
+	if hasScope {
+		sb.WriteString("    nr_fiber_finish_scoped(_wg);\n")
+	}
 	sb.WriteString("}\n")
 	g.SpawnWrappers = append(g.SpawnWrappers, sb.String())
 

@@ -174,7 +174,7 @@ fn eval_At_times_u(N: i32, u: #f64[], Au: &f64[]) {
 
 [unsafe]
 fn eval_AtA_times_u(N: i32, u: #f64[], AtAu: &f64[]) {
-    var v = alloc f64[N]
+    var v = alloc f64[N+4] // +4 SIMD overhang: VecStore writes 4 at a time, last chunk may overshoot end by up to 3
     eval_A_times_u(N, u, &v)
     eval_At_times_u(N, #v, AtAu)
 }

@@ -65,6 +65,17 @@ func TestCompilerWithTestFolder(t *testing.T) {
 			}
 
 			t.Run(path, func(t *testing.T) {
+				if strings.Contains(path, "simd_test.nr") {
+					hasAVX2 := false
+					if cpuinfo, err := ioutil.ReadFile("/proc/cpuinfo"); err == nil {
+						if strings.Contains(string(cpuinfo), "avx2") {
+							hasAVX2 = true
+						}
+					}
+					if !hasAVX2 {
+						t.Skip("Skipping simd_test.nr because host CPU does not support AVX2")
+					}
+				}
 				inputFile := path
 				expectFail := (strings.HasPrefix(info.Name(), "fail_") || strings.Contains(info.Name(), "violation")) && !strings.Contains(info.Name(), "div_zero")
 

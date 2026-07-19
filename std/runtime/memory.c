@@ -15,11 +15,15 @@ NR_ATOMIC_LONG g_total_allocations = 0;
 NR_ATOMIC_LONG g_num_allocations = 0;
 nr_header_t* g_allocations_head = NULL;
 NR_MUTEX_T g_mem_lock;
+static NR_MUTEX_T g_untracked_lock;
+static bool g_untracked_lock_init = false;
 
 void nr_mem_init() {
 #if NR_DEBUG_MEM
     NR_MUTEX_INIT(&g_mem_lock);
 #endif
+    NR_MUTEX_INIT(&g_untracked_lock);
+    g_untracked_lock_init = true;
 }
 
 #define nr_malloc(s) nr_malloc_debug(s, __FILE__, __LINE__)
@@ -80,11 +84,72 @@ void nr_free(void* ptr) {
     }
 }
 
+typedef struct nr_untracked_chunk {
+    struct nr_untracked_chunk* next;
+} nr_untracked_chunk_t;
+
+static nr_untracked_chunk_t* g_untracked_freelist = NULL;
+
+#define NR_UNTRACKED_MAGIC 0x554E5452
+#define NR_UNTRACKED_LARGE_MAGIC 0x4C415247
+
+typedef struct {
+    uint32_t magic;
+    uint32_t pad;
+} nr_untracked_header_t;
+
 void* nr_malloc_untracked(int size) {
-    return malloc(size);
+    if (size <= 256) {
+        NR_MUTEX_LOCK(&g_untracked_lock);
+        nr_untracked_chunk_t* c = g_untracked_freelist;
+        if (c) {
+            g_untracked_freelist = c->next;
+            NR_MUTEX_UNLOCK(&g_untracked_lock);
+            nr_untracked_header_t* h = (nr_untracked_header_t*)c;
+            h->magic = NR_UNTRACKED_MAGIC;
+            return (void*)(h + 1);
+        }
+        NR_MUTEX_UNLOCK(&g_untracked_lock);
+        nr_untracked_header_t* h = (nr_untracked_header_t*)malloc(sizeof(nr_untracked_header_t) + 256);
+        if (!h) return NULL;
+        h->magic = NR_UNTRACKED_MAGIC;
+        return (void*)(h + 1);
+    }
+    nr_untracked_header_t* h = (nr_untracked_header_t*)malloc(sizeof(nr_untracked_header_t) + size);
+    if (!h) return NULL;
+    h->magic = NR_UNTRACKED_LARGE_MAGIC;
+    return (void*)(h + 1);
 }
+
 void nr_free_untracked(void* p) {
+    if (!p) return;
+    nr_untracked_header_t* h = ((nr_untracked_header_t*)p) - 1;
+    if (h->magic == NR_UNTRACKED_MAGIC) {
+        NR_MUTEX_LOCK(&g_untracked_lock);
+        nr_untracked_chunk_t* c = (nr_untracked_chunk_t*)h;
+        c->next = g_untracked_freelist;
+        g_untracked_freelist = c;
+        NR_MUTEX_UNLOCK(&g_untracked_lock);
+        return;
+    }
+    if (h->magic == NR_UNTRACKED_LARGE_MAGIC) {
+        free(h);
+        return;
+    }
     free(p);
+}
+
+void nr_untracked_cleanup() {
+    if (!g_untracked_lock_init) return;
+    NR_MUTEX_LOCK(&g_untracked_lock);
+    nr_untracked_chunk_t* curr = g_untracked_freelist;
+    while (curr) {
+        nr_untracked_chunk_t* next = curr->next;
+        free(curr);
+        curr = next;
+    }
+    g_untracked_freelist = NULL;
+    NR_MUTEX_UNLOCK(&g_untracked_lock);
 }
 
 void nr_mem_report() {

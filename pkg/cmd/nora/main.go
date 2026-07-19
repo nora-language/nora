@@ -336,6 +336,29 @@ func contains(slice []string, val string) bool {
 	return false
 }
 
+func extractFeaturesFromCFlags(cflags []string, currentFeatures []string) []string {
+	features := currentFeatures
+	featureMap := map[string]string{
+		"-mavx":     "avx",
+		"-mavx2":    "avx2",
+		"-mavx512f": "avx512f",
+		"-mfma":     "fma",
+		"-mneon":    "neon",
+		"-msse4.2":  "sse4.2",
+		"-msse4.1":  "sse4.1",
+		"-msse3":    "sse3",
+		"-msse2":    "sse2",
+	}
+	for _, cf := range cflags {
+		if feat, ok := featureMap[cf]; ok {
+			if !contains(features, feat) {
+				features = append(features, feat)
+			}
+		}
+	}
+	return features
+}
+
 func (n *NativeConfig) Merge(other NativeConfig, baseDir string) {
 	resolvePath := func(p string) string {
 		if filepath.IsAbs(p) || strings.HasPrefix(p, "http") {
@@ -446,6 +469,9 @@ func (f *FileLoader) loadManifest(dirPath string) {
 				}
 			}
 			f.CollectedNative.Merge(resolveNativeConfig(config.Native, f.TargetOS), dirPath)
+			if f.Analyzer != nil {
+				f.Analyzer.TargetFeatures = extractFeaturesFromCFlags(f.CollectedNative.CFlags, f.Analyzer.TargetFeatures)
+			}
 			for _, p := range config.Plugins {
 				resolved := p
 				if !filepath.IsAbs(p) {
@@ -1583,6 +1609,18 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 
 	// 2. Override template with manifest/CLI custom fields
 	activeConfig := template
+	for _, flag := range opts.Target.CFlags {
+		if flag == "-O3" || flag == "-O0" || flag == "-g" || flag == "-s" {
+			continue
+		}
+		if !isMSVC {
+			if !strings.HasPrefix(flag, "-l") && !strings.HasPrefix(flag, "-L") && !strings.HasSuffix(flag, ".a") && !strings.HasSuffix(flag, ".lib") {
+				if !contains(activeConfig.CFlags, flag) {
+					activeConfig.CFlags = append(activeConfig.CFlags, flag)
+				}
+			}
+		}
+	}
 	if opts.Native.Compiler != "" {
 		activeConfig.Compiler = opts.Native.Compiler
 	}
@@ -1654,6 +1692,9 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 		if !contains(activeConfig.CFlags, cf) {
 			activeConfig.CFlags = append(activeConfig.CFlags, cf)
 		}
+	}
+	if analyzer != nil {
+		analyzer.TargetFeatures = extractFeaturesFromCFlags(activeConfig.CFlags, analyzer.TargetFeatures)
 	}
 
 	buildMode := "debug"
@@ -1944,8 +1985,19 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 			continue
 		}
 
-		// Calculate a hash/key of the file properties (path, size, modification time, cflags, features)
-		fileKey := fmt.Sprintf("%s_%d_%d_%s_%s", absSrcPath, info.Size(), info.ModTime().UnixNano(), cflagsStr, featuresStr)
+		var extraDepsHash string
+		if dirEntries, dirErr := os.ReadDir(filepath.Dir(absSrcPath)); dirErr == nil {
+			for _, entry := range dirEntries {
+				if !entry.IsDir() && (strings.HasSuffix(entry.Name(), ".c") || strings.HasSuffix(entry.Name(), ".h")) {
+					if depInfo, depErr := entry.Info(); depErr == nil {
+						extraDepsHash += fmt.Sprintf("_%s:%d:%d", entry.Name(), depInfo.Size(), depInfo.ModTime().UnixNano())
+					}
+				}
+			}
+		}
+
+		// Calculate a hash/key of the file properties (path, size, modification time, cflags, features, sibling files)
+		fileKey := fmt.Sprintf("%s_%d_%d_%s_%s_%s", absSrcPath, info.Size(), info.ModTime().UnixNano(), cflagsStr, featuresStr, extraDepsHash)
 		hashBytes := sha256.Sum256([]byte(fileKey))
 		hashKey := fmt.Sprintf("%x", hashBytes)[:16]
 
