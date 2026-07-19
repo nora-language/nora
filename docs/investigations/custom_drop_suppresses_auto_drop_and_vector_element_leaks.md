@@ -1,7 +1,7 @@
 # Custom Drop Method Suppressing Auto-Drop and Type-Erased Vector Element Field Leaks
 
 ## Status
-Resolved / Workaround & Investigation Established
+Resolved / Implemented across Compiler C-codegen (`pkg/codegen/generator.go`)
 
 ## Problem
 During the development and testing of 3D rendering examples in `nora_wgpu` (`gltf_viewer`), we encountered two related memory leak behaviors stemming from architectural limitations in Nora's RAII drop insertion, collection handling, and shared generic monomorphization (`GEMINI.md` Section 2.C):
@@ -15,7 +15,7 @@ During the development and testing of 3D rendering examples in `nora_wgpu` (`glt
 ## Reproduction
 To reproduce this behavior, create a nested struct holding `@collections.Vector[T]` where `T` contains owned heap allocations (`@InnerBuffer`). When the parent struct is instantiated and drops out of scope, the outer vector and struct are freed, but the type-erased inner `@InnerBuffer` allocations inside the slice elements leak unless explicitly cleaned up before the vector drops.
 
-**pkg/cmd/test/repro_vector_element_real_leak/main.nr**:
+**pkg/cmd/test/repro_vector_element_cleanup_pass/main.nr**:
 ```nora
 package main
 

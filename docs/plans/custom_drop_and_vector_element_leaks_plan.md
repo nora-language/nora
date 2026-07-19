@@ -1,7 +1,7 @@
 # Custom Drop & Vector Element RAII Cleanup Fix Plan
 
 ## Status
-Proposed / Ready for Implementation
+Completed
 
 ## Metadata
 - **Author**: Antigravity & User
@@ -73,12 +73,12 @@ if st, ok := t.(*types.StructType); ok {
 ```
 
 ## Implementation Checklist
-- [ ] Rename `getDropMethod(t)` symbol lookup in `pkg/codegen/generator.go` to `getUserDropMethod(t)`.
-- [ ] Implement new `getDropMethod(t)` inside `pkg/codegen/generator.go` routing structs/sum-types with `@` fields through `requestAutoDrop`.
-- [ ] Update `emitAutoDropMethods()` in `pkg/codegen/generator.go` to invoke `userDrop := g.getUserDropMethod(t)` prior to field teardown loops.
-- [ ] Validate `go test -v ./pkg/cmd/nora` across all existing tests.
-- [ ] Verify `repro_vector_element_real_leak` passes when `ContainerModel.drop()` is present (`isExpectedLeak` vs `0` leaks verification).
-- [ ] Create positive regression test confirming custom `drop()` runs in lockstep with auto-dropping `@` struct fields.
+- [x] Rename `getDropMethod(t)` symbol lookup in `pkg/codegen/generator.go` to `getUserDropMethod(t)`.
+- [x] Implement new `getDropMethod(t)` inside `pkg/codegen/generator.go` routing structs/sum-types with `@` fields through `requestAutoDrop`.
+- [x] Update `emitAutoDropMethods()` in `pkg/codegen/generator.go` to invoke `userDrop := g.getUserDropMethod(t)` prior to field teardown loops.
+- [x] Validate `go test -v ./pkg/cmd/nora` across all existing tests.
+- [x] Verify `repro_vector_element_cleanup_pass` passes when `ContainerModel.drop()` is present (`isExpectedLeak` vs `0` leaks verification).
+- [x] Create positive regression test confirming custom `drop()` runs in lockstep with auto-dropping `@` struct fields.
 
 ## Test Plan & Verification
 1. Run `go test ./pkg/cmd/nora -run TestCompilerWithTestFolder` to ensure zero regressions across all integration tests.

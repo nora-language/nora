@@ -1257,6 +1257,13 @@ func (g *Generator) emitAutoDropMethods() {
 			g.emit("    if (self == NULL) return;")
 
 			if st, ok := t.(*types.StructType); ok {
+				if userDrop := g.getUserDropMethod(t); userDrop != "" {
+					if g.isDropMethodReceiverOwned(t) {
+						g.emit("    %s(*self);", userDrop)
+					} else {
+						g.emit("    %s(NULL, self);", userDrop)
+					}
+				}
 				for _, fName := range st.FieldNames {
 					fType := st.Fields[fName]
 					if types.IsOwnedType(fType) {
@@ -1265,6 +1272,13 @@ func (g *Generator) emitAutoDropMethods() {
 					}
 				}
 			} else if st, ok := t.(*types.SumType); ok {
+				if userDrop := g.getUserDropMethod(t); userDrop != "" {
+					if g.isDropMethodReceiverOwned(t) {
+						g.emit("    %s(*self);", userDrop)
+					} else {
+						g.emit("    %s(NULL, self);", userDrop)
+					}
+				}
 				vNames := g.sortedVariantNames(st)
 				emittedCount := 0
 				for _, vName := range vNames {
@@ -1308,6 +1322,26 @@ func (g *Generator) emitAutoDropMethods() {
 }
 
 func (g *Generator) getDropMethod(t types.NRType) string {
+	if t == nil {
+		return ""
+	}
+
+	base := t
+	if pt, ok := t.(*types.PointerType); ok {
+		base = pt.Base
+	}
+
+	if st, ok := base.(*types.StructType); ok && g.hasOwnedFields(st) {
+		return g.requestAutoDrop(st)
+	}
+	if sum, ok := base.(*types.SumType); ok && g.hasOwnedSumFields(sum) {
+		return g.requestAutoDrop(sum)
+	}
+
+	return g.getUserDropMethod(t)
+}
+
+func (g *Generator) getUserDropMethod(t types.NRType) string {
 	if t == nil {
 		return ""
 	}
