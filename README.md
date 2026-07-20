@@ -29,12 +29,11 @@ Nora compiles directly to highly optimized C11 code, allowing it to seamlessly t
 ## A Quick Look at Nora
 
 ```nora
-import "std/io"
-import "std/collections"
+import "io"
 
 pub type Vector[T] = struct {
-    data: @T[]
-    len: i32
+    data: @T[],
+    len: i32,
     cap: i32
 }
 
@@ -43,18 +42,18 @@ pub fn NewVector[T](cap: i32) @Vector[T] {
     return alloc Vector[T] {
         data: alloc T[cap],
         len: 0,
-        cap: cap,
+        cap: cap
     }
 }
 
-pub fn (v: &Vector[T]) Push[T](val: @T) {
+pub fn (v: &Vector[T]) Push[T](val: T) {
     // ... vector push logic ...
 }
 
 pub fn main() {
-    let my_vec = NewVector[str](10)
+    var my_vec = NewVector[str](10)
     my_vec.Push("Hello, Nora!")
-    io.Println("Vector initialized successfully.")
+    io.PrintLn("Vector initialized successfully.")
 }
 ```
 
