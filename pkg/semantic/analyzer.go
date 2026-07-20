@@ -7802,7 +7802,10 @@ func (sa *SemanticAnalyzer) containsOwnedLease(t types.NRType, visited map[types
 		if pt.Leased && pt.Kind == types.LeaseMove {
 			return true
 		}
-		return sa.containsOwnedLease(pt.Base, visited)
+		// Read (#) or Mutable (&) leases NEVER own their underlying data.
+		// Raw pointers (*) are unmanaged and also do not own memory within the RAII system.
+		// Discarding these pointers is perfectly safe and won't leak memory.
+		return false
 	}
 	if st, ok := t.(*types.StructType); ok {
 		for _, ft := range st.Fields {
