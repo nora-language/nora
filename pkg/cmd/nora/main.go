@@ -461,11 +461,14 @@ func (f *FileLoader) loadManifest(dirPath string) {
 				if dep.Platform != "" && dep.Platform != f.TargetOS && f.TargetOS != "" {
 					continue
 				}
-				if _, exists := f.Dependencies[name]; !exists {
+				// Normalize dep key to forward-slashes so cross-platform lookups work
+				// (e.g. "src/sys" must match even after filepath.Clean → "src\\sys" on Windows)
+				normalizedName := filepath.ToSlash(name)
+				if _, exists := f.Dependencies[normalizedName]; !exists {
 					if !filepath.IsAbs(dep.Path) && !strings.HasPrefix(dep.Path, "http") {
 						dep.Path = filepath.Join(dirPath, dep.Path)
 					}
-					f.Dependencies[name] = dep
+					f.Dependencies[normalizedName] = dep
 				}
 			}
 			f.CollectedNative.Merge(resolveNativeConfig(config.Native, f.TargetOS), dirPath)
@@ -498,7 +501,10 @@ func (f *FileLoader) Load(path string, basePath string) (*semantic.Scope, error)
 	path = filepath.Clean(path)
 	
 	// 1. Check Dependencies from nora.yaml (skip for relative paths)
-	if dep, ok := f.Dependencies[path]; ok && !isRelative {
+	// Normalize to forward-slashes for dep lookup so "src/sys" matches even after
+	// filepath.Clean converts to "src\\sys" on Windows.
+	depLookupKey := filepath.ToSlash(path)
+	if dep, ok := f.Dependencies[depLookupKey]; ok && !isRelative {
 		actualPath := dep.Path
 		// Verify version and load transitive dependencies
 		libConfigPath := filepath.Join(actualPath, "nora.yaml")
@@ -519,17 +525,19 @@ func (f *FileLoader) Load(path string, basePath string) (*semantic.Scope, error)
 					if transDep.Platform != "" && transDep.Platform != f.TargetOS && f.TargetOS != "" {
 						continue
 					}
-					if existing, exists := f.Dependencies[transName]; exists {
+					// Normalize transitive dep key to forward-slashes
+					normalizedTransName := filepath.ToSlash(transName)
+					if existing, exists := f.Dependencies[normalizedTransName]; exists {
 						if existing.Version != transDep.Version && transDep.Version != "" && existing.Version != "" {
 							fmt.Printf("Warning: version conflict for dependency '%s' found in '%s'. Using '%s' (v%s) but found '%s' (v%s) as transitive dependency.\n",
-								transName, path, transName, existing.Version, transName, transDep.Version)
+								normalizedTransName, depLookupKey, normalizedTransName, existing.Version, normalizedTransName, transDep.Version)
 						}
 					} else {
 						// Resolve relative path
 						if !filepath.IsAbs(transDep.Path) && !strings.HasPrefix(transDep.Path, "http") {
 							transDep.Path = filepath.Join(actualPath, transDep.Path)
 						}
-						f.Dependencies[transName] = transDep
+						f.Dependencies[normalizedTransName] = transDep
 					}
 				}
 			}
@@ -1233,7 +1241,8 @@ func runRun(args []string) {
 			dependencies = make(map[string]Dependency)
 			for k, v := range config.Dependencies {
 				if v.Platform == "" || v.Platform == t.OS {
-					dependencies[k] = v
+					// Normalize dep key to forward-slashes for cross-platform import resolution
+					dependencies[filepath.ToSlash(k)] = v
 				}
 			}
 			nativeConfig = resolveNativeConfig(config.Native, t.OS)
@@ -1247,7 +1256,8 @@ func runRun(args []string) {
 			dependencies = make(map[string]Dependency)
 			for k, v := range config.Dependencies {
 				if v.Platform == "" || v.Platform == t.OS {
-					dependencies[k] = v
+					// Normalize dep key to forward-slashes for cross-platform import resolution
+					dependencies[filepath.ToSlash(k)] = v
 				}
 			}
 			nativeConfig = resolveNativeConfig(config.Native, t.OS)
