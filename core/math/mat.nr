@@ -81,3 +81,14 @@ pub fn Mat4LookAt(out: &Mat4, eye: #Vec3, target: #Vec3, up: #Vec3) {
     out.m[13] = -Vec3Dot(#u, eye)
     out.m[14] = Vec3Dot(#f, eye)
 }
+
+pub fn Mat4Orthographic(out: &Mat4, left: f32, right: f32, bottom: f32, top: f32, near_plane: f32, far_plane: f32) {
+    Mat4Identity(out)
+    out.m[0] = f32(2.0) / (right - left)
+    out.m[5] = f32(2.0) / (top - bottom)
+    out.m[10] = -f32(1.0) / (far_plane - near_plane)
+    
+    out.m[12] = -(right + left) / (right - left)
+    out.m[13] = -(top + bottom) / (top - bottom)
+    out.m[14] = -near_plane / (far_plane - near_plane)
+}

@@ -201,13 +201,13 @@ func (g *Generator) genHIRFunction(hf *hir.Function) {
 		if !declaredVars[name] {
 			g.emit(fmt.Sprintf("    %s %s;", g.cType(alloca.Type), name))
 			declaredVars[name] = true
-			
-			if alloca.Symbol != nil && g.hasDropFlag(alloca.Symbol) {
-				dfName := g.dropFlagName(alloca.Symbol)
-				if !declaredVars[dfName] {
-					g.emit(fmt.Sprintf("    bool %s = false;", dfName))
-					declaredVars[dfName] = true
-				}
+		}
+
+		if alloca.Symbol != nil && g.hasDropFlag(alloca.Symbol) {
+			dfName := g.dropFlagName(alloca.Symbol)
+			if !declaredVars[dfName] {
+				g.emit(fmt.Sprintf("    bool %s = false;", dfName))
+				declaredVars[dfName] = true
 			}
 		}
 	}
