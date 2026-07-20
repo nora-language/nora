@@ -250,6 +250,7 @@ func (g *Generator) genHIRBlock(b *hir.HIRBlock) {
 			}
 
 			g.emit(fmt.Sprintf("    while (1) {"))
+			g.emitYieldCheckpoint()
 			g.emit(fmt.Sprintf("        __auto_type _opt = %s(_env_ptr, &%s);", nextName, iterVar))
 			g.emit(fmt.Sprintf("        if (_opt.tag == 0) { break; }")) // None
 			if e.ElemName != "" {
@@ -270,6 +271,7 @@ func (g *Generator) genHIRBlock(b *hir.HIRBlock) {
 				cond = g.hirOperandStr(e.Condition)
 			}
 			g.emit(fmt.Sprintf("    while (%s) {", cond))
+			g.emitYieldCheckpoint()
 			g.genHIRBlock(e.Body)
 			if e.Step != nil {
 				g.genHIRBlock(e.Step)

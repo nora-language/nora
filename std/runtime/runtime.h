@@ -193,7 +193,7 @@ extern int num_workers;
 // In that state, every worker fiber has its own dedicated CPU core and zero waiting fibers exist.
 // Only when g_active_fibers > num_workers + 1 does cooperative yielding kick in to share cores.
 #define NR_COOPERATIVE_YIELD_CHECKPOINT() do { \
-    if (NR_ATOMIC_LOAD(&g_active_fibers) > (num_workers + 1) && ++g_yield_ticks >= 1000) { \
+    if (++g_yield_ticks >= 1000) { \
         g_yield_ticks = 0; \
         nr_cooperative_yield(); \
     } \

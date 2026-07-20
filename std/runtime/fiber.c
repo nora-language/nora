@@ -624,7 +624,8 @@ void resume(fiber_info_t* info) {
 #ifdef NR_DEBUG_FIBER
             printf("[C-SCHED] resume: Double-check CAS succeeded for fiber %s (%p)!\n", info->name ? info->name : "unnamed", info);
 #endif
-            if (NR_ATOMIC_SUB(&info->resume_pending, 1) > 0) {
+            NR_ATOMIC_SUB(&info->resume_pending, 1);
+            {
                 int id = worker_id;
                 if (id >= 0 && id < num_workers && num_workers > 1 && !is_yield) {
                     if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
@@ -647,7 +648,7 @@ typedef struct {
 } spawn_data_t;
 
 void nr_fiber_finish_scoped(void* _wg) {
-    fiber_info_t* info = g_current_fiber[worker_id];
+    fiber_info_t* info = (fiber_info_t*)nr_fiber_current();
     if (info && NR_ATOMIC_LOAD(&info->state) != 4) {
         nr_flush_temps();
         NR_ATOMIC_DEC(&g_active_fibers);
