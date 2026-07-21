@@ -83,6 +83,7 @@ type SemanticAnalyzer struct {
 	AllowUnsafe       bool              // <--- Set by compiler flag
 	AllowedUnsafeDirs []string          // <--- Set from Project Manifest
 	PackageScopes     map[string]*Scope // <--- Track scopes by package name
+	PathScopes        map[string]*Scope // <--- Track scopes by resolved directory path (avoids same-name package merging)
 	LoadedDirs        map[string]bool   // <--- Track loaded directories to avoid recursion
 	ProcessedFiles    map[string]bool   // <--- Prevent duplicate symbol collection
 	AnalyzedFiles     map[string]bool   // <--- Prevent duplicate deep analysis
@@ -392,6 +393,45 @@ func (sa *SemanticAnalyzer) GetPackageScope(packageName string) *Scope {
 	return scope
 }
 
+// GetPathScope returns (or creates) a scope keyed by the canonical directory path
+// of the file being compiled, plus the package name. This prevents two different
+// packages that happen to share the same package-name declaration (e.g. "math")
+// from being merged into one scope when loaded from different physical directories.
+func (sa *SemanticAnalyzer) GetPathScope(filePath string, packageName string) *Scope {
+	// "main" is always a single unified package across all physical paths.
+	// prelude.nr (core/) also declares "package main" so it must share the same scope
+	// as user main files to make prelude symbols (Range, Option methods, etc.) accessible.
+	if packageName == "main" {
+		return sa.GetPackageScope("main")
+	}
+
+	// Key = directory + packageName so that:
+	//   - Files in the SAME dir with the SAME package name share a scope (multi-file packages)
+	//   - Files in the SAME dir with DIFFERENT package names get separate scopes
+	//   - Files in DIFFERENT dirs with the SAME package name (e.g. core/math vs src/math) get separate scopes
+	dir := filepath.Dir(filePath)
+	dir = filepath.Clean(dir)
+	key := dir + "\x00" + packageName // \x00 separator avoids path collisions
+	if sa.PathScopes == nil {
+		sa.PathScopes = make(map[string]*Scope)
+	}
+	if scope, ok := sa.PathScopes[key]; ok {
+		return scope
+	}
+	// Create a new scope isolated to this (directory, packageName) pair
+	scope := NewScope(sa.GlobalScope, ScopePackage)
+	scope.PackageName = packageName
+	sa.PathScopes[key] = scope
+	// Also register under package name if not yet registered (for backward compat
+	// with code that calls GetPackageScope directly, e.g. math built-ins)
+	if _, ok := sa.PackageScopes[packageName]; !ok {
+		sa.PackageScopes[packageName] = scope
+	}
+	return scope
+}
+
+
+
 // -------------------------------------------------------------------------
 // PASS 1: COLLECT SYMBOLS (The "Harvest")
 // -------------------------------------------------------------------------
@@ -552,7 +592,7 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 		packageName := sa.GetPackageName(n)
 
 		prevScope := sa.CurrentScope
-		sa.CurrentScope = sa.GetPackageScope(packageName)
+		sa.CurrentScope = sa.GetPathScope(n.Name, packageName)
 
 		// Record scope for the package statement if it exists
 		for _, stmt := range n.Statements {
@@ -1215,7 +1255,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 
 		packageName := sa.GetPackageName(n)
 		prevScope := sa.CurrentScope
-		sa.CurrentScope = sa.GetPackageScope(packageName)
+		sa.CurrentScope = sa.GetPathScope(n.Name, packageName)
 
 		if packageName == "main" {
 			var symNames []string

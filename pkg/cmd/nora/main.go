@@ -619,7 +619,7 @@ func (f *FileLoader) Load(path string, basePath string) (*semantic.Scope, error)
 					if file, exists := f.ParsedFiles[fullFilePath]; exists {
 						if pkgScope == nil {
 							pkgName := f.Analyzer.GetPackageName(file)
-							pkgScope = f.Analyzer.GetPackageScope(pkgName)
+							pkgScope = f.Analyzer.GetPathScope(fullFilePath, pkgName)
 						}
 						continue
 					}
@@ -648,10 +648,10 @@ func (f *FileLoader) Load(path string, basePath string) (*semantic.Scope, error)
 					// First pass: collect symbols
 					f.Analyzer.CollectSymbols(file)
 
-					// Get the scope for this file (should be shared for all files in this directory)
+					// Get the scope for this file (keyed by directory path, not package name)
 					if pkgScope == nil {
 						pkgName := f.Analyzer.GetPackageName(file)
-						pkgScope = f.Analyzer.GetPackageScope(pkgName)
+						pkgScope = f.Analyzer.GetPathScope(fullFilePath, pkgName)
 					}
 				}
 			}
@@ -672,7 +672,8 @@ func (f *FileLoader) Load(path string, basePath string) (*semantic.Scope, error)
 	}
 
 	if parsed, ok := f.ParsedFiles[path]; ok {
-		return f.Analyzer.GetPackageScope(f.Analyzer.GetPackageName(parsed)), nil
+		pkgName := f.Analyzer.GetPackageName(parsed)
+		return f.Analyzer.GetPathScope(path, pkgName), nil
 	}
 
 	input, err := os.ReadFile(path)
@@ -699,7 +700,7 @@ func (f *FileLoader) Load(path string, basePath string) (*semantic.Scope, error)
 
 	f.Analyzer.CollectSymbols(file)
 	pkgName := f.Analyzer.GetPackageName(file)
-	scope := f.Analyzer.GetPackageScope(pkgName)
+	scope := f.Analyzer.GetPathScope(path, pkgName)
 	f.Cache[path] = scope
 	return scope, nil
 }
