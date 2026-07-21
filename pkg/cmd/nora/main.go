@@ -301,6 +301,22 @@ func LoadProjectConfig() (*ProjectConfig, error) {
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, err
 	}
+	
+	// Auto-register the current project as a dependency pointing to its root directory.
+	// This allows the root project to use module-prefixed imports for its own files
+	// (e.g., `import "nora_physics/src/math"` instead of `import "src/math"`).
+	if config.Name != "" {
+		if config.Dependencies == nil {
+			config.Dependencies = make(map[string]Dependency)
+		}
+		if _, exists := config.Dependencies[config.Name]; !exists {
+			config.Dependencies[config.Name] = Dependency{
+				Path:    ".",
+				Version: config.Version,
+			}
+		}
+	}
+	
 	return &config, nil
 }
 
@@ -457,6 +473,20 @@ func (f *FileLoader) loadManifest(dirPath string) {
 			if f.Dependencies == nil {
 				f.Dependencies = make(map[string]Dependency)
 			}
+			
+			// Auto-register the current project as a dependency pointing to its root directory.
+			// This allows the project to use module-prefixed imports for its own files
+			// (e.g., `import "nora_physics/src/math"` instead of `import "src/math"`).
+			if config.Name != "" {
+				normalizedSelfName := filepath.ToSlash(config.Name)
+				if _, exists := f.Dependencies[normalizedSelfName]; !exists {
+					f.Dependencies[normalizedSelfName] = Dependency{
+						Path:    dirPath,
+						Version: config.Version,
+					}
+				}
+			}
+
 			for name, dep := range config.Dependencies {
 				if dep.Platform != "" && dep.Platform != f.TargetOS && f.TargetOS != "" {
 					continue
@@ -504,7 +534,30 @@ func (f *FileLoader) Load(path string, basePath string) (*semantic.Scope, error)
 	// Normalize to forward-slashes for dep lookup so "src/sys" matches even after
 	// filepath.Clean converts to "src\\sys" on Windows.
 	depLookupKey := filepath.ToSlash(path)
+	
+	var matchedDep *Dependency
+	var matchedPrefix string
+
 	if dep, ok := f.Dependencies[depLookupKey]; ok && !isRelative {
+		// Exact match first
+		matchedDep = &dep
+		matchedPrefix = depLookupKey
+	} else if !isRelative {
+		// Prefix match (find the longest matching prefix)
+		for prefix, dep := range f.Dependencies {
+			if strings.HasPrefix(depLookupKey, prefix+"/") {
+				if len(prefix) > len(matchedPrefix) {
+					// We need a local copy since range value 'dep' gets overwritten
+					depCopy := dep
+					matchedDep = &depCopy
+					matchedPrefix = prefix
+				}
+			}
+		}
+	}
+
+	if matchedDep != nil {
+		dep := *matchedDep
 		actualPath := dep.Path
 		// Verify version and load transitive dependencies
 		libConfigPath := filepath.Join(actualPath, "nora.yaml")
@@ -530,7 +583,7 @@ func (f *FileLoader) Load(path string, basePath string) (*semantic.Scope, error)
 					if existing, exists := f.Dependencies[normalizedTransName]; exists {
 						if existing.Version != transDep.Version && transDep.Version != "" && existing.Version != "" {
 							fmt.Printf("Warning: version conflict for dependency '%s' found in '%s'. Using '%s' (v%s) but found '%s' (v%s) as transitive dependency.\n",
-								normalizedTransName, depLookupKey, normalizedTransName, existing.Version, normalizedTransName, transDep.Version)
+								normalizedTransName, matchedPrefix, normalizedTransName, existing.Version, normalizedTransName, transDep.Version)
 						}
 					} else {
 						// Resolve relative path
@@ -541,6 +594,13 @@ func (f *FileLoader) Load(path string, basePath string) (*semantic.Scope, error)
 					}
 				}
 			}
+		}
+		
+		// Append the remainder of the path after the matched prefix
+		remainder := strings.TrimPrefix(depLookupKey, matchedPrefix)
+		if remainder != "" && remainder != "/" {
+			// remainder starts with "/" because we matched prefix+"/"
+			actualPath = filepath.Join(actualPath, remainder)
 		}
 		path = actualPath
 	} else if !filepath.IsAbs(path) && !isRelative {
