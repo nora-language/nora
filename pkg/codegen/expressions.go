@@ -1108,7 +1108,14 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 	if ident, ok := e.Function.(*ast.Identifier); ok && ident.Value == "len" {
 		if len(e.Arguments) >= 1 {
 			g.buf.WriteString("array_count(")
-			g.genExpression(e.Arguments[0].Value)
+			argType := g.SemanticInfo.Types[e.Arguments[0].Value]
+			if argType != nil && g.cPointerLevel(argType, false) > 1 {
+				g.buf.WriteString("*(")
+				g.genExpression(e.Arguments[0].Value)
+				g.buf.WriteString(")")
+			} else {
+				g.genExpression(e.Arguments[0].Value)
+			}
 			g.buf.WriteString(")")
 			return
 		}
