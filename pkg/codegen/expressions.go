@@ -640,7 +640,7 @@ func (g *Generator) genPrefixExpression(e *ast.PrefixExpression) {
 					}
 				}
 			}
-			
+
 			if isRValue {
 				g.buf.WriteString(fmt.Sprintf("((%s[]){ ", cTypeRight))
 				g.genExpression(e.Right)
@@ -1108,8 +1108,19 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 	if ident, ok := e.Function.(*ast.Identifier); ok && ident.Value == "len" {
 		if len(e.Arguments) >= 1 {
 			g.buf.WriteString("array_count(")
-			argType := g.SemanticInfo.Types[e.Arguments[0].Value]
-			if argType != nil && g.cPointerLevel(argType, false) > 1 {
+
+			isLeasedSliceParam := false
+			if id, ok := e.Arguments[0].Value.(*ast.Identifier); ok {
+				if sym := g.SemanticInfo.Uses[id]; sym != nil && sym.Kind == semantic.SymParam {
+					if pt, ok := sym.Type.(*types.PointerType); ok && pt.Leased {
+						if pt.Base != nil && pt.Base.GetKind() == types.KindList {
+							isLeasedSliceParam = true
+						}
+					}
+				}
+			}
+
+			if isLeasedSliceParam {
 				g.buf.WriteString("*(")
 				g.genExpression(e.Arguments[0].Value)
 				g.buf.WriteString(")")
@@ -1683,12 +1694,12 @@ func (g *Generator) genIndexExpression(e *ast.IndexExpression) {
 			if pt, ok := t.(*types.PointerType); ok && pt.Leased {
 				isPtr = true
 			}
-			
+
 			g.buf.WriteString("(")
 			g.buf.WriteString("(")
 			g.genExpression(e.Left)
 			g.buf.WriteString(")")
-			
+
 			if isPtr {
 				g.buf.WriteString("->data[")
 			} else {
