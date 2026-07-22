@@ -93,32 +93,31 @@ pub fn main() {
     io.PrintLn("=== Reproducing Multithreaded Memory Leak ===")
     io.PrintLn("Running continuous render loop (Press Ctrl+C to stop)...")
 
-    var res0 = make(chan[@CommandBuffer], 1)
-    var res1 = make(chan[@CommandBuffer], 1)
-    var res2 = make(chan[@CommandBuffer], 1)
-    var res3 = make(chan[@CommandBuffer], 1)
+    var results = alloc chan[@CommandBuffer][4]
+    var init_idx = 0
+    while init_idx < 4 {
+        results[init_idx] = make(chan[@CommandBuffer], 1)
+        init_idx = init_idx + 1
+    }
 
     var iter = 0
     while iter < 100 {
         // Per-frame heap allocation (reproducing main loop leak)
         var view_desc = alloc CommandBufferDescriptor { label: none }
 
-        spawn render_worker(0, res0.clone())
-        spawn render_worker(1, res1.clone())
-        spawn render_worker(2, res2.clone())
-        spawn render_worker(3, res3.clone())
+        var spawn_idx = 0
+        while spawn_idx < 4 {
+            spawn render_worker(spawn_idx, results[spawn_idx].clone())
+            spawn_idx = spawn_idx + 1
+        }
 
-        var h0 = <-res0
-        var h1 = <-res1
-        var h2 = <-res2
-        var h3 = <-res3
-
-        // Recreating `buffers = alloc CommandBuffer[4]` where array elements are un-dropped
         var buffers = alloc CommandBuffer[4]
-        buffers[0] = @h0
-        buffers[1] = @h1
-        buffers[2] = @h2
-        buffers[3] = @h3
+        var recv_idx = 0
+        while recv_idx < 4 {
+            var h = <-results[recv_idx]
+            buffers[recv_idx] = @h
+            recv_idx = recv_idx + 1
+        }
 
         pin view_desc
 
