@@ -1109,18 +1109,32 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 		if len(e.Arguments) >= 1 {
 			g.buf.WriteString("array_count(")
 
-			isLeasedSliceParam := false
+			isDoublePtrSliceParam := false
 			if id, ok := e.Arguments[0].Value.(*ast.Identifier); ok {
 				if sym := g.SemanticInfo.Uses[id]; sym != nil && sym.Kind == semantic.SymParam {
+					lKind := sym.LeaseKind
 					if pt, ok := sym.Type.(*types.PointerType); ok && pt.Leased {
-						if pt.Base != nil && pt.Base.GetKind() == types.KindList {
-							isLeasedSliceParam = true
+						lKind = pt.Kind
+					}
+					cParamStr := g.cParamType(sym.Type, lKind, false)
+
+					isSlice := false
+					unwrapped := types.UnwrapLease(sym.Type)
+					if unwrapped != nil {
+						if unwrapped.GetKind() == types.KindList {
+							isSlice = true
+						} else if pt, ok := unwrapped.(*types.PointerType); ok && pt.IsArray {
+							isSlice = true
 						}
+					}
+
+					if isSlice && strings.HasSuffix(cParamStr, "**") {
+						isDoublePtrSliceParam = true
 					}
 				}
 			}
 
-			if isLeasedSliceParam {
+			if isDoublePtrSliceParam {
 				g.buf.WriteString("*(")
 				g.genExpression(e.Arguments[0].Value)
 				g.buf.WriteString(")")
