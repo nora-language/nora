@@ -1,7 +1,7 @@
 # Investigation: Generic Method Call Type Inference Failure
 
 ## Status
-Open
+Resolved
 
 ## Problem
 When calling methods on instances of generic types (e.g., `Result[T, E]` or `collections.Vector[T]`), the compiler's semantic analyzer fails to automatically infer the generic parameters for the method based on the receiver's type. Developers are forced to redundantly specify the type arguments on every method call.
