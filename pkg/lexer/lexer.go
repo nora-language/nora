@@ -400,7 +400,7 @@ func (l *Lexer) readString(quote rune) string {
 	position := l.position
 	braceDepth := 0
 	for (l.ch != quote || braceDepth > 0) && l.ch != 0 {
-		if l.ch == '\n' {
+		if l.ch == '\n' && quote != '`' {
 			pos := token.Position{Line: l.line, Column: l.column, Offset: l.fileOffset(), Filename: l.Filename}
 			l.ReportError(pos, "unclosed string literal")
 			break
