@@ -12,6 +12,7 @@ type StructType struct {
 	TypeArgs   []NRType          // Arguments used for specialization
 	BaseType   *StructType       // Pointer to the base generic struct
 	IsShared   bool              // Marked with [shared] attribute
+	IsCopyable bool              // Marked with [copyable] attribute
 	CoreIntrinsic string         // Extracted from [core_intrinsic("name")]
 	NativeType string            // Extracted from [native("type")]
 	VectorSize string            // Extracted from [vector_size("N")]

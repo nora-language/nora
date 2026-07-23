@@ -866,6 +866,9 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 			if ast.GetAttribute(n.Attributes, "shared") != nil {
 				structType.IsShared = true
 			}
+			if ast.GetAttribute(n.Attributes, "copyable") != nil {
+				structType.IsCopyable = true
+			}
 			if attr := ast.GetAttribute(n.Attributes, "core_intrinsic"); attr != nil && len(attr.Args) > 0 {
 				structType.CoreIntrinsic = attr.Args[0]
 			}
@@ -4501,7 +4504,21 @@ func (sa *SemanticAnalyzer) AnalyzeFunctionStatement(n *ast.FunctionStatement) {
 								fmt.Println("Found implicit generic parameter:", ident.Value)
 							}
 							// It's not defined, so it must be an implicit generic parameter!
-							gt := &types.GenericType{TypeParam: ident.Value, Constraint: types.Any}
+							var constraint types.NRType = types.Any
+							if idxExpr, ok := baseExp.(*ast.IndexExpression); ok {
+								if baseIdent, ok := idxExpr.Left.(*ast.Identifier); ok {
+									if sym, found := sa.CurrentScope.Resolve(baseIdent.Value); found {
+										if typeStmt, ok := sym.DefNode.(*ast.TypeStatement); ok {
+											for _, tp := range typeStmt.TypeParameters {
+												if tp.Name.Value == ident.Value && tp.Constraint != nil {
+													constraint = sa.resolveTypeNode(tp.Constraint)
+												}
+											}
+										}
+									}
+								}
+							}
+							gt := &types.GenericType{TypeParam: ident.Value, Constraint: constraint}
 							sym, _ := sa.CurrentScope.Define(ident.Value, gt, SymType, ident)
 							if sym != nil {
 								sa.SemanticInfo.Defs[ident] = sym
@@ -5718,8 +5735,8 @@ func (sa *SemanticAnalyzer) resolveFunctionType(n *ast.FunctionStatement) *types
 			} else if pref.Operator == "#" {
 				lease = types.LeaseRead
 			}
-		} else if resolved != nil && resolved.GetKind() != types.KindFunction && (resolved.GetKind() == types.KindGeneric || types.IsOwnedType(resolved)) {
-			// Generic type parameters and owned types default to LeaseMove (ownership transfer)
+		} else if resolved != nil && resolved.GetKind() != types.KindFunction && types.IsOwnedType(resolved) {
+			// Owned types (including linear generics) default to LeaseMove (ownership transfer)
 			lease = types.LeaseMove
 		}
 		p.LeaseKind = ast.LeaseKind(lease)
