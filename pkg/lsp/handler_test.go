@@ -112,7 +112,7 @@ func TestLSPBasic(t *testing.T) {
 
 	// Test Dot Completion
 	uri2 := "file:///" + filepath.ToSlash(filepath.Join(root, "test2.nr"))
-	content2 := "package main\nimport \"io\"\nfn main() {\n    io.\n}\n"
+	content2 := "package main\nimport \"io\"\nfn main2() {\n    io.\n}\n"
 	handler.TextDocumentDidOpen(context.Background(), nil, &DidOpenTextDocumentParams{
 		TextDocument: TextDocumentItem{URI: uri2, Text: content2},
 	})
@@ -175,7 +175,7 @@ func TestLSPBasic(t *testing.T) {
 	// Test Go to Definition for 'println' in 'io.println'
 	// uri2 is "package main\nimport \"io\"\nfn main() {\n    io.\n}\n"
 	// Let's change content2 to have 'io.PrintLn("hello")'
-	content3 := "package main\nimport \"io\"\nfn main() {\n    io.PrintLn(\"hello\")\n}\n"
+	content3 := "package main\nimport \"io\"\nfn main3() {\n    io.PrintLn(\"hello\")\n}\n"
 	uri3 := "file:///" + filepath.ToSlash(filepath.Join(root, "test3.nr"))
 	handler.TextDocumentDidOpen(context.Background(), nil, &DidOpenTextDocumentParams{
 		TextDocument: TextDocumentItem{URI: uri3, Text: content3},

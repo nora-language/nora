@@ -67,6 +67,7 @@ type packageCacheEntry struct {
 	Types           map[ast.Node]types.NRType
 	SpecTypes       map[string]types.NRType
 	Instances       map[*ast.FunctionStatement]map[string]*ast.FunctionStatement
+	AnalyzerGen     int64 // Generation ID of the analyzer that created this cache
 }
 
 func NewHandler() *Handler {
@@ -2632,6 +2633,7 @@ type LSPFileLoader struct {
 	Plugins      []string
 	addedFiles   map[string]bool
 	loadingPkgs  map[string]bool
+	loadedPkgs   map[string]bool // Tracks fully loaded directory paths to prevent combinatorial explosion
 	Dependencies map[string]Dependency
 	NoStdlib     bool
 	NoCore       bool
@@ -2760,7 +2762,12 @@ func (f *LSPFileLoader) Load(importPath string, basePath string) (*semantic.Scop
 			// If not in core/ or std/, check if it exists locally, otherwise fallback to std/ just in case
 			localCandidate := filepath.Join(root, importPath)
 			if f.ProjectRoot != "" {
-				localCandidate = filepath.Join(f.ProjectRoot, importPath)
+				projectCandidate := filepath.Join(f.ProjectRoot, importPath)
+				if _, err := os.Stat(projectCandidate); err == nil {
+					localCandidate = projectCandidate
+				} else if _, err := os.Stat(projectCandidate + ".nr"); err == nil {
+					localCandidate = projectCandidate
+				}
 			}
 			if _, err := os.Stat(localCandidate); err != nil {
 				if _, err := os.Stat(localCandidate + ".nr"); err != nil {
@@ -2779,7 +2786,12 @@ func (f *LSPFileLoader) Load(importPath string, basePath string) (*semantic.Scop
 		root := filepath.Dir(f.StdDir)
 		candidate := filepath.Join(root, importPath)
 		if f.ProjectRoot != "" && !strings.HasPrefix(importPath, "std/") && !strings.HasPrefix(importPath, "core/") {
-			candidate = filepath.Join(f.ProjectRoot, importPath)
+			projectCandidate := filepath.Join(f.ProjectRoot, importPath)
+			if _, err := os.Stat(projectCandidate); err == nil {
+				candidate = projectCandidate
+			} else if _, err := os.Stat(projectCandidate + ".nr"); err == nil {
+				candidate = projectCandidate
+			}
 		}
 		if _, err := os.Stat(candidate); err == nil {
 			fullPath = normalizePath(candidate)
@@ -2804,12 +2816,12 @@ func (f *LSPFileLoader) Load(importPath string, basePath string) (*semantic.Scop
 	//fmt.Printf("[DEBUG] LSPFileLoader.Load: importPath = %q, fullPath = %q\n", importPath, fullPath)
 
 	// 2. Check Global Package Cache
+	// DISABLED: The cache is fundamentally broken across keystrokes because `prelude.nr` 
+	// is re-analyzed on every keystroke, generating new type pointers for `Result`, `Option`, etc.
+	// When cached packages are restored, they contain old type pointers, causing method lookup failures.
+	/* 
 	if entry, ok := f.Handler.packageCache.Load(fullPath); ok {
 		e := entry.(*packageCacheEntry)
-		// Verify if any file in the package changed OR a new file was added
-		changed := false
-		if dirInfo, err := os.Stat(fullPath); err == nil {
-			if dirInfo.ModTime() != e.DirModTime {
 				changed = true
 			}
 		}
@@ -2827,19 +2839,28 @@ func (f *LSPFileLoader) Load(importPath string, basePath string) (*semantic.Scop
 			}
 		}
 
-		// fmt.Printf("[DEBUG] Cache hit check for %q: hit = true, changed = %t\n", fullPath, changed)
+		// Cache is invalidated if the current analyzer generation is different from the cached one.
+		// Since a new analyzer re-compiles the prelude and generates new type pointers (e.g. for Result, Option),
+		// returning old cached packages containing the old prelude type pointers leads to method lookup failures.
+		// We could do this better by globally caching the prelude, but for now we'll invalidate the package cache
+		// if the AnalyzerGen doesn't match the current global generation.
+		// Wait, actually `f.Handler` doesn't track global generation. Let's just track AnalyzerGen by assigning
+		// a unique ID to each SemanticAnalyzer? No, we don't have AnalyzerGen.
+		// Let's just invalidate the package cache entirely for now, or clear it on DidChange!
 
 		if !changed {
 			// Cache hit! Reuse ASTs but CLONE/MERGE the Scope to avoid cross-thread mutation and scope orphaning
 			var cloned *semantic.Scope
 			if e.Scope.PackageName != "" {
-				cloned = f.Analyzer.PackageScopes[e.Scope.PackageName]
+				dummyPath := filepath.Join(fullPath, "dummy.nr")
+				cloned = f.Analyzer.GetPathScope(dummyPath, e.Scope.PackageName)
 			}
 			if cloned == nil {
 				cloned = semantic.NewScope(f.Analyzer.GlobalScope, e.Scope.Kind)
 				cloned.PackageName = e.Scope.PackageName
 				if cloned.PackageName != "" {
-					f.Analyzer.PackageScopes[cloned.PackageName] = cloned
+					dummyPath := filepath.Join(fullPath, "dummy.nr")
+					f.Analyzer.GetPathScope(dummyPath, cloned.PackageName)
 				}
 			}
 			for k, v := range e.CapturedSymbols {
@@ -2925,6 +2946,25 @@ func (f *LSPFileLoader) Load(importPath string, basePath string) (*semantic.Scop
 			return cloned, nil
 		}
 	}
+	*/
+
+	// Is it already analyzed in this pass?
+	if f.loadedPkgs == nil {
+		f.loadedPkgs = make(map[string]bool)
+	}
+	if f.loadedPkgs[fullPath] {
+		// Return the already-built scope from the analyzer
+		pkgName := filepath.Base(fullPath)
+		dummyPath := filepath.Join(fullPath, "dummy.nr")
+		return f.Analyzer.GetPathScope(dummyPath, pkgName), nil
+	}
+	
+	// Check addedFiles using fullPath instead of importPath just in case
+	if _, ok := f.addedFiles[fullPath]; ok {
+		pkgName := filepath.Base(fullPath)
+		dummyPath := filepath.Join(fullPath, "dummy.nr")
+		return f.Analyzer.GetPathScope(dummyPath, pkgName), nil
+	}
 
 	// Circular dependency check!
 	if f.loadingPkgs == nil {
@@ -2933,7 +2973,8 @@ func (f *LSPFileLoader) Load(importPath string, basePath string) (*semantic.Scop
 	if f.loadingPkgs[fullPath] {
 		// Return the scope early to break the cycle. It will be populated later.
 		pkgName := filepath.Base(fullPath)
-		return f.Analyzer.GetPackageScope(pkgName), nil
+		dummyPath := filepath.Join(fullPath, "dummy.nr")
+		return f.Analyzer.GetPathScope(dummyPath, pkgName), nil
 	}
 	f.loadingPkgs[fullPath] = true
 	defer delete(f.loadingPkgs, fullPath)
@@ -3036,7 +3077,7 @@ func (f *LSPFileLoader) Load(importPath string, basePath string) (*semantic.Scop
 
 					if pkgScope == nil {
 						pkgName := f.Analyzer.GetPackageName(file)
-						pkgScope = f.Analyzer.GetPackageScope(pkgName)
+						pkgScope = f.Analyzer.GetPathScope(fullFilePath, pkgName)
 					}
 				}
 			}
@@ -3152,6 +3193,8 @@ func (f *LSPFileLoader) Load(importPath string, basePath string) (*semantic.Scop
 					Types:           capturedTypes,
 				})
 
+				f.loadedPkgs[fullPath] = true
+
 				return pkgScope, nil
 			}
 		} else if !strings.HasSuffix(fullPath, ".nr") {
@@ -3196,7 +3239,8 @@ func (f *LSPFileLoader) Load(importPath string, basePath string) (*semantic.Scop
 		f.Analyzer.AnalyzeFileTypes(file)
 
 		NoraFiles := []*ast.File{file}
-		pkgScope := f.Analyzer.GetPackageScope(f.Analyzer.GetPackageName(file))
+		pkgName := f.Analyzer.GetPackageName(file)
+		pkgScope := f.Analyzer.GetPathScope(fullPath, pkgName)
 
 		dirModTime := time.Time{}
 		if dirInfo, err := os.Stat(filepath.Dir(fullPath)); err == nil {

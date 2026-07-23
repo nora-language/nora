@@ -36,6 +36,14 @@ func TestHoverCreateSurface(t *testing.T) {
 		},
 	})
 
+	doc, ok := h.docs.Load(uri)
+	if ok {
+		d := doc.(*Document)
+		for _, diag := range d.Diags.Diagnostics {
+			t.Logf("DIAG: %s", diag.Message)
+		}
+	}
+
 	// Hover over CreateSurface
     lineIndex := 0
     charIndex := 0
