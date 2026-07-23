@@ -1,0 +1,7 @@
+name: examples/copyable_alloc_demo
+version: 1.0.0
+language: 0.1.0
+entry: src/main.nr
+output: examples/copyable_alloc_demo
+plugins: []
+dependencies: {}
