@@ -49,7 +49,7 @@ pub type MSG = struct {
 pub extern fn PeekMessageA(lpMsg: ptr, hWnd: ptr, filterMin: i32, filterMax: i32, removeMsg: i32) i32
 ```
 
-### 3. Built-in Attributes: `[intrinsic("name")]`
+### 4. Built-in Attributes: `[intrinsic("name")]`
 
 The `[intrinsic("name")]` attribute marks a function as a compiler intrinsic. Instead of generating a standard C function call, the compiler's code generator will intercept calls to this function and substitute them with hardcoded, optimized inline C expressions. This is used extensively in the `ffi` package (e.g., `borrow_to_raw` and `mut_borrow_to_raw`) to emit inline pointer address-of operators (`&`) for primitive borrows.
 
@@ -61,7 +61,7 @@ pub fn BorrowToRaw[T](val: #T) ptr {
 }
 ```
 
-### 4. Built-in Attributes: `[repr("type")]`
+### 5. Built-in Attributes: `[repr("type")]`
 
 The `[repr("type")]` attribute is specifically used on `enum` declarations to force the compiler to lower the enum into a primitive C integer type (e.g., `i32`, `u8`) rather than a tagged union struct. This provides 100% C ABI compatibility for FFI and drastically simplifies C interoperability.
 To use `[repr]`, the enum must not contain any data payloads in its variants.
@@ -75,7 +75,7 @@ pub type WGPUTextureFormat = enum {
 }
 ```
 
-### 5. Built-in Attributes: `[native("type")]`
+### 6. Built-in Attributes: `[native("type")]`
 
 The `[native("type")]` attribute is used on `struct` declarations to indicate that the struct maps directly to a native C type (such as a compiler intrinsic like `__m256d`). When a struct is marked as `[native]`:
 1. **Move Semantics:** The semantic analyzer treats the struct as a primitive, copyable value (like an `i32` or `f64`), rather than an owned type. This prevents "use of moved value" errors when passing the struct by value.
@@ -92,7 +92,27 @@ pub type Vec4d = struct {
 }
 ```
 
-### 6. Simple Custom Attributes
+### 7. Built-in Attributes: `[copyable]`
+
+The `[copyable]` attribute is used on `struct` declarations to instruct the semantic analyzer that the struct behaves like a primitive, non-linear copyable type (similar to `f64` or `i32`). 
+By default, Nora treats all custom structs as owned, linear types (LeaseMove), meaning assignments (`var a = b`) consume the right-hand side. When a struct is marked as `[copyable]`:
+1. **Implicit Copy Semantics:** The struct is passed by value implicitly without triggering "use of moved value" errors.
+2. **Generic Constraint:** The struct automatically satisfies the `Copy` constraint (`[T: Copy]`) when used as a type argument in generics.
+
+```nora
+[copyable]
+pub type Fixed64 = struct {
+    val: i64
+}
+
+fn test() {
+    var a = Fixed64{ val: 10 }
+    var b = a // 'a' is safely copied, not moved!
+    var c = a // 'a' can be used again freely.
+}
+```
+
+### 8. Simple Custom Attributes
 
 You can attach arbitrary simple identifiers as metadata for compiler plugins or reflection.
 
@@ -103,7 +123,7 @@ type MyStruct = struct {
 }
 ```
 
-### 7. Parameterized Custom Attributes
+### 9. Parameterized Custom Attributes
 
 Attributes can carry string arguments. This is incredibly useful for providing metadata like custom JSON field names, routing paths for HTTP handler plugins, or FFI mapping names.
 

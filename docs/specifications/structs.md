@@ -58,7 +58,8 @@ p.x = 15
 ## Semantics & Memory Layout
 
 1.  **C-Compatible Layout:** By default, Nora compiles structs down to C11 `struct` definitions. The memory layout is sequential, subject to standard C alignment rules (padding may be inserted by the C compiler).
-2.  **Value Semantics:** When assigned to a new variable or passed into a function, stack-allocated structs (those not created with `alloc`) are copied by value, unless passed via a lease (`#`, `&`) or explicit ownership transfer (`@`).
+2.  **Move Semantics (Default):** By default, stack-allocated structs act as owned, linear types. Assigning a struct to a new variable or passing it to a function transfers ownership (moves it). Using the original variable after a move yields a `use of moved value` compiler error, unless passed via a lease (`#`, `&`).
+3.  **Copy Semantics:** To make a struct behave like a primitive type (where assignments perform implicit copies instead of moves), annotate it with the `[copyable]` attribute.
 
 ## Errors & Diagnostics
 
