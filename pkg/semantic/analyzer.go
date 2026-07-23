@@ -1806,6 +1806,15 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				sa.SemanticInfo.FieldSymbols[structType][fieldName] = fieldSym
 			}
 
+			if structType.IsCopyable {
+				for _, fieldName := range structType.FieldNames {
+					fieldSym := sa.SemanticInfo.FieldSymbols[structType][fieldName]
+					if types.IsOwnedType(fieldSym.Type) {
+						sa.AddError(n.Name.Pos(), "struct '%s' cannot be marked [copyable] because field '%s' is an owned type (%s)", structType.TypeName, fieldName, fieldSym.Type.Name())
+					}
+				}
+			}
+
 			// Restore scope after field resolution
 			// (e.g. Node_T created while evaluating #Node[T] field).
 			for _, spec := range sa.SemanticInfo.SpecTypes {
