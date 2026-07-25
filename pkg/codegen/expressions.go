@@ -383,7 +383,22 @@ func (g *Generator) genInfixExpression(e *ast.InfixExpression) {
 						if methodName == "cmp" {
 							g.buf.WriteString("(")
 						}
-						g.buf.WriteString(g.mangledTypeName(isStruct) + "_" + methodName + "(")
+						mangledMethodName := g.mangledTypeName(isStruct) + "_" + methodName
+						baseStruct := isStruct.BaseType
+						if baseStruct == nil {
+							baseStruct = isStruct
+						}
+						if methodSyms, ok := g.SemanticInfo.MethodSymbols[baseStruct]; ok {
+							if sym, exists := methodSyms[methodName]; exists && sym != nil {
+								if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok {
+									if len(fnStmt.TypeParameters) > 0 {
+										hash := types.GetHashSuffix(methodName, isStruct.TypeArgs)
+										mangledMethodName += "_" + hash
+									}
+								}
+							}
+						}
+						g.buf.WriteString(mangledMethodName + "(")
 						g.buf.WriteString("NULL, ")
 						g.emitArgument(e.Left, isStruct, mt.ReceiverLease, false)
 						g.buf.WriteString(", ")
