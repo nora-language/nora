@@ -14,6 +14,14 @@
 #include <math.h>
 #include <setjmp.h>
 
+typedef struct fiber_info fiber_info_t;
+void resume(fiber_info_t* info);
+
+
+
+
+
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
@@ -177,6 +185,9 @@ extern THREAD_LOCAL int g_yield_ticks;
 #ifdef __cplusplus
 }
 #endif
+
+extern NR_ATOMIC_INT g_net_waiters_count;
+extern NR_ATOMIC_INT g_timer_waiters_count;
 
 void nr_cooperative_yield();
 

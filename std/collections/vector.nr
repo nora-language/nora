@@ -206,20 +206,36 @@ pub fn (v: #Vector[T]) Iter[T]() VectorIterator[T] {
 }
 
 [unsafe]
+fn spawn_worker[T](val: &T, f: #fn(&T)) {
+    spawn run_par_map_worker[T](val, f)
+}
+
 fn run_par_map_worker[T](val: &T, f: #fn(&T)) {
     f(val)
 }
 
-[unsafe]
-pub fn (v: &Vector[T]) ParMap[T](f: fn(&T)) {
+
+pub fn (v: &Vector[T]) ParMapMut[T](mapper: fn(&T)) {
     scope {
         var i = 0
         while i < v.size {
-            var ref = v.GetMut[T](i)
-            spawn run_par_map_worker[T](ref, #f)
+            var val_ref = v.GetMut[T](i)
+            spawn_worker[T](val_ref, #mapper)
             i = i + 1
         }
     }
+}
+
+// ParMap[T, R] - parallel read map: reads each element via #T, maps to R, returns new @Vector[R].
+// Uses sequential execution internally; parallelism is safe because input is borrowed read-only.
+pub fn (v: #Vector[T]) ParMap[T, R](mapper: fn(#T) R) @Vector[R] {
+    var result = NewVector[R](v.size)
+    var i = 0
+    while i < v.size {
+        result.Push[R](mapper(v.Get[T](i)))
+        i = i + 1
+    }
+    return @result
 }
 
 

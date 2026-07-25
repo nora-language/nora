@@ -24,7 +24,7 @@ fn main() i32 {
         i = i + 1
     }
 
-    vec.ParMap[BodyInfo](fn(b: &BodyInfo) {
+    vec.ParMapMut[BodyInfo](fn(b: &BodyInfo) {
         // Multiply x by 2 in parallel
         b.x = b.x * 2
     })

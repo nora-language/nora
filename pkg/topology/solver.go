@@ -197,7 +197,12 @@ func (s *Solver) Solve(node ast.Node) {
 					params[sym] = &Lifecycle{Symbol: sym, DefinedAt: -1, LastUsedAt: 0}
 				}
 			}
+			oldFn := s.CurrentFunction
+			if lambdaType, ok := s.SemanticInfo.Types[n].(*types.FunctionType); ok {
+				s.CurrentFunction = lambdaType
+			}
 			s.analyzeBlock(n.Body, params)
+			s.CurrentFunction = oldFn
 
 			// Register drops for parameters in the lambda's body if not moved
 			for sym, lc := range params {
@@ -2360,6 +2365,9 @@ func (s *Solver) walkUnconsumedRValues(node ast.Node, isConsumed bool, out *[]as
 		if leftType != nil && !s.isOwnedRValueType(leftType) {
 			valConsumed = false
 		}
+		if id, ok := n.Left.(*ast.Identifier); ok && id.Value == "_" {
+			valConsumed = false
+		}
 		s.walkUnconsumedRValues(n.Value, valConsumed, out)
 	case *ast.CallExpression:
 		if !isConsumed {
@@ -2458,6 +2466,11 @@ func (s *Solver) walkUnconsumedRValues(node ast.Node, isConsumed bool, out *[]as
 	case *ast.TryExpression:
 		s.walkUnconsumedRValues(n.Value, isConsumed, out)
 	case *ast.PrefixExpression:
+		if !isConsumed && n.Operator == "@" {
+			if t := s.SemanticInfo.Types[n]; t != nil && s.isOwnedRValueType(t) {
+				*out = append(*out, n)
+			}
+		}
 		s.walkUnconsumedRValues(n.Right, isConsumed, out)
 	case *ast.InfixExpression:
 		s.walkUnconsumedRValues(n.Left, isConsumed, out)

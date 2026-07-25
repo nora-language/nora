@@ -794,6 +794,8 @@ func main() {
 		runCheck()
 	case "clean":
 		runClean()
+	case "test":
+		runTest(os.Args[2:])
 	case "lib":
 		runLib(os.Args[2:])
 	case "lsp":
@@ -2686,6 +2688,10 @@ func runSingleTest(path string) error {
 	defer os.Remove(tempExe)
 
 	args := []string{tempC, "-o", tempExe, "-I" + StdPath}
+	runtimeFiles := []string{"nora_runtime.c"}
+	for _, f := range runtimeFiles {
+		args = append(args, filepath.Join(StdPath, "runtime", f))
+	}
 	if runtime.GOOS == "windows" {
 		args = append(args, "-ldbghelp", "-lws2_32")
 	}

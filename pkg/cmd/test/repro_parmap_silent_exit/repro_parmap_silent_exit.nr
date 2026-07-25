@@ -15,7 +15,7 @@ pub fn main() {
     vec.Push(Dummy{id: 3})
     vec.Push(Dummy{id: 4})
     
-    vec.ParMap[Dummy](fn(val: &Dummy) {
+    vec.ParMapMut[Dummy](fn(val: &Dummy) {
         if (val.id == 2 || val.id == 3) {
             return
         }

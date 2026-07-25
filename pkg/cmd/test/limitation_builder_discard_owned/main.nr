@@ -17,5 +17,5 @@ pub fn main() {
     // Error: cannot discard owned value of type '@Builder'. it must be assigned, moved, or passed to a function to avoid memory leaks
     // Because Nora lacks a blank identifier syntax (_ = expr), discarding unassigned owned return values is forbidden.
 
-    NewBuilder() // FAILS
+    _ = NewBuilder() // NOW WORKS
 }

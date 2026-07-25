@@ -116,6 +116,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.FALSE, p.parseBoolean)
 	p.registerPrefix(token.BANG, p.parsePrefixExpression)
 	p.registerPrefix(token.MINUS, p.parsePrefixExpression)
+	p.registerPrefix(token.ASTERISK, p.parsePrefixExpression)
 	p.registerPrefix(token.TILDE, p.parsePrefixExpression) // Bitwise NOT
 	p.registerPrefix(token.LPAREN, p.parseGroupedExpression)
 	//p.registerPrefix(token.LBRACKET, p.parseArrayLiteral) // For [1, 2, 3]
@@ -465,9 +466,10 @@ func (p *Parser) ParseProject(filenames []string) *ast.Program {
 
 func (p *Parser) parseStatement() ast.Statement {
 	stmt := p.parseStatementInternal()
-	if !ast.IsNil(stmt) {
-		p.StmtEndLines[stmt] = p.curToken.Position.Line
+	if ast.IsNil(stmt) {
+		return nil
 	}
+	p.StmtEndLines[stmt] = p.curToken.Position.Line
 	return stmt
 }
 
@@ -1233,6 +1235,24 @@ func (p *Parser) parseBaseType() ast.TypeNode {
 		left = stmt
 	} else if p.curTokenIs(token.FN) {
 		left = p.parseFunctionType()
+	} else if p.curTokenIs(token.INTERFACE) || p.curTokenIs(token.PROTOCOL) {
+		left, _ = p.parseInterfaceLiteral().(ast.TypeNode)
+	} else if p.curTokenIs(token.LBRACE) {
+		lit := &ast.InterfaceLiteral{Token: token.Token{Type: token.INTERFACE, Literal: "interface", Position: p.curToken.Position}}
+		for !p.peekTokenIs(token.RBRACE) && !p.peekTokenIs(token.EOF) {
+			p.nextToken()
+			if p.curTokenIs(token.FN) {
+				method := p.parseFunctionStatement(true, true)
+				if method != nil {
+					lit.Methods = append(lit.Methods, method)
+				}
+			} else if p.curTokenIs(token.IDENT) {
+				lit.Embedded = append(lit.Embedded, p.parseIdentifier().(*ast.Identifier))
+			}
+		}
+		if p.expectPeek(token.RBRACE) {
+			left = lit
+		}
 	}
 
 	return left
@@ -1338,7 +1358,7 @@ func (p *Parser) parseFunctionType() ast.TypeNode {
 		p.nextToken()
 
 		if p.curTokenIs(token.IDENT) && p.peekTokenIs(token.COLON) {
-			p.ReportError(p.curToken.Position, "function types cannot have parameter names")
+			// Discard the parameter name to maintain structural type equivalence
 			p.nextToken() // Move to ':'
 			p.nextToken() // Move past ':'
 		}
@@ -1350,7 +1370,7 @@ func (p *Parser) parseFunctionType() ast.TypeNode {
 			p.nextToken() // Move past ','
 			
 			if p.curTokenIs(token.IDENT) && p.peekTokenIs(token.COLON) {
-				p.ReportError(p.curToken.Position, "function types cannot have parameter names")
+				// Discard the parameter name to maintain structural type equivalence
 				p.nextToken() // Move to ':'
 				p.nextToken() // Move past ':'
 			}
@@ -1760,6 +1780,13 @@ func (p *Parser) parseSpawnExpression() ast.Expression {
 	// This forces the parser to process the Identifier + Call as one unit.
 	firstExp := p.parseExpression(ACCESSOR - 1)
 
+	// If firstExp is a CallExpression, we assume it's the target function call.
+	// (Monitor channels are usually identifiers or grouped expressions).
+	if call, ok := firstExp.(*ast.CallExpression); ok {
+		expr.Call = call
+		return expr
+	}
+
 	// If the next token can start an expression, it means we have two expressions:
 	// spawn(monitor_chan) function_call()
 	if p.prefixParseFns[p.peekToken.Type] != nil {
@@ -1776,14 +1803,8 @@ func (p *Parser) parseSpawnExpression() ast.Expression {
 		return expr
 	}
 
-	call, ok := firstExp.(*ast.CallExpression)
-	if !ok {
-		p.ReportError(p.curToken.Position, "spawn expression must be followed by a function call")
-		return nil
-	}
-
-	expr.Call = call
-	return expr
+	p.ReportError(p.curToken.Position, "spawn expression must be followed by a function call")
+	return nil
 }
 
 func (p *Parser) parseIndexExpression(left ast.Expression) ast.Expression {
@@ -2207,6 +2228,9 @@ func (p *Parser) parseMatchCase() *ast.MatchCase {
 	// 1. Parse Pattern
 	// Use ASSIGN precedence to stop at '=>'
 	curCase.Pattern = p.parseExpression(ASSIGN)
+	if ast.IsNil(curCase.Pattern) {
+		return nil
+	}
 
 	// 2. Handle '=>' (Assign + GT)
 	if !p.expectPeek(token.ASSIGN) {
@@ -2224,10 +2248,14 @@ func (p *Parser) parseMatchCase() *ast.MatchCase {
 	} else {
 		// Single expression body
 		expr := p.parseExpression(LOWEST)
-		curCase.Body = &ast.BlockStatement{
-			Statements: []ast.Statement{
-				&ast.ExpressionStatement{Expression: expr},
-			},
+		if !ast.IsNil(expr) {
+			curCase.Body = &ast.BlockStatement{
+				Statements: []ast.Statement{
+					&ast.ExpressionStatement{Expression: expr},
+				},
+			}
+		} else {
+			return nil
 		}
 	}
 

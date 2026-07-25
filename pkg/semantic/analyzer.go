@@ -2868,18 +2868,25 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			return
 		}
 
+		isBlank := false
+		if ident, ok := n.Left.(*ast.Identifier); ok && ident.Value == "_" {
+			isBlank = true
+		}
+
 		// Analyze LHS first if it's NOT a simple identifier (to avoid false use-after-move errors during revival)
-		if _, isIdent := n.Left.(*ast.Identifier); !isIdent {
+		if _, isIdent := n.Left.(*ast.Identifier); !isIdent && !isBlank {
 			sa.Analyze(n.Left)
 		}
 
 		var targetTypeHint types.NRType
-		if ident, ok := n.Left.(*ast.Identifier); ok {
-			if sym, exists := sa.CurrentScope.Resolve(ident.Value); exists {
-				targetTypeHint = sym.Type
+		if !isBlank {
+			if ident, ok := n.Left.(*ast.Identifier); ok {
+				if sym, exists := sa.CurrentScope.Resolve(ident.Value); exists {
+					targetTypeHint = sym.Type
+				}
+			} else {
+				targetTypeHint = sa.SemanticInfo.Types[n.Left]
 			}
-		} else {
-			targetTypeHint = sa.SemanticInfo.Types[n.Left]
 		}
 
 		if arrLit, isArrLit := n.Value.(*ast.ArrayLiteral); isArrLit && targetTypeHint != nil {
@@ -2905,7 +2912,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		}
 
 		if sa.inSpawn > 0 || sa.inParallel > 0 {
-			if _, ok := n.Left.(*ast.Identifier); !ok {
+			if _, ok := n.Left.(*ast.Identifier); !ok && !isBlank {
 				if rootSym := sa.getRootSymbol(n.Left); rootSym != nil {
 					if rootSym.Kind == SymVar && rootSym.DefScope != nil && (rootSym.DefScope.Kind == ScopePackage || rootSym.DefScope.Kind == ScopeGlobal) {
 						sa.AddError(n.Left.Pos(), "cannot mutate global variable '%s' inside a concurrent context", rootSym.Name)
@@ -2913,6 +2920,19 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					}
 				}
 			}
+		}
+
+		if isBlank {
+			// Skip RHS compatibility checks, but still track implicit moves for RHS
+			if id, ok := n.Value.(*ast.Identifier); ok {
+				if sym := sa.SemanticInfo.Uses[id]; sym != nil {
+					if types.IsOwnedType(sym.Type) && (sym.LeaseKind == types.LeaseMove || !sym.Type.IsLeased()) && sym.LeaseKind != types.LeaseRead && sym.LeaseKind != types.LeaseWrite {
+						sa.SemanticInfo.Kill(sym, n)
+					}
+				}
+			}
+			sa.SemanticInfo.Types[n] = types.Void
+			return
 		}
 
 		// 2. Resolve the target type and check permissions
@@ -5053,6 +5073,40 @@ func (sa *SemanticAnalyzer) resolveTypeNode(n ast.TypeNode) types.NRType {
 			Return:      retType,
 		}
 
+	case *ast.InterfaceLiteral:
+		pt := &types.ProtocolType{
+			ProtocolName: "inline_interface",
+			Methods:      make(map[string]*types.FunctionType),
+			TypeParams:   []*types.TypeParam{},
+		}
+		// Register a temporary symbol so methods can resolve `self` if needed
+		// For an inline constraint, this might not be fully needed, but we do our best
+		for _, method := range t.Methods {
+			mType := &types.FunctionType{
+				Params:      []types.NRType{},
+				ParamLeases: []types.LeaseKind{},
+			}
+			
+			// Resolve receiver
+			if method.Receiver != nil {
+				mType.Receiver = sa.resolveTypeNode(method.Receiver.Type)
+			}
+			
+			// Resolve params
+			for _, p := range method.Parameters {
+				pType := sa.resolveTypeNode(p.Type)
+				mType.Params = append(mType.Params, pType)
+				mType.ParamLeases = append(mType.ParamLeases, types.LeaseRead) // Simplify for now
+			}
+			
+			// Resolve return type
+			mType.Return = sa.resolveTypeNode(method.ReturnType)
+			
+			pt.Methods[method.Name.Value] = mType
+		}
+		sa.SemanticInfo.Types[n] = pt
+		return pt
+
 	default:
 		sa.AddError(n.Pos(), "invalid type syntax: %T", n)
 		return types.ErrorType
@@ -5218,7 +5272,7 @@ func (sa *SemanticAnalyzer) specializeSumType(st *types.SumType, argTypes []type
 	}
 
 	for mName, mType := range st.Methods {
-		specialized.Methods[mName] = mType
+		specialized.Methods[mName] = sa.substituteType(mType, subs)
 		if !hasGenericArgs {
 			if methodSyms, ok := sa.SemanticInfo.MethodSymbols[st]; ok {
 				if methodSym, ok := methodSyms[mName]; ok {
@@ -6511,9 +6565,13 @@ func (sa *SemanticAnalyzer) cloneAndSubstituteHelper(node ast.Node, mapping map[
 		return res
 
 	case *ast.ExpressionStatement:
+		clonedExp := sa.cloneAndSubstitute(n.Expression, mapping)
+		if clonedExp == nil {
+			panic(fmt.Sprintf("cloneAndSubstitute returned nil for expression of type %T (IsNil: %v)", n.Expression, ast.IsNil(n.Expression)))
+		}
 		return &ast.ExpressionStatement{
 			Token:      n.Token,
-			Expression: sa.cloneAndSubstitute(n.Expression, mapping).(ast.Expression),
+			Expression: clonedExp.(ast.Expression),
 		}
 
 	case *ast.ReturnStatement:
@@ -7499,12 +7557,18 @@ func (sa *SemanticAnalyzer) ensureMethodsSpecialized(t types.NRType) {
 				break
 			}
 		}
+		subs := make(map[string]types.NRType)
+		for i, tp := range st.BaseType.TypeParams {
+			if i < len(st.TypeArgs) {
+				subs[tp.Name] = st.TypeArgs[i]
+			}
+		}
 		for mName, mType := range st.BaseType.Methods {
 			if _, exists := st.Methods[mName]; !exists {
 				if st.Methods == nil {
 					st.Methods = make(map[string]types.NRType)
 				}
-				st.Methods[mName] = mType
+				st.Methods[mName] = sa.substituteType(mType, subs)
 			}
 			if !hasGenericArgs {
 				if methodSyms, ok := sa.SemanticInfo.MethodSymbols[st.BaseType]; ok {
@@ -7526,12 +7590,18 @@ func (sa *SemanticAnalyzer) ensureMethodsSpecialized(t types.NRType) {
 				break
 			}
 		}
+		subs := make(map[string]types.NRType)
+		for i, tp := range st.BaseType.TypeParams {
+			if i < len(st.TypeArgs) {
+				subs[tp.Name] = st.TypeArgs[i]
+			}
+		}
 		for mName, mType := range st.BaseType.Methods {
 			if _, exists := st.Methods[mName]; !exists {
 				if st.Methods == nil {
 					st.Methods = make(map[string]types.NRType)
 				}
-				st.Methods[mName] = mType
+				st.Methods[mName] = sa.substituteType(mType, subs)
 			}
 			if !hasGenericArgs {
 				if methodSyms, ok := sa.SemanticInfo.MethodSymbols[st.BaseType]; ok {

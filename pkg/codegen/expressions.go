@@ -922,7 +922,12 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 						lease = ft.ParamLeases[i]
 					}
 				}
-				g.emitArgument(arg.Value, targetType, lease, false)
+				if strings.Contains(mangledName, "spawn_worker_ptr") && i == 0 {
+					g.buf.WriteString("(void**)")
+					g.genExpression(arg.Value)
+				} else {
+					g.emitArgument(arg.Value, targetType, lease, false)
+				}
 			}
 		}
 		g.buf.WriteString(")")
@@ -1445,6 +1450,14 @@ func (g *Generator) emitArgument(expr ast.Expression, targetType types.NRType, l
 			if sym := g.SemanticInfo.Uses[ident]; sym != nil {
 				argType = sym.Type
 			}
+		}
+	}
+
+	if targetType != nil && (targetType.Name() == "ptr" || (types.UnwrapLease(targetType) != nil && types.UnwrapLease(targetType).Name() == "ptr")) {
+		if g.isPointerInC(expr) || (argType != nil && strings.HasSuffix(g.cType(argType), "*")) {
+			g.buf.WriteString("(void**)")
+			g.genExpression(expr)
+			return
 		}
 	}
 
@@ -2150,11 +2163,7 @@ func (g *Generator) genSpawnExpression(e *ast.SpawnExpression) {
 			sb.WriteString(fmt.Sprintf("&args->arg%d", i))
 		} else {
 			if paramCType != "" && paramCType != memberCType {
-				if strings.HasSuffix(paramCType, "*") && strings.HasSuffix(memberCType, "*") {
-					sb.WriteString(fmt.Sprintf("(void*)args->arg%d", i))
-				} else {
-					sb.WriteString(fmt.Sprintf("(%s)args->arg%d", paramCType, i))
-				}
+				sb.WriteString(fmt.Sprintf("(%s)args->arg%d", paramCType, i))
 			} else {
 				sb.WriteString(fmt.Sprintf("args->arg%d", i))
 			}
@@ -2226,6 +2235,10 @@ func (g *Generator) genSpawnExpression(e *ast.SpawnExpression) {
 			}
 		} else if targetStars > operandStars {
 			valStr = "&(" + valStr + ")"
+		}
+
+		if targetStars > 0 {
+			valStr = fmt.Sprintf("(%s)(%s)", targetCType, valStr)
 		}
 
 		g.emit(fmt.Sprintf("    _args->arg%d = %s;\n", i, valStr))

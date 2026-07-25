@@ -52,12 +52,22 @@ bool nr_str_eq(char* s1, char* s2) {
 
 // Temporary string management for expressions
 char* nr_temp_str(char* s) {
-    fiber_info_t* info = (fiber_info_t*)GetFiberData();
+    fiber_info_t* info = (fiber_info_t*)nr_fiber_current();
     if (info && s && info->temp_count < 256) {
         info->temp_strs[info->temp_count++] = s;
     }
     return s;
 }
+
+void nr_flush_temps() {
+    fiber_info_t* info = (fiber_info_t*)nr_fiber_current();
+    if (info) {
+        while (info->temp_count > 0) {
+            nr_free(info->temp_strs[--info->temp_count]);
+        }
+    }
+}
+
 char* nr_claim_str(char* s) {
     if (s && *s) {
         nr_header_t* h = (nr_header_t*)((char*)s - NR_HEADER_SIZE);
@@ -66,14 +76,6 @@ char* nr_claim_str(char* s) {
         }
     }
     return s;
-}
-void nr_flush_temps() {
-    fiber_info_t* info = (fiber_info_t*)GetFiberData();
-    if (info) {
-        while (info->temp_count > 0) {
-            nr_free(info->temp_strs[--info->temp_count]);
-        }
-    }
 }
 char* nr_strdup(const char* s) {
     if (!s) return NULL;

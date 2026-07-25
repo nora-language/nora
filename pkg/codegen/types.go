@@ -47,7 +47,7 @@ func (g *Generator) cType(t types.NRType) string {
 
 func (g *Generator) cParamType(t types.NRType, l types.LeaseKind, isExtern bool) string {
 	if l == types.LeaseRead || l == types.LeaseWrite {
-		if pt, ok := t.(*types.PointerType); ok && pt.Leased && !pt.IsArray && (pt.Kind == types.LeaseRead || pt.Kind == types.LeaseWrite || pt.Kind == types.LeaseMove) {
+		if pt, ok := t.(*types.PointerType); ok && !pt.IsArray {
 			t = pt.Base
 		}
 	}

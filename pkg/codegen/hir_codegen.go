@@ -486,7 +486,11 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 					g.emit(fmt.Sprintf("    { %s _old = %s; %s = %s; %s }", g.cType(targetType), destStr, destStr, valStr, dropStr))
 				}
 			} else {
-				g.emit(fmt.Sprintf("    %s = %s;", destStr, valStr))
+				if destStr == "_" {
+					g.emit(fmt.Sprintf("    %s;", valStr))
+				} else {
+					g.emit(fmt.Sprintf("    %s = %s;", destStr, valStr))
+				}
 			}
 			if isVar && varOp.Symbol != nil {
 				if g.hasDropFlag(varOp.Symbol) {
@@ -896,7 +900,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 			if ft != nil && isVariableCall {
 				var argsStr []string
 				argsStr = append(argsStr, "_c.env")
-				argsStr = append(argsStr, g.packCallArguments(i.Args, ft, false)...)
+				argsStr = append(argsStr, g.packCallArguments(i.Args, ft, false, "")...)
 				callStr = fmt.Sprintf("({ nr_closure_t _c = %s; ((%s)_c.fn_ptr)(%s); })",
 					g.exprToString(i.ASTNode.Function),
 					g.getCFunctionPointerType(ft),
@@ -1006,7 +1010,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				}
 			}
 
-			argsStr = append(argsStr, g.packCallArguments(i.Args, ft, isExtern)...)
+			argsStr = append(argsStr, g.packCallArguments(i.Args, ft, isExtern, name)...)
 			callStr = fmt.Sprintf("%s(%s)", name, strings.Join(argsStr, ", "))
 		}
 
@@ -1144,9 +1148,17 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 	case *hir.Expression:
 		return i.Expr
 	case *hir.Store:
-		return fmt.Sprintf("(%s = %s)", g.hirOperandStr(i.Dest), g.hirOperandStr(i.Val))
+		destStr := g.hirOperandStr(i.Dest)
+		if destStr == "_" {
+			return fmt.Sprintf("(%s)", g.hirOperandStr(i.Val))
+		}
+		return fmt.Sprintf("(%s = %s)", destStr, g.hirOperandStr(i.Val))
 	case *hir.Assign:
-		return fmt.Sprintf("(%s = %s)", g.hirOperandStr(i.Dest), g.hirOperandStr(i.Val))
+		destStr := g.hirOperandStr(i.Dest)
+		if destStr == "_" {
+			return fmt.Sprintf("(%s)", g.hirOperandStr(i.Val))
+		}
+		return fmt.Sprintf("(%s = %s)", destStr, g.hirOperandStr(i.Val))
 	case *hir.InterfaceCast:
 		valType := i.Val.GetType()
 		if valType == nil {
@@ -1289,6 +1301,20 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 		}
 		wrapSB.WriteString(fmt.Sprintf("    struct %s* args = (struct %s*)p;\n", structName, structName))
 		isExtern := false
+		funcName := ""
+		if i.Call != nil {
+			funcName = i.Call.FuncName
+			if i.Call.ASTNode != nil {
+				if mangled, ok := g.SemanticInfo.MonomorphizedNames[i.Call.ASTNode]; ok {
+					funcName = mangled
+				} else if i.Call.FuncSymbol != nil {
+					funcName = g.mangleName(i.Call.FuncSymbol)
+				}
+			} else if i.Call.FuncSymbol != nil {
+				funcName = g.mangleName(i.Call.FuncSymbol)
+			}
+		}
+
 		if i.Call != nil && i.Call.FuncSymbol != nil {
 			sym := i.Call.FuncSymbol
 			if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok && (fnStmt.IsExtern || fnStmt.IsExport) {
@@ -1297,15 +1323,6 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				}
 			} else if _, ok := sym.DefNode.(*ast.ExternStatement); ok {
 				isExtern = true
-			}
-
-
-		}
-		funcName := "anonymous"
-		if i.Call != nil {
-			funcName = i.Call.FuncName
-			if i.Call.FuncSymbol != nil {
-				funcName = g.mangleName(i.Call.FuncSymbol)
 			}
 		}
 		wrapSB.WriteString("    void* self = nr_fiber_current();\n")
@@ -1329,7 +1346,12 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 			}
 		}
 		var ft *types.FunctionType
-		if i.Call != nil && i.Call.FuncSymbol != nil {
+		if specSym, ok := g.Functions[funcName]; ok && specSym.Type != nil {
+			if fType, ok := specSym.Type.(*types.FunctionType); ok {
+				ft = fType
+			}
+		}
+		if ft == nil && i.Call != nil && i.Call.FuncSymbol != nil {
 			if fType, ok := i.Call.FuncSymbol.Type.(*types.FunctionType); ok {
 				ft = fType
 			}
@@ -1350,8 +1372,13 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 					paramCType = g.cParamType(ft.Params[idx], lease, false)
 				}
 				memberCType := g.cType(unwrapped)
+				if g.EnableDebug {
+					fmt.Printf("[DEBUG-SPAWN] idx=%d paramCType='%s' memberCType='%s'\n", idx, paramCType, memberCType)
+				}
 				if strings.HasSuffix(paramCType, "*") && !strings.HasSuffix(memberCType, "*") {
 					wrapSB.WriteString(fmt.Sprintf("&args->arg%d", idx))
+				} else if paramCType != "" && strings.HasSuffix(paramCType, "*") && strings.HasSuffix(memberCType, "*") && paramCType != memberCType {
+					wrapSB.WriteString(fmt.Sprintf("(%s)args->arg%d", paramCType, idx))
 				} else {
 					wrapSB.WriteString(fmt.Sprintf("args->arg%d", idx))
 				}
@@ -1408,14 +1435,16 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				}
 
 				if operandStars > targetStars {
-					// Only dereference if we are not working with raw 'str' or 'ptr' (since they are built-in pointers and shouldn't be blindly dereferenced)
-					if targetType.Name() != "ptr" && targetType.Name() != "str" {
-						valStr = strings.Repeat("*", operandStars-targetStars) + valStr
-					}
+					valStr = strings.Repeat("*", operandStars-targetStars) + valStr
 				} else if targetStars > operandStars {
 					valStr = "&(" + valStr + ")"
 				}
-
+				if targetStars > 0 {
+					valStr = fmt.Sprintf("(%s)(%s)", targetCType, valStr)
+				}
+				if g.EnableDebug {
+					fmt.Printf("[DEBUG-SPAWN-STRUCT] idx=%d targetCType='%s' operandCType='%s' valStr='%s'\n", idx, targetCType, operandCType, valStr)
+				}
 				initBlock.WriteString(fmt.Sprintf("_args->arg%d = %s; ", idx, valStr))
 				if g.isChanType(targetType) {
 					initBlock.WriteString(fmt.Sprintf("channel_ref(_args->arg%d); ", idx))
@@ -1648,7 +1677,10 @@ func (g *Generator) alignCallArgument(arg hir.Operand, paramType types.NRType, l
 
 	targetCType := "void*"
 	if paramType != nil {
-		targetCType = g.cParamType(paramType, lease, isExtern)
+		targetCType = g.cType(paramType)
+		if passByPointer && !g.isPointerTypeInC(types.UnwrapLease(paramType)) && !strings.HasSuffix(targetCType, "*") {
+			targetCType += "*"
+		}
 	}
 	operandCType := g.cTypeOfOperand(arg)
 	targetStars := 0
@@ -1679,10 +1711,18 @@ func (g *Generator) alignCallArgument(arg hir.Operand, paramType types.NRType, l
 			argStr = "*" + argStr
 		}
 	}
+	
+	if targetStars > 0 && targetCType != operandCType {
+		if targetCType == "void*" && operandStars > 1 {
+			argStr = fmt.Sprintf("(void**)(%s)", argStr)
+		} else {
+			argStr = fmt.Sprintf("(%s)(%s)", targetCType, argStr)
+		}
+	}
 	return argStr
 }
 
-func (g *Generator) packCallArguments(args []hir.Operand, ft *types.FunctionType, isExtern bool) []string {
+func (g *Generator) packCallArguments(args []hir.Operand, ft *types.FunctionType, isExtern bool, funcName string) []string {
 	var argsStr []string
 	for idx, arg := range args {
 		var paramType types.NRType
@@ -1729,6 +1769,11 @@ func (g *Generator) packCallArguments(args []hir.Operand, ft *types.FunctionType
 		g.NoTempWrap = oldNoTemp
 
 		argStr = g.alignCallArgument(arg, paramType, lease, argStr, isExtern)
+		if strings.Contains(funcName, "spawn_worker_ptr") && idx == 0 {
+			if !strings.HasPrefix(argStr, "(void**)") && !strings.HasPrefix(argStr, "&") {
+				argStr = fmt.Sprintf("(void**)(%s)", argStr)
+			}
+		}
 		argsStr = append(argsStr, argStr)
 	}
 	return argsStr
