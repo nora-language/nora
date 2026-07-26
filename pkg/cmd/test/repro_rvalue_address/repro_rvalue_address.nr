@@ -8,15 +8,17 @@ pub fn (s: Dummy) eq(other: Dummy) bool {
     return s.val == other.val
 }
 
-pub fn (s: Dummy) sub(other: Dummy) Dummy {
+pub fn (s: Dummy) operator-(other: Dummy) Dummy {
     return Dummy { val: s.val - other.val }
 }
 
 pub fn Eq[T](a: #T, b: #T) bool {
+    pin a, b
     return false
 }
 
 pub fn Sub[T](a: #T, b: #T) T {
+    pin a, b
     panic("dummy")
 }
 

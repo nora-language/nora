@@ -8,7 +8,7 @@ type User = struct {
 }
 
 // Custom equality: only compare IDs
-fn (self: #User) eq(other: #User) bool {
+fn (self: #User) operator==(other: #User) bool {
     io.PrintLn("Using custom EQ for ${self.name} and ${other.name}")
     return self.id == other.id
 }

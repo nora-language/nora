@@ -10,7 +10,7 @@ pub fn (self: #Fixed64) cmp(other: #Fixed64) i32 {
     return 0
 }
 
-pub fn (self: #Fixed64) div(other: #Fixed64) Fixed64 {
+pub fn (self: #Fixed64) operator/(other: #Fixed64) Fixed64 {
     return Fixed64 { val: (self.val * 65536) / other.val }
 }
 
@@ -19,6 +19,7 @@ pub fn main() {
     var a = Fixed64 { val: 0 }
     
     if (a == zero) {
-        var x = a.div(#zero)
+        var x = a / zero
+        pin x
     }
 }

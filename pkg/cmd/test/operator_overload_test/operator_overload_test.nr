@@ -7,21 +7,21 @@ pub type Vector2D = struct {
     y: i32
 }
 
-pub fn (self: #Vector2D) add(other: Vector2D) Vector2D {
+pub fn (self: #Vector2D) operator+(other: Vector2D) Vector2D {
     return Vector2D{
         x: self.x + other.x,
         y: self.y + other.y,
     }
 }
 
-pub fn (self: #Vector2D) sub(other: Vector2D) Vector2D {
+pub fn (self: #Vector2D) operator-(other: Vector2D) Vector2D {
     return Vector2D{
         x: self.x - other.x,
         y: self.y - other.y,
     }
 }
 
-pub fn (self: #Vector2D) eq(other: #Vector2D) bool {
+pub fn (self: #Vector2D) operator==(other: #Vector2D) bool {
     return self.x == other.x && self.y == other.y
 }
 

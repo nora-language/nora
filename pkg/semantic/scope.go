@@ -10,7 +10,42 @@ import (
 
 // Define registers a new symbol in the current scope
 func (s *Scope) Define(name string, t types.NRType, kind SymbolKind, node ast.Node) (*Symbol, error) {
-	if _, exists := s.Symbols[name]; exists {
+	if existing, exists := s.Symbols[name]; exists {
+		if kind == SymFunc && (existing.Kind == SymFunc || existing.Kind == SymOverloadGroup) {
+			newSym := &Symbol{
+				Name:          name,
+				Type:          t,
+				Kind:          kind,
+				Visible:       existing.Visible,
+				DefScope:      s,
+				DefNode:       node,
+				IsInitialized: true,
+			}
+			if existing.Kind == SymFunc {
+				existing.IsOverloaded = true
+				newSym.IsOverloaded = true
+				// Convert to OverloadGroup
+				group := &Symbol{
+					Name:          name,
+					Kind:          SymOverloadGroup,
+					Visible:       existing.Visible,
+					DefScope:      s,
+					Overloads:     []*Symbol{existing, newSym},
+					Type:          &types.OverloadGroupType{Overloads: []types.NRType{existing.Type, t}},
+					IsInitialized: true,
+				}
+				s.Symbols[name] = group
+				return newSym, nil
+			} else {
+				// Append to existing group
+				newSym.IsOverloaded = true
+				existing.Overloads = append(existing.Overloads, newSym)
+				if groupType, ok := existing.Type.(*types.OverloadGroupType); ok {
+					groupType.Overloads = append(groupType.Overloads, t)
+				}
+				return newSym, nil
+			}
+		}
 		return nil, fmt.Errorf("symbol '%s' already defined in this scope", name)
 	}
 

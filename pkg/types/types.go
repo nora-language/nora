@@ -17,6 +17,7 @@ const (
 	KindGeneric
 	KindPointer
 	KindArray
+	KindOverloadGroup
 )
 
 type LeaseKind int
@@ -525,3 +526,12 @@ func (a *ArrayType) Name() string {
 func (a *ArrayType) GetKind() Kind  { return KindArray }
 func (a *ArrayType) IsLeased() bool { return false }
 func (a *ArrayType) Size() int      { return a.Base.Size() * a.Len }
+
+type OverloadGroupType struct {
+	Overloads []NRType
+}
+
+func (g *OverloadGroupType) Name() string   { return "OverloadGroup" }
+func (g *OverloadGroupType) GetKind() Kind  { return KindOverloadGroup }
+func (g *OverloadGroupType) IsLeased() bool { return false }
+func (g *OverloadGroupType) Size() int      { return 0 }

@@ -58,6 +58,20 @@ func (g *Generator) mangleName(sym *semantic.Symbol) string {
 	if sym == nil {
 		return ""
 	}
+	base := g.getMangledBaseName(sym)
+	if sym.IsOverloaded && sym.Kind == semantic.SymFunc {
+		if ft, ok := sym.Type.(*types.FunctionType); ok {
+			hash := types.GetHashSuffix(base, ft.Params)
+			return base + "_" + hash
+		}
+	}
+	return base
+}
+
+func (g *Generator) getMangledBaseName(sym *semantic.Symbol) string {
+	if sym == nil {
+		return ""
+	}
 
 	if sym.Kind == semantic.SymType && sym.Type != nil {
 		if erased := g.getErasedTypeName(sym.Type); erased != "" {
@@ -88,7 +102,7 @@ func (g *Generator) mangleName(sym *semantic.Symbol) string {
 							methodBase = methodBase[:len(methodBase)-9]
 						}
 					}
-					return erasedRec + "_" + methodBase
+					return g.sanitizeIdentifier(erasedRec + "_" + methodBase)
 				}
 			}
 		}
@@ -96,7 +110,7 @@ func (g *Generator) mangleName(sym *semantic.Symbol) string {
 
 	pkg := g.getSymbolPackage(sym)
 	if strings.HasPrefix(sym.Name, "nr_lambda_") {
-		return sym.Name
+		return g.sanitizeIdentifier(sym.Name)
 	}
 	if sym.Name == "main" && (pkg == "" || pkg == "main") && sym.Kind == semantic.SymFunc {
 		return "nr_main"
@@ -105,7 +119,7 @@ func (g *Generator) mangleName(sym *semantic.Symbol) string {
 	// 0. Extern check: do not mangle FFI and Export functions
 	if sym.Kind == semantic.SymFunc && sym.DefNode != nil {
 		if fn, ok := sym.DefNode.(*ast.FunctionStatement); ok && (fn.IsExtern || fn.IsExport) {
-			return sym.Name
+			return g.sanitizeIdentifier(sym.Name)
 		}
 	}
 
@@ -115,12 +129,12 @@ func (g *Generator) mangleName(sym *semantic.Symbol) string {
 	// 2. If it's a local variable or parameter, don't mangle
 	if sym.Kind == semantic.SymVar || sym.Kind == semantic.SymParam {
 		if sym.DefScope != nil && (sym.DefScope.Kind == semantic.ScopeBlock || sym.DefScope.Kind == semantic.ScopeFunction || sym.DefScope.Kind == semantic.ScopeLoop || sym.DefScope.Kind == semantic.ScopeClosure || sym.DefScope.Kind == semantic.ScopeSpawn) {
-			return sym.Name
+			return g.sanitizeIdentifier(sym.Name)
 		}
 	}
 
 	if pkg == "" || pkg == "main" {
-		return sym.Name
+		return g.sanitizeIdentifier(sym.Name)
 	}
 
 	// Replace / and . with _ for C compatibility
@@ -128,9 +142,32 @@ func (g *Generator) mangleName(sym *semantic.Symbol) string {
 	safePkg = strings.ReplaceAll(safePkg, ".", "_")
 
 	if strings.HasPrefix(sym.Name, safePkg+"_") {
-		return sym.Name
+		return g.sanitizeIdentifier(sym.Name)
 	}
-	return safePkg + "_" + sym.Name
+	return g.sanitizeIdentifier(safePkg + "_" + sym.Name)
+}
+
+func (g *Generator) sanitizeIdentifier(name string) string {
+	if !strings.Contains(name, "operator") {
+		return name
+	}
+	name = strings.ReplaceAll(name, "operator==", "operator_eq")
+	name = strings.ReplaceAll(name, "operator!=", "operator_neq")
+	name = strings.ReplaceAll(name, "operator<=", "operator_lte")
+	name = strings.ReplaceAll(name, "operator>=", "operator_gte")
+	name = strings.ReplaceAll(name, "operator<<", "operator_shl")
+	name = strings.ReplaceAll(name, "operator>>", "operator_shr")
+	name = strings.ReplaceAll(name, "operator+", "operator_plus")
+	name = strings.ReplaceAll(name, "operator-", "operator_minus")
+	name = strings.ReplaceAll(name, "operator*", "operator_mul")
+	name = strings.ReplaceAll(name, "operator/", "operator_div")
+	name = strings.ReplaceAll(name, "operator%", "operator_mod")
+	name = strings.ReplaceAll(name, "operator<", "operator_lt")
+	name = strings.ReplaceAll(name, "operator>", "operator_gt")
+	name = strings.ReplaceAll(name, "operator&", "operator_bitand")
+	name = strings.ReplaceAll(name, "operator|", "operator_bitor")
+	name = strings.ReplaceAll(name, "operator^", "operator_bitxor")
+	return name
 }
 
 func (g *Generator) sortedVariantNames(st *types.SumType) []string {

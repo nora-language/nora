@@ -751,17 +751,34 @@ func (g *Generator) collectDefinitions() {
 	}
 
 	// 3. Update MonomorphizedNames mapping to point to the erased name for erased function calls
-	for e, name := range g.SemanticInfo.MonomorphizedNames {
-		if ft, ok := g.SemanticInfo.Types[e.Function].(*types.FunctionType); ok {
+	for eNode, name := range g.SemanticInfo.MonomorphizedNames {
+		var ft *types.FunctionType
+		var isSelector bool
+		var methodBase string
+
+		if call, ok := eNode.(*ast.CallExpression); ok {
+			ft, _ = g.SemanticInfo.Types[call.Function].(*types.FunctionType)
+			if sel, isSel := call.Function.(*ast.SelectorExpression); isSel {
+				isSelector = true
+				methodBase = sel.Field.Value
+			}
+		} else if infix, ok := eNode.(*ast.InfixExpression); ok {
+			if sym, exists := g.SemanticInfo.OperatorUses[infix]; exists {
+				ft, _ = sym.Type.(*types.FunctionType)
+				isSelector = true
+				methodBase = "operator" + infix.Operator
+			}
+		}
+
+		if ft != nil {
 			if ft.Receiver != nil {
 				erasedRec := g.getErasedTypeName(ft.Receiver)
 				if erasedRec != "" {
-					if sel, ok := e.Function.(*ast.SelectorExpression); ok {
-						methodBase := sel.Field.Value
-						g.SemanticInfo.MonomorphizedNames[e] = erasedRec + "_" + methodBase
+					if isSelector {
+						g.SemanticInfo.MonomorphizedNames[eNode] = erasedRec + "_" + methodBase
 					}
 				} else {
-					if _, ok := e.Function.(*ast.SelectorExpression); ok {
+					if isSelector {
 						receiverType := ft.Receiver
 						underlying := receiverType
 						for {
@@ -793,7 +810,7 @@ func (g *Generator) collectDefinitions() {
 						}
 
 						if pkgPrefix != "" && pkgPrefix != "main" && !strings.HasPrefix(name, pkgPrefix+"_") {
-							g.SemanticInfo.MonomorphizedNames[e] = pkgPrefix + "_" + name
+							g.SemanticInfo.MonomorphizedNames[eNode] = pkgPrefix + "_" + name
 						}
 					}
 				}
@@ -826,7 +843,7 @@ func (g *Generator) collectDefinitions() {
 									safePkg = strings.ReplaceAll(safePkg, ".", "_")
 									baseMangledName = safePkg + "_" + fnStmt.Name.Value
 								}
-								g.SemanticInfo.MonomorphizedNames[e] = baseMangledName + "_ptr"
+								g.SemanticInfo.MonomorphizedNames[eNode] = baseMangledName + "_ptr"
 							}
 						}
 					}

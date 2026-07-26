@@ -37,11 +37,12 @@ const (
 	SymParam                     // fn(x: int)
 	SymPackage                   // fn(x: int)
 	SymVariant                   // Some, None, Active, etc.
+	SymOverloadGroup
 )
 
 // String representation for debugging
 func (sk SymbolKind) String() string {
-	return [...]string{"Variable", "Constant", "Function", "Type", "Module", "Parameter", "Package", "Variant"}[sk]
+	return [...]string{"Variable", "Constant", "Function", "Type", "Module", "Parameter", "Package", "Variant", "OverloadGroup"}[sk]
 }
 
 // Symbol represents a named entity (variable, function, type)
@@ -60,7 +61,8 @@ type Symbol struct {
 
 	WritePerm bool
 
-	IsInline bool // Indicates if the function is marked for inlining
+	IsInline     bool // Indicates if the function is marked for inlining
+	IsOverloaded bool // True if this function is part of an overload group
 
 	// Usage Analysis (Nora)
 	IsUsed        bool
@@ -72,6 +74,7 @@ type Symbol struct {
 	IsPinned bool
 
 	VariantValue int64 // Used for SymVariant to store evaluated constant value
+	Overloads    []*Symbol // Used for SymOverloadGroup to store overloaded functions
 }
 
 type Scope struct {

@@ -13,11 +13,11 @@ pub fn NewVector2[T](x: T, y: T) Vector2[T] {
     return Vector2[T] { x: x, y: y }
 }
 
-pub fn (self: #Vector2[T]) add[T](other: #Vector2[T]) Vector2[T] {
+pub fn (self: #Vector2[T]) operator+[T](other: #Vector2[T]) Vector2[T] {
     return Vector2[T] { x: self.x + other.x, y: self.y + other.y }
 }
 
-pub fn (self: #Vector2[T]) sub[T](other: #Vector2[T]) Vector2[T] {
+pub fn (self: #Vector2[T]) operator-[T](other: #Vector2[T]) Vector2[T] {
     return Vector2[T] { x: self.x - other.x, y: self.y - other.y }
 }
 

@@ -22,9 +22,10 @@ type SemanticInfo struct {
 	Types              map[ast.Node]types.NRType   // Node -> Type
 	Scopes             map[ast.Node]*Scope         // Node -> Scope
 	Uses               map[*ast.Identifier]*Symbol
+	OperatorUses       map[*ast.InfixExpression]*Symbol
 	DeadSyms           map[*Symbol]ast.Node
 	Instances          map[*ast.FunctionStatement]map[string]*ast.FunctionStatement // genericFn -> typeArgString -> specializedFn
-	MonomorphizedNames map[*ast.CallExpression]string
+	MonomorphizedNames map[ast.Node]string
 	SpecTypes          map[string]types.NRType
 	FieldSymbols       map[*types.StructType]map[string]*Symbol
 	MethodSymbols      map[types.NRType]map[string]*Symbol
@@ -323,9 +324,10 @@ func NewAnalyzer() *SemanticAnalyzer {
 			Types:              make(map[ast.Node]types.NRType),
 			Scopes:             make(map[ast.Node]*Scope),
 			Uses:               make(map[*ast.Identifier]*Symbol),
+			OperatorUses:       make(map[*ast.InfixExpression]*Symbol),
 			DeadSyms:           make(map[*Symbol]ast.Node),
 			Instances:          make(map[*ast.FunctionStatement]map[string]*ast.FunctionStatement),
-			MonomorphizedNames: make(map[*ast.CallExpression]string),
+			MonomorphizedNames: make(map[ast.Node]string),
 			SpecTypes:          make(map[string]types.NRType),
 			FieldSymbols:       make(map[*types.StructType]map[string]*Symbol),
 			MethodSymbols:      make(map[types.NRType]map[string]*Symbol),
@@ -776,7 +778,17 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 				}
 
 				if st, ok := baseType.(*types.StructType); ok {
-					st.Methods[n.Name.Value] = fnType
+					if existing, exists := st.Methods[n.Name.Value]; exists {
+						if group, ok := existing.(*types.OverloadGroupType); ok {
+							group.Overloads = append(group.Overloads, fnType)
+						} else {
+							st.Methods[n.Name.Value] = &types.OverloadGroupType{
+								Overloads: []types.NRType{existing, fnType},
+							}
+						}
+					} else {
+						st.Methods[n.Name.Value] = fnType
+					}
 
 					if sa.SemanticInfo.MethodSymbols[st] == nil {
 						sa.SemanticInfo.MethodSymbols[st] = make(map[string]*Symbol)
@@ -784,13 +796,27 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 					// Only write to MethodSymbols if sym is non-nil, to avoid
 					// overwriting a valid entry from a previous CollectSymbols pass.
 					if sym != nil {
-						sa.SemanticInfo.MethodSymbols[st][n.Name.Value] = sym
+						if groupSym, exists := sa.CurrentScope.Symbols[mangledName]; exists && groupSym.Kind == SymOverloadGroup {
+							sa.SemanticInfo.MethodSymbols[st][n.Name.Value] = groupSym
+						} else {
+							sa.SemanticInfo.MethodSymbols[st][n.Name.Value] = sym
+						}
 					}
 				} else if sumT, ok := baseType.(*types.SumType); ok {
 					if sumT.Methods == nil {
 						sumT.Methods = make(map[string]types.NRType)
 					}
-					sumT.Methods[n.Name.Value] = fnType
+					if existing, exists := sumT.Methods[n.Name.Value]; exists {
+						if group, ok := existing.(*types.OverloadGroupType); ok {
+							group.Overloads = append(group.Overloads, fnType)
+						} else {
+							sumT.Methods[n.Name.Value] = &types.OverloadGroupType{
+								Overloads: []types.NRType{existing, fnType},
+							}
+						}
+					} else {
+						sumT.Methods[n.Name.Value] = fnType
+					}
 
 					if sa.SemanticInfo.MethodSymbols[sumT] == nil {
 						sa.SemanticInfo.MethodSymbols[sumT] = make(map[string]*Symbol)
@@ -798,7 +824,11 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 					// Only write to MethodSymbols if sym is non-nil, to avoid
 					// overwriting a valid entry from a previous CollectSymbols pass.
 					if sym != nil {
-						sa.SemanticInfo.MethodSymbols[sumT][n.Name.Value] = sym
+						if groupSym, exists := sa.CurrentScope.Symbols[mangledName]; exists && groupSym.Kind == SymOverloadGroup {
+							sa.SemanticInfo.MethodSymbols[sumT][n.Name.Value] = groupSym
+						} else {
+							sa.SemanticInfo.MethodSymbols[sumT][n.Name.Value] = sym
+						}
 					}
 				} else if primT, ok := baseType.(*types.PrimitiveType); ok {
 					if primT.Methods == nil {
@@ -812,7 +842,11 @@ func (sa *SemanticAnalyzer) CollectSymbols(node ast.Node) {
 					// Only write to MethodSymbols if sym is non-nil, to avoid
 					// overwriting a valid entry from a previous CollectSymbols pass.
 					if sym != nil {
-						sa.SemanticInfo.MethodSymbols[primT][n.Name.Value] = sym
+						if groupSym, exists := sa.CurrentScope.Symbols[mangledName]; exists && groupSym.Kind == SymOverloadGroup {
+							sa.SemanticInfo.MethodSymbols[primT][n.Name.Value] = groupSym
+						} else {
+							sa.SemanticInfo.MethodSymbols[primT][n.Name.Value] = sym
+						}
 					}
 				} else {
 					sa.AddError(n.Receiver.Pos(), "cannot define methods on non-struct/non-sum type %s", receiverType.Name())
@@ -1392,44 +1426,86 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				methodName := ""
 				switch n.Operator {
 				case "+":
-					methodName = "add"
+					methodName = "operator+"
 				case "-":
-					methodName = "sub"
+					methodName = "operator-"
 				case "*":
-					methodName = "mul"
+					methodName = "operator*"
 				case "/":
-					methodName = "div"
+					methodName = "operator/"
 				case "%":
-					methodName = "mod"
+					methodName = "operator%"
 				case "&":
-					methodName = "bitand"
+					methodName = "operator&"
 				case "|":
-					methodName = "bitor"
+					methodName = "operator|"
 				case "^":
-					methodName = "bitxor"
+					methodName = "operator^"
 				case "<<":
-					methodName = "shl"
+					methodName = "operator<<"
 				case ">>":
-					methodName = "shr"
+					methodName = "operator>>"
 				}
 				if methodType, exists := st.Methods[methodName]; exists {
-					if ft, ok := methodType.(*types.FunctionType); ok && len(ft.Params) == 1 {
+					var match *types.FunctionType
+					if group, ok := methodType.(*types.OverloadGroupType); ok {
+						if resolved := sa.resolveOverload(group, []types.NRType{rightType}); resolved != nil {
+							match = resolved.(*types.FunctionType)
+						} else if resolved := sa.resolveOverload(group, []types.NRType{rightBase}); resolved != nil {
+							match = resolved.(*types.FunctionType)
+						}
+					} else if ft, ok := methodType.(*types.FunctionType); ok && len(ft.Params) == 1 {
 						expectedBase := ft.Params[0]
 						if pt, ok := expectedBase.(*types.PointerType); ok && pt.Leased {
 							expectedBase = pt.Base
 						}
 						if types.IsAssignable(rightType, expectedBase) || types.IsAssignable(rightBase, expectedBase) {
-							sa.SemanticInfo.Types[n] = ft.Return
-						} else {
-							sa.AddError(n.Token.Position, "operator method '%s' expects %s, got %s", methodName, ft.Params[0].Name(), rightType.Name())
-							sa.SemanticInfo.Types[n] = types.ErrorType
+							match = ft
+						}
+					}
+					
+					if match != nil {
+						sa.SemanticInfo.Types[n] = match.Return
+						
+						methodSyms := sa.SemanticInfo.MethodSymbols[st]
+						if methodSyms == nil && st.BaseType != nil {
+							methodSyms = sa.SemanticInfo.MethodSymbols[st.BaseType]
+						}
+						
+						if sym, ok := methodSyms[methodName]; ok {
+							var targetSym *Symbol
+							if sym.Kind == SymOverloadGroup {
+								for _, ovSym := range sym.Overloads {
+									if types.Equals(ovSym.Type, match) {
+										targetSym = ovSym
+										break
+									}
+								}
+							} else {
+								targetSym = sym
+							}
+							
+							if targetSym != nil {
+								sa.SemanticInfo.OperatorUses[n] = targetSym
+								if len(st.TypeArgs) > 0 {
+									if methodFn, ok := targetSym.DefNode.(*ast.FunctionStatement); ok {
+										inst := sa.Monomorphize(methodFn, st.TypeArgs, n, st)
+										if inst != nil {
+											fnName := methodFn.Name.Value + "_" + types.GetHashSuffix(methodFn.Name.Value, st.TypeArgs)
+											fnName = st.Name() + "_" + fnName
+											fnName = sanitizeCIdentifier(fnName)
+											sa.SemanticInfo.MonomorphizedNames[n] = fnName
+										}
+									}
+								}
+							}
 						}
 						return
-					} else {
-						sa.AddError(n.Token.Position, "invalid signature for operator method '%s'", methodName)
-						sa.SemanticInfo.Types[n] = types.ErrorType
-						return
 					}
+
+					sa.AddError(n.Token.Position, "operator method '%s' expects compatible type, got %s", methodName, rightType.Name())
+					sa.SemanticInfo.Types[n] = types.ErrorType
+					return
 				}
 			}
 
@@ -1511,17 +1587,39 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 
 		case "==", "!=":
 			if st, ok := leftBase.(*types.StructType); ok {
-				if methodType, exists := st.Methods["eq"]; exists {
-					if ft, ok := methodType.(*types.FunctionType); ok && len(ft.Params) == 1 && ft.Return == types.Bool {
+				if methodType, exists := st.Methods["operator=="]; exists {
+					var match *types.FunctionType
+					if group, ok := methodType.(*types.OverloadGroupType); ok {
+						if resolved := sa.resolveOverload(group, []types.NRType{rightType}); resolved != nil {
+							match = resolved.(*types.FunctionType)
+						} else if resolved := sa.resolveOverload(group, []types.NRType{rightBase}); resolved != nil {
+							match = resolved.(*types.FunctionType)
+						}
+					} else if ft, ok := methodType.(*types.FunctionType); ok && len(ft.Params) == 1 && ft.Return == types.Bool {
 						expectedBase := ft.Params[0]
 						if pt, ok := expectedBase.(*types.PointerType); ok && pt.Leased {
 							expectedBase = pt.Base
 						}
-						if !types.IsAssignable(rightType, expectedBase) && !types.IsAssignable(rightBase, expectedBase) {
-							sa.AddError(n.Token.Position, "method 'eq' expects %s, got %s", ft.Params[0].Name(), rightType.Name())
+						if types.IsAssignable(rightType, expectedBase) || types.IsAssignable(rightBase, expectedBase) {
+							match = ft
 						}
+					}
+
+					if match == nil {
+						sa.AddError(n.Token.Position, "invalid signature or argument for 'operator==' method")
 					} else {
-						sa.AddError(n.Token.Position, "invalid signature for 'eq' method (must return bool and take 1 argument)")
+						if sym, ok := sa.SemanticInfo.MethodSymbols[st]["operator=="]; ok {
+							if sym.Kind == SymOverloadGroup {
+								for _, ovSym := range sym.Overloads {
+									if types.Equals(ovSym.Type, match) {
+										sa.SemanticInfo.OperatorUses[n] = ovSym
+										break
+									}
+								}
+							} else {
+								sa.SemanticInfo.OperatorUses[n] = sym
+							}
+						}
 					}
 				}
 			}
@@ -3566,6 +3664,47 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					return
 				}
 			}
+		}
+
+		if fnType != nil && fnType.GetKind() == types.KindOverloadGroup {
+			// Resolve overload group
+			argTypes := []types.NRType{}
+			for _, arg := range n.Arguments {
+				sa.Analyze(arg.Value)
+				argTypes = append(argTypes, sa.SemanticInfo.Types[arg.Value])
+			}
+
+			group := fnType.(*types.OverloadGroupType)
+			bestMatch := sa.resolveOverload(group, argTypes)
+			if bestMatch == nil {
+				sa.AddError(n.Pos(), "no matching overload found for arguments")
+				sa.SemanticInfo.Types[n] = types.ErrorType
+				return
+			}
+			fnType = bestMatch
+			sa.SemanticInfo.Types[n.Function] = bestMatch
+
+			if ident, ok := n.Function.(*ast.Identifier); ok {
+				if symGroup, ok := sa.SemanticInfo.Uses[ident]; ok && symGroup.Kind == SymOverloadGroup {
+					for _, ovSym := range symGroup.Overloads {
+						if types.Equals(ovSym.Type, bestMatch) {
+							sa.SemanticInfo.Uses[ident] = ovSym
+							break
+						}
+					}
+				}
+			} else if sel, ok := n.Function.(*ast.SelectorExpression); ok {
+				if symGroup, ok := sa.SemanticInfo.Uses[sel.Field]; ok && symGroup.Kind == SymOverloadGroup {
+					for _, ovSym := range symGroup.Overloads {
+						if types.Equals(ovSym.Type, bestMatch) {
+							sa.SemanticInfo.Uses[sel.Field] = ovSym
+							break
+						}
+					}
+				}
+			}
+			// Skip re-analyzing arguments later
+			// n.Arguments = nil (DO NOT SET TO NIL, NEEDED FOR CODEGEN) 
 		}
 
 		// Anti-Cascading Checks
@@ -6201,7 +6340,7 @@ func (sa *SemanticAnalyzer) handleGenericCall(n *ast.CallExpression, fnStmt *ast
 	sa.SemanticInfo.Types[n] = types.ErrorType
 }
 
-func (sa *SemanticAnalyzer) Monomorphize(fnStmt *ast.FunctionStatement, typeArgs []types.NRType, n *ast.CallExpression, receiverType types.NRType) *ast.FunctionStatement {
+func (sa *SemanticAnalyzer) Monomorphize(fnStmt *ast.FunctionStatement, typeArgs []types.NRType, n ast.Node, receiverType types.NRType) *ast.FunctionStatement {
 	var recTypeArgs []types.NRType
 	if receiverType != nil {
 		underlying := receiverType
@@ -7729,6 +7868,24 @@ func (sa *SemanticAnalyzer) checkUnusedProgramSymbols(prog *ast.Program) {
 }
 
 func sanitizeCIdentifier(name string) string {
+	if strings.Contains(name, "operator") {
+		name = strings.ReplaceAll(name, "operator==", "operator_eq")
+		name = strings.ReplaceAll(name, "operator!=", "operator_neq")
+		name = strings.ReplaceAll(name, "operator<=", "operator_lte")
+		name = strings.ReplaceAll(name, "operator>=", "operator_gte")
+		name = strings.ReplaceAll(name, "operator<<", "operator_shl")
+		name = strings.ReplaceAll(name, "operator>>", "operator_shr")
+		name = strings.ReplaceAll(name, "operator+", "operator_plus")
+		name = strings.ReplaceAll(name, "operator-", "operator_minus")
+		name = strings.ReplaceAll(name, "operator*", "operator_mul")
+		name = strings.ReplaceAll(name, "operator/", "operator_div")
+		name = strings.ReplaceAll(name, "operator%", "operator_mod")
+		name = strings.ReplaceAll(name, "operator<", "operator_lt")
+		name = strings.ReplaceAll(name, "operator>", "operator_gt")
+		name = strings.ReplaceAll(name, "operator&", "operator_bitand")
+		name = strings.ReplaceAll(name, "operator|", "operator_bitor")
+		name = strings.ReplaceAll(name, "operator^", "operator_bitxor")
+	}
 	name = strings.ReplaceAll(name, "@", "")
 	name = strings.ReplaceAll(name, "#", "")
 	name = strings.ReplaceAll(name, "&", "")
@@ -8047,3 +8204,23 @@ func (sa *SemanticAnalyzer) forceAnalyzeType(sym *Symbol) types.NRType {
 	return sym.Type
 }
 
+
+func (sa *SemanticAnalyzer) resolveOverload(group *types.OverloadGroupType, argTypes []types.NRType) types.NRType {
+	for _, fnType := range group.Overloads {
+		if ft, ok := fnType.(*types.FunctionType); ok {
+			if len(ft.Params) == len(argTypes) {
+				match := true
+				for i, paramType := range ft.Params {
+					if !types.IsAssignable(argTypes[i], paramType) {
+						match = false
+						break
+					}
+				}
+				if match {
+					return fnType
+				}
+			}
+		}
+	}
+	return nil
+}

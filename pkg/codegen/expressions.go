@@ -241,6 +241,28 @@ func (g *Generator) genInfixExpression(e *ast.InfixExpression) {
 	lt := g.SemanticInfo.Types[e.Left]
 	rt := g.SemanticInfo.Types[e.Right]
 
+	if sym, ok := g.SemanticInfo.OperatorUses[e]; ok && sym.Kind == semantic.SymFunc {
+		if e.Operator == "!=" {
+			g.buf.WriteString("!")
+		}
+		mangledMethodName := g.mangleName(sym)
+		if mangled, ok := g.SemanticInfo.MonomorphizedNames[e]; ok {
+			mangledMethodName = mangled
+		}
+		g.buf.WriteString(mangledMethodName + "(")
+		g.buf.WriteString("NULL, ")
+		
+		mt := sym.Type.(*types.FunctionType)
+		
+		utL := types.UnwrapLease(lt)
+		g.emitArgument(e.Left, utL, mt.ReceiverLease, false)
+		
+		g.buf.WriteString(", ")
+		g.emitArgument(e.Right, mt.Params[0], mt.ParamLeases[0], false)
+		g.buf.WriteString(")")
+		return
+	}
+
 	// String concatenation
 	if e.Operator == "+" && (lt != nil && lt.Name() == "str" || rt != nil && rt.Name() == "str") {
 		oldNoTemp := g.NoTempWrap
@@ -348,72 +370,7 @@ func (g *Generator) genInfixExpression(e *ast.InfixExpression) {
 		return
 	}
 
-	// Operator overloads for structs (Arithmetic & Comparison)
-	if e.Operator != "==" && e.Operator != "!=" {
-		utL := types.UnwrapLease(lt)
-		if isStruct, ok := utL.(*types.StructType); ok {
-			methodName := ""
-			switch e.Operator {
-			case "+":
-				methodName = "add"
-			case "-":
-				methodName = "sub"
-			case "*":
-				methodName = "mul"
-			case "/":
-				methodName = "div"
-			case "%":
-				methodName = "mod"
-			case "&":
-				methodName = "bitand"
-			case "|":
-				methodName = "bitor"
-			case "^":
-				methodName = "bitxor"
-			case "<<":
-				methodName = "shl"
-			case ">>":
-				methodName = "shr"
-			case "<", ">", "<=", ">=":
-				methodName = "cmp"
-			}
-			if methodName != "" {
-				if methodType, exists := isStruct.Methods[methodName]; exists {
-					if mt, ok := methodType.(*types.FunctionType); ok && len(mt.Params) == 1 {
-						if methodName == "cmp" {
-							g.buf.WriteString("(")
-						}
-						mangledMethodName := g.mangledTypeName(isStruct) + "_" + methodName
-						baseStruct := isStruct.BaseType
-						if baseStruct == nil {
-							baseStruct = isStruct
-						}
-						if methodSyms, ok := g.SemanticInfo.MethodSymbols[baseStruct]; ok {
-							if sym, exists := methodSyms[methodName]; exists && sym != nil {
-								if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok {
-									if len(fnStmt.TypeParameters) > 0 {
-										hash := types.GetHashSuffix(methodName, isStruct.TypeArgs)
-										mangledMethodName += "_" + hash
-									}
-								}
-							}
-						}
-						g.buf.WriteString(mangledMethodName + "(")
-						g.buf.WriteString("NULL, ")
-						g.emitArgument(e.Left, isStruct, mt.ReceiverLease, false)
-						g.buf.WriteString(", ")
-						g.emitArgument(e.Right, mt.Params[0], mt.ParamLeases[0], false)
-						g.buf.WriteString(")")
-
-						if methodName == "cmp" {
-							g.buf.WriteString(" " + e.Operator + " 0)")
-						}
-						return
-					}
-				}
-			}
-		}
-	}
+	// Operator overloads for structs (Arithmetic & Comparison) handled above!
 
 	if e.Operator == "/" || e.Operator == "%" {
 		isFloat := false
@@ -509,7 +466,7 @@ func (g *Generator) genPrefixExpression(e *ast.PrefixExpression) {
 						}
 					}
 				}
-				g.buf.WriteString(mangledMethodName + "(")
+				g.buf.WriteString(g.sanitizeIdentifier(mangledMethodName) + "(")
 				g.buf.WriteString("NULL, ")
 
 				// We need to pass it by address if the method takes a lease

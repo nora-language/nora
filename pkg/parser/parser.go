@@ -1656,10 +1656,10 @@ func (p *Parser) parseFunctionStatement(isExtern bool, allowNoBody bool) *ast.Fu
 		if !p.expectPeek(token.IDENT) {
 			return nil
 		}
-		stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+		stmt.Name = p.parseFunctionName()
 	} else if p.peekTokenIs(token.IDENT) {
 		p.nextToken()
-		stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+		stmt.Name = p.parseFunctionName()
 	}
 
 	// 1.5. Type Parameters
@@ -1702,6 +1702,22 @@ func (p *Parser) parseFunctionStatement(isExtern bool, allowNoBody bool) *ast.Fu
 	}
 
 	return stmt
+}
+
+func (p *Parser) parseFunctionName() *ast.Identifier {
+	if p.curToken.Literal == "operator" {
+		switch p.peekToken.Type {
+		case token.PLUS, token.MINUS, token.ASTERISK, token.SLASH, token.REM,
+			token.EQ, token.NOT_EQ, token.LT, token.GT, token.LT_EQ, token.GT_EQ,
+			token.AND, token.OR, token.XOR, token.SHL, token.SHR:
+			p.nextToken() // Consume the operator
+			return &ast.Identifier{
+				Token: p.curToken,
+				Value: "operator" + p.curToken.Literal,
+			}
+		}
+	}
+	return &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
 }
 func (p *Parser) parseFunctionParameters() []*ast.Parameter {
 	identifiers := []*ast.Parameter{}

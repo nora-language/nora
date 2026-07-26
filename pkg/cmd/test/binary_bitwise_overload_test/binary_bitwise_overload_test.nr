@@ -6,23 +6,23 @@ pub type BitSet = struct {
     val: i32
 }
 
-pub fn (a: #BitSet) bitand(b: BitSet) BitSet {
+pub fn (a: #BitSet) operator&(b: BitSet) BitSet {
     return BitSet{val: a.val & b.val}
 }
 
-pub fn (a: #BitSet) bitor(b: BitSet) BitSet {
+pub fn (a: #BitSet) operator|(b: BitSet) BitSet {
     return BitSet{val: a.val | b.val}
 }
 
-pub fn (a: #BitSet) bitxor(b: BitSet) BitSet {
+pub fn (a: #BitSet) operator^(b: BitSet) BitSet {
     return BitSet{val: a.val ^ b.val}
 }
 
-pub fn (a: #BitSet) shl(b: BitSet) BitSet {
+pub fn (a: #BitSet) operator<<(b: BitSet) BitSet {
     return BitSet{val: a.val << b.val}
 }
 
-pub fn (a: #BitSet) shr(b: BitSet) BitSet {
+pub fn (a: #BitSet) operator>>(b: BitSet) BitSet {
     return BitSet{val: a.val >> b.val}
 }
 
