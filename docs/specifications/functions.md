@@ -58,6 +58,47 @@ pub fn (self: #Circle) Area() f64 {
 }
 ```
 
+## Overloading
+
+Nora supports standard **Function Overloading** and **Method Overloading** based on parameter types. You can define multiple functions or methods with the exact same name, as long as their parameter signatures are strictly distinct.
+
+### Function Overloading
+
+```nora
+pub fn print_val(val: i32) {
+    io.PrintLn("Integer: ${val}")
+}
+
+pub fn print_val(val: f64) {
+    io.PrintLn("Float: ${val}")
+}
+
+pub fn main() {
+    print_val(10)     // Matches the i32 overload
+    print_val(10.5)   // Matches the f64 overload
+}
+```
+
+### Method Overloading
+
+```nora
+type Printer = struct {}
+
+pub fn (p: #Printer) print(val: i32) {
+    io.PrintLn("Integer: ${val}")
+}
+
+pub fn (p: #Printer) print(val: str) {
+    io.PrintLn("String: ${val}")
+}
+```
+
+### Overload Resolution Rules
+- The Semantic Analyzer groups overloaded functions into a `SymOverloadGroup`.
+- When a call is encountered, the compiler resolves the best matching function by strictly comparing the types of the arguments provided against the parameters of the available overloads.
+- If multiple overloads ambiguously match or no overload matches, a semantic error is emitted.
+- At the code generation level, the C backend uniquely mangles overloaded functions by appending a type-based hash suffix to their names to ensure binary-level uniqueness.
+
 ## Return Values
 
 The `return` keyword is used to exit a function and optionally yield a value back to the caller.
