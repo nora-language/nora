@@ -68,6 +68,28 @@ func (g *Generator) mangleName(sym *semantic.Symbol) string {
 	return base
 }
 
+func (g *Generator) getMethodMangledName(st *types.StructType, methodName string) string {
+	if st == nil {
+		return ""
+	}
+	mangledMethodName := g.mangledTypeName(st) + "_" + methodName
+	baseStruct := st.BaseType
+	if baseStruct == nil {
+		baseStruct = st
+	}
+	if methodSyms, ok := g.SemanticInfo.MethodSymbols[st]; ok {
+		if sym, exists := methodSyms[methodName]; exists && sym != nil {
+			return g.mangleName(sym)
+		}
+	}
+	if methodSyms, ok := g.SemanticInfo.MethodSymbols[baseStruct]; ok {
+		if sym, exists := methodSyms[methodName]; exists && sym != nil {
+			return g.mangleName(sym)
+		}
+	}
+	return mangledMethodName
+}
+
 func (g *Generator) getMangledBaseName(sym *semantic.Symbol) string {
 	if sym == nil {
 		return ""

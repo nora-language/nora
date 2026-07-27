@@ -407,7 +407,7 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 								valStr := g.hirOperandStr(i.Val)
 								g.NoTempWrap = oldNoTemp
 
-								g.emit(fmt.Sprintf("    *(%s_index_mut(NULL, ", g.mangledTypeName(st)))
+								g.emit(fmt.Sprintf("    *(%s(NULL, ", g.sanitizeIdentifier(g.getMethodMangledName(st, "index_mut"))))
 								oldBuf := g.buf
 								var argBuf1 bytes.Buffer
 								g.buf = &argBuf1
@@ -526,7 +526,7 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 								valStr := g.hirOperandStr(i.Val)
 								g.NoTempWrap = oldNoTemp
 
-								g.emit(fmt.Sprintf("    *(%s_index_mut(NULL, ", g.mangledTypeName(st)))
+								g.emit(fmt.Sprintf("    *(%s(NULL, ", g.sanitizeIdentifier(g.getMethodMangledName(st, "index_mut"))))
 								oldBuf := g.buf
 								var argBuf1 bytes.Buffer
 								g.buf = &argBuf1

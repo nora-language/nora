@@ -451,21 +451,7 @@ func (g *Generator) genPrefixExpression(e *ast.PrefixExpression) {
 				case "~":
 					methodName = "bitnot"
 				}
-				mangledMethodName := g.mangledTypeName(st) + "_" + methodName
-				baseStruct := st.BaseType
-				if baseStruct == nil {
-					baseStruct = st
-				}
-				if methodSyms, ok := g.SemanticInfo.MethodSymbols[baseStruct]; ok {
-					if sym, exists := methodSyms[methodName]; exists && sym != nil {
-						if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok {
-							if len(fnStmt.TypeParameters) > 0 {
-								hash := types.GetHashSuffix(methodName, st.TypeArgs)
-								mangledMethodName += "_" + hash
-							}
-						}
-					}
-				}
+				mangledMethodName := g.getMethodMangledName(st, methodName)
 				g.buf.WriteString(g.sanitizeIdentifier(mangledMethodName) + "(")
 				g.buf.WriteString("NULL, ")
 
@@ -1668,26 +1654,11 @@ func (g *Generator) genIndexExpression(e *ast.IndexExpression) {
 			ut = pt.Base
 		}
 
-		// Struct operator overload: index
 		if st, ok := ut.(*types.StructType); ok && len(e.Indices) == 1 {
 			if methodType, exists := st.Methods["index"]; exists {
 				if mt, ok := methodType.(*types.FunctionType); ok && len(mt.Params) == 1 {
-					mangledMethodName := g.mangledTypeName(st) + "_index"
-					baseStruct := st.BaseType
-					if baseStruct == nil {
-						baseStruct = st
-					}
-					if methodSyms, ok := g.SemanticInfo.MethodSymbols[baseStruct]; ok {
-						if sym, exists := methodSyms["index"]; exists && sym != nil {
-							if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok {
-								if len(fnStmt.TypeParameters) > 0 {
-									hash := types.GetHashSuffix("index", st.TypeArgs)
-									mangledMethodName += "_" + hash
-								}
-							}
-						}
-					}
-					g.buf.WriteString(mangledMethodName + "(NULL, ")
+					mangledMethodName := g.getMethodMangledName(st, "index")
+					g.buf.WriteString(g.sanitizeIdentifier(mangledMethodName) + "(NULL, ")
 					g.emitArgument(e.Left, st, mt.ReceiverLease, false)
 					g.buf.WriteString(", ")
 					g.emitArgument(e.Indices[0], mt.Params[0], mt.ParamLeases[0], false)

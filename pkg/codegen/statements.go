@@ -189,7 +189,7 @@ func (g *Generator) genAssignment(s *ast.AssignmentStatement) {
 			if methodType, exists := st.Methods["index_mut"]; exists {
 				if mt, ok := methodType.(*types.FunctionType); ok && len(mt.Params) == 1 {
 					g.buf.WriteString("*(")
-					g.buf.WriteString(g.mangledTypeName(st) + "_index_mut(NULL, ")
+					g.buf.WriteString(g.sanitizeIdentifier(g.getMethodMangledName(st, "index_mut")) + "(NULL, ")
 					g.emitArgument(idx.Left, st, mt.ReceiverLease, false)
 					g.buf.WriteString(", ")
 					g.emitArgument(idx.Indices[0], mt.Params[0], mt.ParamLeases[0], false)
