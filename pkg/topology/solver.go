@@ -330,7 +330,7 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 								if pt, ok := ut.(*types.PointerType); ok {
 									ut = pt.Base
 								}
-								if st, ok := ut.(*types.StructType); ok && st.CoreIntrinsic == "Collection" {
+								if st, ok := ut.(*types.StructType); ok && (st.CoreIntrinsic == "Collection" || strings.HasPrefix(st.Name(), "Vector")) {
 									isCollectionGet = true
 								}
 							}

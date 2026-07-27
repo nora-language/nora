@@ -6327,20 +6327,7 @@ func (sa *SemanticAnalyzer) handleGenericCall(n *ast.CallExpression, fnStmt *ast
 		return
 	}
 
-	effectiveKey := "_" + types.GetHashSuffix(fnStmt.Name.Value, typeArgs)
-	// if fnStmt.Name.Value == "Insert" {
-	// 	var names []string
-	// 	for _, ta := range typeArgs {
-	// 		if ta != nil {
-	// 			names = append(names, ta.Name())
-	// 		} else {
-	// 			names = append(names, "nil")
-	// 		}
-	// 	}
-	// 	println("[DEBUG-MONO] Insert call: typeArgs = " + strings.Join(names, ", ") + ", key = " + effectiveKey + ", file = " + n.Pos().Filename)
-	// }
-
-	fnName := fnStmt.Name.Value + effectiveKey
+	fnName := inst.Name.Value
 	if receiverType == nil {
 		pkgName := ""
 		var fnSym *Symbol
@@ -6636,15 +6623,50 @@ func (sa *SemanticAnalyzer) Monomorphize(fnStmt *ast.FunctionStatement, typeArgs
 	sa.CurrentFunction = prevFn
 	sa.CurrentLambda = prevLambda
 
-	// 5. Register the monomorphized symbol in MethodSymbols under its MANGLED name
-	// DO NOT register under the original method name, as it will shadow the generic
-	// OverloadGroup and break subsequent monomorphization of other overloads!
+	// 5. Register the monomorphized symbol in MethodSymbols under both original and MANGLED name.
 	if receiverType != nil {
 		if sym, ok := sa.SemanticInfo.Defs[specializedFn.Name]; ok && sym != nil {
 			if sa.SemanticInfo.MethodSymbols[receiverType] == nil {
 				sa.SemanticInfo.MethodSymbols[receiverType] = make(map[string]*Symbol)
 			}
+			existing := sa.SemanticInfo.MethodSymbols[receiverType][fnStmt.Name.Value]
+			baseExisting := (*Symbol)(nil)
+			if unwrappedReceiver := types.UnwrapLease(receiverType); unwrappedReceiver != nil {
+				if pt, ok := unwrappedReceiver.(*types.PointerType); ok {
+					unwrappedReceiver = pt.Base
+				}
+				if st, ok := unwrappedReceiver.(*types.StructType); ok && st.BaseType != nil {
+					baseExisting = sa.SemanticInfo.MethodSymbols[st.BaseType][fnStmt.Name.Value]
+				} else if sumT, ok := unwrappedReceiver.(*types.SumType); ok && sumT.BaseType != nil {
+					baseExisting = sa.SemanticInfo.MethodSymbols[sumT.BaseType][fnStmt.Name.Value]
+				}
+			}
+			isOverloadGroup := (existing != nil && existing.Kind == SymOverloadGroup) || (baseExisting != nil && baseExisting.Kind == SymOverloadGroup)
+			if !isOverloadGroup {
+				sa.SemanticInfo.MethodSymbols[receiverType][fnStmt.Name.Value] = sym
+			}
 			sa.SemanticInfo.MethodSymbols[receiverType][specializedFn.Name.Value] = sym
+
+			unwrappedReceiver := types.UnwrapLease(receiverType)
+			if pt, ok := unwrappedReceiver.(*types.PointerType); ok {
+				unwrappedReceiver = pt.Base
+			}
+			if st, ok := unwrappedReceiver.(*types.StructType); ok {
+				if existing, exists := st.Methods[fnStmt.Name.Value]; !exists || existing == nil {
+					st.Methods[fnStmt.Name.Value] = sym.Type
+				} else if _, isGroup := existing.(*types.OverloadGroupType); !isGroup {
+					st.Methods[fnStmt.Name.Value] = sym.Type
+				}
+			} else if sumT, ok := unwrappedReceiver.(*types.SumType); ok {
+				if sumT.Methods == nil {
+					sumT.Methods = make(map[string]types.NRType)
+				}
+				if existing, exists := sumT.Methods[fnStmt.Name.Value]; !exists || existing == nil {
+					sumT.Methods[fnStmt.Name.Value] = sym.Type
+				} else if _, isGroup := existing.(*types.OverloadGroupType); !isGroup {
+					sumT.Methods[fnStmt.Name.Value] = sym.Type
+				}
+			}
 		}
 	}
 
@@ -7354,6 +7376,9 @@ func (sa *SemanticAnalyzer) matchType(pattern ast.Node, actual types.NRType, typ
 		if pt.Operator == "*" || pt.Operator == "#" || pt.Operator == "&" || pt.Operator == "@" {
 			if at, ok := actual.(*types.PointerType); ok {
 				sa.matchType(pt.Right, at.Base, typeParams, inferred, stripLease)
+			} else {
+				// If actual is not a pointer (e.g. method called directly on value), still match the base pattern
+				sa.matchType(pt.Right, actual, typeParams, inferred, stripLease)
 			}
 		}
 	case *ast.IndexExpression:
@@ -7371,6 +7396,10 @@ func (sa *SemanticAnalyzer) matchType(pattern ast.Node, actual types.NRType, typ
 			sa.matchType(pt.Indices[1], mt.Value, typeParams, inferred, false)
 		} else if st, ok := actual.(*types.StructType); ok {
 			if st.BaseType == patternBaseType && len(st.TypeArgs) == len(pt.Indices) {
+				for i, idx := range pt.Indices {
+					sa.matchType(idx, st.TypeArgs[i], typeParams, inferred, false)
+				}
+			} else if st.BaseType != nil && patternBaseType != nil && st.BaseType.Name() == patternBaseType.Name() && len(st.TypeArgs) == len(pt.Indices) {
 				for i, idx := range pt.Indices {
 					sa.matchType(idx, st.TypeArgs[i], typeParams, inferred, false)
 				}
