@@ -1485,17 +1485,13 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					if match != nil {
 						sa.SemanticInfo.Types[n] = match.Return
 						
-						methodSyms := sa.SemanticInfo.MethodSymbols[st]
 						var sym *Symbol
 						var ok bool
-						if methodSyms != nil {
-							sym, ok = methodSyms[methodName]
+						if st.BaseType != nil && sa.SemanticInfo.MethodSymbols[st.BaseType] != nil {
+							sym, ok = sa.SemanticInfo.MethodSymbols[st.BaseType][methodName]
 						}
-						if !ok && st.BaseType != nil {
-							methodSyms = sa.SemanticInfo.MethodSymbols[st.BaseType]
-							if methodSyms != nil {
-								sym, ok = methodSyms[methodName]
-							}
+						if !ok && sa.SemanticInfo.MethodSymbols[st] != nil {
+							sym, ok = sa.SemanticInfo.MethodSymbols[st][methodName]
 						}
 						
 						if ok {
@@ -1648,7 +1644,15 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					if match == nil {
 						sa.AddError(n.Token.Position, "invalid signature or argument for 'operator==' method")
 					} else {
-						if sym, ok := sa.SemanticInfo.MethodSymbols[st]["operator=="]; ok {
+						var sym *Symbol
+						var ok bool
+						if st.BaseType != nil && sa.SemanticInfo.MethodSymbols[st.BaseType] != nil {
+							sym, ok = sa.SemanticInfo.MethodSymbols[st.BaseType]["operator=="]
+						}
+						if !ok && sa.SemanticInfo.MethodSymbols[st] != nil {
+							sym, ok = sa.SemanticInfo.MethodSymbols[st]["operator=="]
+						}
+						if ok {
 							if sym.Kind == SymOverloadGroup {
 								// Use the resolved matchIdx for direct index selection
 								if matchIdx >= 0 && matchIdx < len(sym.Overloads) {
@@ -1663,6 +1667,16 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 								}
 							} else {
 								sa.SemanticInfo.OperatorUses[n] = sym
+							}
+							if targetSym := sa.SemanticInfo.OperatorUses[n]; targetSym != nil && len(st.TypeArgs) > 0 {
+								if methodFn, ok := targetSym.DefNode.(*ast.FunctionStatement); ok {
+									inst := sa.Monomorphize(methodFn, st.TypeArgs, n, st)
+									if inst != nil {
+										fnName := st.Name() + "_" + inst.Name.Value
+										fnName = sanitizeCIdentifier(fnName)
+										sa.SemanticInfo.MonomorphizedNames[n] = fnName
+									}
+								}
 							}
 						}
 					}

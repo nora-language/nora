@@ -1476,17 +1476,13 @@ func (g *Generator) emitArgument(expr ast.Expression, targetType types.NRType, l
 		}
 	}
 
-	if g.shouldPassByPointer(argType, lease, isExtern) {
-		isPointer := g.isPointerInC(expr)
-		if isPointer && lease == types.LeaseMove && (argType.GetKind() == types.KindStruct || argType.GetKind() == types.KindSum) {
-			isPointer = false
-		}
-		if isPointer {
-			if lease == types.LeaseMove {
-				g.genOwnedValue(expr, targetType)
-			} else {
-				g.genExpression(expr)
-			}
+	passByPointer := g.shouldPassByPointer(argType, lease, isExtern)
+	if !passByPointer && targetType != nil {
+		passByPointer = g.shouldPassByPointer(types.UnwrapLease(targetType), lease, isExtern)
+	}
+	if passByPointer {
+		if g.isPointerInC(expr) {
+			g.genExpression(expr)
 		} else {
 			g.genAddressOf(expr, targetType, lease)
 		}

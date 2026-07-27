@@ -762,12 +762,6 @@ func (g *Generator) collectDefinitions() {
 				isSelector = true
 				methodBase = sel.Field.Value
 			}
-		} else if infix, ok := eNode.(*ast.InfixExpression); ok {
-			if sym, exists := g.SemanticInfo.OperatorUses[infix]; exists {
-				ft, _ = sym.Type.(*types.FunctionType)
-				isSelector = true
-				methodBase = "operator" + infix.Operator
-			}
 		}
 
 		if ft != nil {
