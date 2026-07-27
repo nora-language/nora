@@ -1465,10 +1465,8 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					if group, ok := methodType.(*types.OverloadGroupType); ok {
 						var resolved types.NRType
 						resolved, matchIdx = sa.resolveOverload(group, []types.NRType{rightType})
-						fmt.Printf("[DEBUG INFIX] resolveOverload for %s + %s returned matchIdx=%d\n", st.Name(), rightType.Name(), matchIdx)
 						if resolved == nil {
 							resolved, matchIdx = sa.resolveOverload(group, []types.NRType{rightBase})
-							fmt.Printf("[DEBUG INFIX] fallback resolveOverload returned matchIdx=%d\n", matchIdx)
 						}
 						if resolved != nil {
 							match = resolved.(*types.FunctionType)
@@ -6505,7 +6503,6 @@ func (sa *SemanticAnalyzer) Monomorphize(fnStmt *ast.FunctionStatement, typeArgs
 	for _, param := range fnStmt.Parameters {
 		if param.Type != nil {
 			ts := param.Type.String()
-			fmt.Printf("[DEBUG MONO] param %s type: %s\n", param.Name.Value, ts)
 			paramSigNames = append(paramSigNames, ts)
 		}
 	}
