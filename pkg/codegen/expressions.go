@@ -1481,7 +1481,8 @@ func (g *Generator) emitArgument(expr ast.Expression, targetType types.NRType, l
 		passByPointer = g.shouldPassByPointer(types.UnwrapLease(targetType), lease, isExtern)
 	}
 	if passByPointer {
-		if g.isPointerInC(expr) {
+		isMoved := g.Solver != nil && g.Solver.Moves[expr]
+		if g.isPointerInC(expr) && !isMoved {
 			g.genExpression(expr)
 		} else {
 			g.genAddressOf(expr, targetType, lease)
