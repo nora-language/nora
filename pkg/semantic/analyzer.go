@@ -1584,45 +1584,68 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 
 		// Comparison: Result type == Boolean
 		case "<", ">", "<=", ">=":
+			opName := "operator" + n.Operator
 			if st, ok := leftBase.(*types.StructType); ok {
-				if methodType, exists := st.Methods["cmp"]; exists {
-					if ft, ok := methodType.(*types.FunctionType); ok && len(ft.Params) == 1 && ft.Return == types.I32 {
+				if methodType, exists := st.Methods[opName]; exists {
+					var match *types.FunctionType
+					matchIdx := -1
+					if group, ok := methodType.(*types.OverloadGroupType); ok {
+						var resolved types.NRType
+						resolved, matchIdx = sa.resolveOverload(group, []types.NRType{rightType})
+						if resolved == nil {
+							resolved, matchIdx = sa.resolveOverload(group, []types.NRType{rightBase})
+						}
+						if resolved != nil {
+							match = resolved.(*types.FunctionType)
+						}
+					} else if ft, ok := methodType.(*types.FunctionType); ok && len(ft.Params) == 1 && ft.Return == types.Bool {
 						expectedBase := ft.Params[0]
 						if pt, ok := expectedBase.(*types.PointerType); ok && pt.Leased {
 							expectedBase = pt.Base
 						}
 						if types.IsAssignable(rightType, expectedBase) || types.IsAssignable(rightBase, expectedBase) {
-							var sym *Symbol
-							var ok bool
-							if st.BaseType != nil && sa.SemanticInfo.MethodSymbols[st.BaseType] != nil {
-								sym, ok = sa.SemanticInfo.MethodSymbols[st.BaseType]["cmp"]
-							}
-							if !ok && sa.SemanticInfo.MethodSymbols[st] != nil {
-								sym, ok = sa.SemanticInfo.MethodSymbols[st]["cmp"]
-							}
-							if ok {
-								if sym.Kind == SymOverloadGroup {
+							match = ft
+							matchIdx = 0
+						}
+					}
+
+					if match == nil {
+						sa.AddError(n.Token.Position, "invalid signature or argument for '%s' method", opName)
+					} else {
+						var sym *Symbol
+						var ok bool
+						if st.BaseType != nil && sa.SemanticInfo.MethodSymbols[st.BaseType] != nil {
+							sym, ok = sa.SemanticInfo.MethodSymbols[st.BaseType][opName]
+						}
+						if !ok && sa.SemanticInfo.MethodSymbols[st] != nil {
+							sym, ok = sa.SemanticInfo.MethodSymbols[st][opName]
+						}
+						if ok {
+							if sym.Kind == SymOverloadGroup {
+								if matchIdx >= 0 && matchIdx < len(sym.Overloads) {
+									sa.SemanticInfo.OperatorUses[n] = sym.Overloads[matchIdx]
+								} else {
 									for _, ovSym := range sym.Overloads {
-										if types.Equals(ovSym.Type, ft) {
+										if types.Equals(ovSym.Type, match) {
 											sa.SemanticInfo.OperatorUses[n] = ovSym
 											break
 										}
 									}
-								} else {
-									sa.SemanticInfo.OperatorUses[n] = sym
+								}
+							} else {
+								sa.SemanticInfo.OperatorUses[n] = sym
+							}
+							if targetSym := sa.SemanticInfo.OperatorUses[n]; targetSym != nil && len(st.TypeArgs) > 0 {
+								if methodFn, ok := targetSym.DefNode.(*ast.FunctionStatement); ok {
+									inst := sa.Monomorphize(methodFn, st.TypeArgs, n, st)
+									if inst != nil {
+										fnName := st.Name() + "_" + inst.Name.Value
+										fnName = sanitizeCIdentifier(fnName)
+										sa.SemanticInfo.MonomorphizedNames[n] = fnName
+									}
 								}
 							}
-							sa.SemanticInfo.Types[n] = types.Bool
-							return
-						} else {
-							sa.AddError(n.Token.Position, "method 'cmp' expects %s, got %s", ft.Params[0].Name(), rightType.Name())
-							sa.SemanticInfo.Types[n] = types.ErrorType
-							return
 						}
-					} else {
-						sa.AddError(n.Token.Position, "invalid signature for 'cmp' method")
-						sa.SemanticInfo.Types[n] = types.ErrorType
-						return
 					}
 				}
 			}
@@ -1631,7 +1654,9 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				sa.AddError(n.Token.Position, "cannot compare mismatching types: %s %s %s", leftBase.Name(), n.Operator, rightBase.Name())
 			} else {
 				if leftBase.GetKind() != types.KindPrimitive && leftBase.GetKind() != types.KindPointer && leftBase.GetKind() != types.KindGeneric {
-					sa.AddError(n.Token.Position, "operator '%s' not supported for type %s without 'cmp' method", n.Operator, leftBase.Name())
+					if _, ok := sa.SemanticInfo.OperatorUses[n]; !ok {
+						sa.AddError(n.Token.Position, "operator '%s' not supported for type %s without '%s' method", n.Operator, leftBase.Name(), opName)
+					}
 				}
 			}
 			sa.SemanticInfo.Types[n] = types.Bool

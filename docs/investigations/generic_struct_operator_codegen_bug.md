@@ -1,6 +1,6 @@
 # Investigation: Generic Struct Operator Overloading Codegen Failure
 
-**Status**: Open
+**Status**: Completed
 **Date**: 2026-07-28
 **Investigator**: Antigravity
 
@@ -26,16 +26,13 @@ The root cause involves the interaction between the Nora compiler's generic AST 
 3. **C11 Codegen (pkg/codegen/hir_codegen.go)**:
    The *hir.BinOp branch in the code generator blindly translates all binary operators directly into their C equivalents (e.g. (left < right)). Because the monomorphized type is a C struct, emitting standard operators produces invalid C11 code.
 
-An earlier attempt to patch hir_codegen.go by intercepting struct types within *hir.BinOp and generating calls to _cmp or _operator_eq failed because:
-- The mangled name of the method must include the generic instance hash (e.g., _f2c063a2), which isn't easily accessible at the BinOp emission stage without evaluating SemanticInfo.MonomorphizedNames.
-- It accidentally intercepted pointer equality checks (such as those generated within auto-dereferenced operator!=), causing undeclared function errors for operator_eq on types that don't define one.
-
 ## Fix
-A proper fix requires modifying the AST lowering phase or the monomorphization pass to correctly handle overloaded operators for generic types that resolve to structs.
-- **Option A (Relowering)**: Ensure that when generic methods are monomorphized, any BinOp instructions involving structs are re-lowered into method calls (ASTExpr or Call instructions).
-- **Option B (Codegen Interface)**: Update hir_codegen.go to look up the correct overloaded method symbol and emit a proper function call, correctly handling pointer semantics and generic mangling hashes. 
+The root cause was originally evaluated as an issue with AST lowering, but deeper investigation revealed it was an oversight in `pkg/semantic/analyzer.go`.
+The semantic analyzer checked that a `cmp` method existed for `<, <=, >, >=` operators on structs, but it completely failed to populate `sa.SemanticInfo.OperatorUses[n]` with the resolved method symbol. Consequently, `pkg/codegen/expressions.go` (and by extension `hir_codegen.go`) behaved as if no method existed and simply dumped raw C operators.
 
-This fix is deferred to a separate scope to maintain the stability of the compiler while Phase 38 development completes using an alternative workaround or in a subsequent patch.
+Instead of patching `cmp`, we completely eliminated the legacy `cmp` requirement in favor of standard direct operator overloading (`operator<`, `operator<=`, `operator>`, `operator>=`), aligning it with `operator==`. 
+- `analyzer.go` now correctly resolves the specific relational method and links it in `OperatorUses`.
+- Tests and structs across the codebase (e.g., `Fixed32`, `Fixed64`) were refactored to use standard operators returning `bool`.
 
 ## Validation
 A successful fix will allow generic_math_demo.nr to instantiate and execute Vector3[Fixed64] without C11 compilation errors, specifically successfully running operations like v3_fixed.Equals(...) and v3_fixed + v3_fixed.

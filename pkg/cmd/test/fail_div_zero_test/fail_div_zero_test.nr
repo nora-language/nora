@@ -4,10 +4,8 @@ pub type Fixed64 = struct {
     val: i64,
 }
 
-pub fn (self: #Fixed64) cmp(other: #Fixed64) i32 {
-    if (self.val < other.val) { return -1 }
-    if (self.val > other.val) { return 1 }
-    return 0
+pub fn (self: #Fixed64) operator==(other: #Fixed64) bool {
+    return self.val == other.val
 }
 
 pub fn (self: #Fixed64) operator/(other: #Fixed64) Fixed64 {

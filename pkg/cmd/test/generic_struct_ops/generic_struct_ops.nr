@@ -8,10 +8,8 @@ pub fn (f: #MyFixed) operator==(other: MyFixed) bool {
 	return f.val == other.val
 }
 
-pub fn (f: #MyFixed) cmp(other: MyFixed) i32 {
-	if f.val < other.val { return -1 }
-	if f.val > other.val { return 1 }
-	return 0
+pub fn (f: #MyFixed) operator<(other: MyFixed) bool {
+	return f.val < other.val
 }
 
 pub type Vector3[T] = struct {
