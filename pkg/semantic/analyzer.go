@@ -7817,7 +7817,7 @@ func (sa *SemanticAnalyzer) AnalyzeFileTypes(file *ast.File) {
 	}
 	packageName := sa.GetPackageName(file)
 	prevScope := sa.CurrentScope
-	sa.CurrentScope = sa.GetPackageScope(packageName)
+	sa.CurrentScope = sa.GetPathScope(file.Name, packageName)
 
 	if strings.Contains(file.Name, "map.nr") {
 		if sa.DebugMode {
