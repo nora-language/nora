@@ -836,6 +836,20 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 						}
 						return
 					}
+				} else if intrinsicName == "bitcast" {
+					if len(e.Arguments) == 1 {
+						arg := e.Arguments[0].Value
+						argType := g.SemanticInfo.Types[arg]
+						retType := g.SemanticInfo.Types[e]
+						if argType != nil && retType != nil {
+							argC := g.cType(argType)
+							retC := g.cType(retType)
+							g.buf.WriteString(fmt.Sprintf("((union { %s from; %s to; }){ .from = ", argC, retC))
+							g.genExpression(arg)
+							g.buf.WriteString(" }).to")
+							return
+						}
+					}
 				}
 			}
 		}

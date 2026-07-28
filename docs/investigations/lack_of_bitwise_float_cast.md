@@ -45,7 +45,10 @@ We linked this file in `nora.yaml` under `native.source_files` and bound it to N
 extern fn FloatBitsToUint(f: f32) u32
 ```
 
-## Future Recommendations
-For future language iterations, the Nora compiler should introduce one of the following:
-1. **Intrinsic Functions**: Built-in compiler intrinsics like `@bitcast[u32](f)` that compile down to C `union` type-punning or `memcpy` under the hood.
-2. **Standard Library Extensions**: Introduce `math.FloatBitsToUint(f32) u32` and `math.UintBitsToFloat(u32) f32` into `std/math` to provide this common systems programming necessity out of the box natively.
+## Solution
+This investigation has been resolved. We successfully implemented compiler-native bitwise floating-point casts, bypassing the need for C FFI bindings.
+
+We introduced a new `[intrinsic("bitcast")]` attribute. 
+The standard library (`core/math/bits.nr`) now provides native `Float32bits`, `Float64bits`, `Uint32bitsToFloat`, and `Uint64bitsToFloat` functions. During the code-generation phase (`pkg/codegen/expressions.go` and `pkg/codegen/hir_codegen.go`), the compiler intercepts these intrinsics and automatically emits safe C99 compound `union` literals directly into the generated binary, resulting in zero-overhead type punning.
+
+This makes `native_pack.c` completely obsolete.

@@ -950,6 +950,18 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 								}
 								return fmt.Sprintf("((void*)(%s))", g.hirOperandStr(arg))
 							}
+						} else if intrinsicName == "bitcast" {
+							if len(i.Args) == 1 {
+								arg := i.Args[0]
+								argType := arg.GetType()
+								retType := i.Type
+								if argType != nil && retType != nil {
+									argC := g.cType(argType)
+									retC := g.cType(retType)
+									argStr := g.hirOperandStr(arg)
+									return fmt.Sprintf("((union { %s from; %s to; }){ .from = %s }).to", argC, retC, argStr)
+								}
+							}
 						}
 					}
 				}
