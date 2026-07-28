@@ -1218,7 +1218,13 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 			}
 		}
 
-		if isStrConcat || isStrEq || isFuncEq || isStructEq || isStructOp {
+		isGenericEq := (e.Operator == "==" || e.Operator == "!=") && ult != nil && ult.GetKind() == types.KindGeneric && urt != nil && urt.GetKind() == types.KindGeneric && lt.GetKind() != types.KindPointer && rt.GetKind() != types.KindPointer
+		isGenericOp := false
+		if ult != nil && ult.GetKind() == types.KindGeneric && e.Operator != "==" && e.Operator != "!=" {
+			isGenericOp = true
+		}
+
+		if isStrConcat || isStrEq || isFuncEq || isStructEq || isStructOp || isGenericEq || isGenericOp {
 			astExpr := &ASTExpr{ASTNode: e, Type: t}
 			return &InstOperand{Inst: astExpr}
 		}

@@ -1592,6 +1592,26 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 							expectedBase = pt.Base
 						}
 						if types.IsAssignable(rightType, expectedBase) || types.IsAssignable(rightBase, expectedBase) {
+							var sym *Symbol
+							var ok bool
+							if st.BaseType != nil && sa.SemanticInfo.MethodSymbols[st.BaseType] != nil {
+								sym, ok = sa.SemanticInfo.MethodSymbols[st.BaseType]["cmp"]
+							}
+							if !ok && sa.SemanticInfo.MethodSymbols[st] != nil {
+								sym, ok = sa.SemanticInfo.MethodSymbols[st]["cmp"]
+							}
+							if ok {
+								if sym.Kind == SymOverloadGroup {
+									for _, ovSym := range sym.Overloads {
+										if types.Equals(ovSym.Type, ft) {
+											sa.SemanticInfo.OperatorUses[n] = ovSym
+											break
+										}
+									}
+								} else {
+									sa.SemanticInfo.OperatorUses[n] = sym
+								}
+							}
 							sa.SemanticInfo.Types[n] = types.Bool
 							return
 						} else {

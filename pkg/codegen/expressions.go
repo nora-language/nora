@@ -260,6 +260,10 @@ func (g *Generator) genInfixExpression(e *ast.InfixExpression) {
 		g.buf.WriteString(", ")
 		g.emitArgument(e.Right, mt.Params[0], mt.ParamLeases[0], false)
 		g.buf.WriteString(")")
+		
+		if (e.Operator == "<" || e.Operator == ">" || e.Operator == "<=" || e.Operator == ">=") && mt.Return == types.I32 {
+			g.buf.WriteString(" " + e.Operator + " 0")
+		}
 		return
 	}
 
