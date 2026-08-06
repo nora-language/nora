@@ -458,7 +458,7 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 					valStr = "*" + valStr
 				}
 			}
-			destStr := g.hirOperandStr(i.Dest)
+			destStr := g.getDestStr(i.Dest)
 			if !valIsPtr && destIsPtr {
 				baseType := i.Dest.GetType()
 				if pt, ok := baseType.(*types.PointerType); ok {
@@ -574,7 +574,7 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 					valStr = "*" + valStr
 				}
 			}
-			destStr := g.hirOperandStr(i.Dest)
+			destStr := g.getDestStr(i.Dest)
 			if !g.isOperandPointerInC(i.Val) && g.isOperandPointerInC(i.Dest) {
 				baseType := i.Dest.GetType()
 				if pt, ok := baseType.(*types.PointerType); ok {
@@ -1160,13 +1160,13 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 	case *hir.Expression:
 		return i.Expr
 	case *hir.Store:
-		destStr := g.hirOperandStr(i.Dest)
+		destStr := g.getDestStr(i.Dest)
 		if destStr == "_" {
 			return fmt.Sprintf("(%s)", g.hirOperandStr(i.Val))
 		}
 		return fmt.Sprintf("(%s = %s)", destStr, g.hirOperandStr(i.Val))
 	case *hir.Assign:
-		destStr := g.hirOperandStr(i.Dest)
+		destStr := g.getDestStr(i.Dest)
 		if destStr == "_" {
 			return fmt.Sprintf("(%s)", g.hirOperandStr(i.Val))
 		}
@@ -1610,28 +1610,59 @@ func (g *Generator) hirOperandStr(op hir.Operand) string {
 	return ""
 }
 
-func (g *Generator) findCurrentParamSymbol(name string) *semantic.Symbol {
-	if g.CurrentFunc != nil && g.CurrentFunc.DefNode != nil {
-		if fnStmt, ok := g.CurrentFunc.DefNode.(*ast.FunctionStatement); ok {
-			for _, p := range fnStmt.Parameters {
-				if p.Name != nil && p.Name.Value == name {
-					if sym := g.SemanticInfo.Defs[p.Name]; sym != nil {
-						return sym
+func (g *Generator) getParamLeaseAndType(name string) (types.NRType, types.LeaseKind, bool) {
+	if g.CurrentFunc != nil && g.CurrentFunc.Type != nil {
+		if ft, ok := g.CurrentFunc.Type.(*types.FunctionType); ok {
+			if fn, hasFn := g.CurrentFunc.DefNode.(*ast.FunctionStatement); hasFn {
+				if fn.Receiver != nil && fn.Receiver.Name != nil && fn.Receiver.Name.Value == name {
+					return ft.Receiver, ft.ReceiverLease, true
+				}
+				for i, p := range fn.Parameters {
+					if p.Name != nil && p.Name.Value == name {
+						lease := types.LeaseRead
+						if i < len(ft.ParamLeases) {
+							lease = ft.ParamLeases[i]
+						}
+						if i < len(ft.Params) {
+							return ft.Params[i], lease, true
+						}
 					}
 				}
 			}
 		}
 	}
-	if g.CurrentLambda != nil {
-		for _, p := range g.CurrentLambda.Parameters {
-			if p.Name != nil && p.Name.Value == name {
-				if sym := g.SemanticInfo.Defs[p.Name]; sym != nil {
-					return sym
-				}
+	return nil, types.LeaseRead, false
+}
+
+func (g *Generator) getOperandVarName(op hir.Operand) string {
+	if op == nil {
+		return ""
+	}
+	if varOp, ok := op.(*hir.VarOperand); ok {
+		return varOp.Name
+	}
+	if instOp, ok := op.(*hir.InstOperand); ok {
+		if astExpr, ok := instOp.Inst.(*hir.ASTExpr); ok {
+			if ident, ok := astExpr.ASTNode.(*ast.Identifier); ok {
+				return ident.Value
 			}
 		}
 	}
-	return nil
+	return ""
+}
+
+func (g *Generator) getDestStr(dest hir.Operand) string {
+	destStr := g.hirOperandStr(dest)
+	if varName := g.getOperandVarName(dest); varName != "" {
+		if paramType, lease, isParam := g.getParamLeaseAndType(varName); isParam {
+			destCType := g.cParamType(paramType, lease, false)
+			valCType := g.cType(types.UnwrapLease(paramType))
+			if strings.Count(destCType, "*") > strings.Count(valCType, "*") {
+				destStr = "*" + destStr
+			}
+		}
+	}
+	return destStr
 }
 
 func (g *Generator) cTypeOfOperand(op hir.Operand) string {
@@ -1668,8 +1699,8 @@ func (g *Generator) cTypeOfOperand(op hir.Operand) string {
 				isExtern = true
 			}
 		}
-		if sym := g.findCurrentParamSymbol(varOp.Name); sym != nil {
-			return g.cParamType(sym.Type, sym.LeaseKind, isExtern)
+		if paramType, lease, isParam := g.getParamLeaseAndType(varOp.Name); isParam {
+			return g.cParamType(paramType, lease, isExtern)
 		}
 		if varOp.Symbol != nil {
 			if varOp.Symbol.Kind == semantic.SymParam {
@@ -1715,6 +1746,16 @@ func (g *Generator) alignCallArgument(arg hir.Operand, paramType types.NRType, l
 	if operandStars > targetStars {
 		if paramType != nil && paramType.Name() != "ptr" && paramType.Name() != "str" && types.UnwrapLease(paramType).Name() != "ptr" && types.UnwrapLease(paramType).Name() != "str" {
 			argStr = strings.Repeat("*", operandStars-targetStars) + argStr
+		}
+	} else if operandStars < targetStars {
+		if _, ok := arg.(*hir.VarOperand); ok {
+			argStr = "&" + argStr
+			operandStars++
+			operandCType = targetCType
+		} else if passByPointer && !g.isOperandPointerInC(arg) {
+			argStr = fmt.Sprintf("((%s[]){ %s })", g.cType(types.UnwrapLease(paramType)), argStr)
+			operandStars++
+			operandCType = targetCType
 		}
 	} else if passByPointer && !g.isOperandPointerInC(arg) {
 		argStr = fmt.Sprintf("((%s[]){ %s })", g.cType(types.UnwrapLease(paramType)), argStr)

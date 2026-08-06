@@ -1541,11 +1541,14 @@ func (g *Generator) getEqMethod(t types.NRType) string {
 		}
 	}
 
-	// 2. Fallback to auto-generated structural equality for structs and arrays
+	// 2. Fallback to auto-generated structural equality for structs, arrays, and sum types
 	if _, ok := base.(*types.StructType); ok {
 		return g.requestAutoEq(base)
 	}
 	if _, ok := base.(*types.ArrayType); ok {
+		return g.requestAutoEq(base)
+	}
+	if _, ok := base.(*types.SumType); ok {
 		return g.requestAutoEq(base)
 	}
 
@@ -1594,6 +1597,8 @@ func (g *Generator) emitAutoEqMethods() {
 							} else {
 								eqCall = fmt.Sprintf("!%s(%s&(a->%s), &(b->%s))", eqMethod, args, fName, fName)
 							}
+						} else if _, isSum := ut.(*types.SumType); isSum {
+							eqCall = fmt.Sprintf("memcmp(&(a->%s), &(b->%s), sizeof(%s)) != 0", fName, fName, g.cType(fType))
 						} else if _, isArray := ut.(*types.ArrayType); isArray {
 							eqMethod := g.getEqMethod(ut)
 							args := ""
@@ -1633,6 +1638,8 @@ func (g *Generator) emitAutoEqMethods() {
 						g.emit("    if (%s) return false;", eqCall)
 					}
 				}
+			} else if sumT, ok := t.(*types.SumType); ok {
+				g.emit("    if (memcmp(a, b, sizeof(%s)) != 0) return false;", g.cType(sumT))
 			} else if at, ok := t.(*types.ArrayType); ok {
 				ut := types.UnwrapLease(at.Base)
 				eqCall := ""
@@ -1643,6 +1650,8 @@ func (g *Generator) emitAutoEqMethods() {
 						args = "NULL, "
 					}
 					eqCall = fmt.Sprintf("!%s(%s&(a->data[i]), &(b->data[i]))", eqMethod, args)
+				} else if _, isSum := ut.(*types.SumType); isSum {
+					eqCall = fmt.Sprintf("memcmp(&(a->data[i]), &(b->data[i]), sizeof(%s)) != 0", g.cType(ut))
 				} else if _, isArray := ut.(*types.ArrayType); isArray {
 					eqMethod := g.getEqMethod(ut)
 					args := ""

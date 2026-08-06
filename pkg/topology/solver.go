@@ -419,6 +419,31 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 			}
 		}
 
+		// Collect mapping of identifiers to their longest selector string path, if applicable
+		identToSelectorStr := make(map[*ast.Identifier]string)
+		ast.Inspect(stmt, func(n ast.Node) bool {
+			if sel, ok := n.(*ast.SelectorExpression); ok {
+				var rootId *ast.Identifier
+				var curr ast.Expression = sel
+				for curr != nil {
+					if se, ok := curr.(*ast.SelectorExpression); ok {
+						curr = se.Left
+					} else if id, ok := curr.(*ast.Identifier); ok {
+						rootId = id
+						break
+					} else {
+						break
+					}
+				}
+				if rootId != nil {
+					if _, exists := identToSelectorStr[rootId]; !exists {
+						identToSelectorStr[rootId] = s.stringifySelector(sel)
+					}
+				}
+			}
+			return true
+		})
+
 		for _, ident := range filteredUsages {
 			sym := s.SemanticInfo.Uses[ident]
 			if sym == nil {
@@ -462,9 +487,16 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 
 					// Check for partial moves (if not already fully moved)
 					if msg == "" && s.isOwned(sym) {
+						var selStr string
+						if str, ok := identToSelectorStr[ident]; ok {
+							selStr = str
+						} else {
+							selStr = sym.Name
+						}
+
 						for fieldMove := range lc.FieldMoves {
-							if strings.HasPrefix(fieldMove, sym.Name+".") {
-								msg = fmt.Sprintf("use of partially moved value '%s' (field '%s' was moved)", sym.Name, fieldMove)
+							if selStr == fieldMove || strings.HasPrefix(fieldMove, selStr+".") || strings.HasPrefix(selStr, fieldMove+".") {
+								msg = fmt.Sprintf("use of partially moved value '%s' (field '%s' was moved)", selStr, fieldMove)
 								break
 							}
 						}
@@ -1000,6 +1032,50 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 		})
 	}
 	s.refineLifecyclesWithNLL(block, allVisible)
+
+	// [NEW] NLL Aliasing Check
+	// Enforce that two aliases of the same origin cannot have overlapping lifecycles
+	// if at least one of them is a mutable lease.
+	reported := make(map[*semantic.Symbol]bool)
+	for _, lc1 := range localLifecycles {
+		if lc1.AliasOf == nil {
+			continue
+		}
+		for _, lc2 := range allVisible {
+			if lc1 == lc2 || lc2.AliasOf != lc1.AliasOf {
+				continue
+			}
+			isMut1 := false
+			if pt, ok := lc1.Symbol.Type.(*types.PointerType); ok && pt.Leased && pt.Kind == types.LeaseWrite {
+				isMut1 = true
+			}
+			isMut2 := false
+			if pt, ok := lc2.Symbol.Type.(*types.PointerType); ok && pt.Leased && pt.Kind == types.LeaseWrite {
+				isMut2 = true
+			}
+			
+			if !isMut1 && !isMut2 {
+				continue
+			}
+			
+			maxDefined := lc1.DefinedAt
+			if lc2.DefinedAt > maxDefined {
+				maxDefined = lc2.DefinedAt
+			}
+			
+			minUsed := lc1.LastUsedAt
+			if lc2.LastUsedAt < minUsed {
+				minUsed = lc2.LastUsedAt
+			}
+			
+			if maxDefined <= minUsed && minUsed < AnchorEndOfFunction {
+				if !reported[lc1.Symbol] && !reported[lc2.Symbol] {
+					s.ReportError(lc1.Symbol.DefNode.Pos(), "cannot borrow '%s' mutably, as it is already borrowed in this scope", lc1.AliasOf.Name)
+					reported[lc1.Symbol] = true
+				}
+			}
+		}
+	}
 
 	for _, lc := range localLifecycles {
 		if lc.Symbol.Kind == semantic.SymVar || lc.Symbol.Kind == semantic.SymParam {

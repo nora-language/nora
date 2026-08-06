@@ -74,7 +74,7 @@ func TestEndToEndGeneration(t *testing.T) {
 		"#include \"runtime.h\"",
 		"void add(void* _env_ptr, char** a, char* b)",                     // Signature transformation (# -> *)
 		"x = ((char*)_str_lit_1.data);",                                   // Var assignment with static literal
-		"add(_env_ptr, x, y);",                                            // Call desugaring
+		"add(_env_ptr, &x, y);",                                            // Call desugaring
 		"static const struct { nr_header_t h; char data[6]; } _str_lit_1", // Global static variable definition
 	}
 

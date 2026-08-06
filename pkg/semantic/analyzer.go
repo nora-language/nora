@@ -1884,6 +1884,14 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					sa.SemanticInfo.Types[n] = rightType
 				}
 			}
+		case "*":
+			actualType := rightType
+			if pt, ok := actualType.(*types.PointerType); ok {
+				sa.SemanticInfo.Types[n] = pt.Base
+			} else {
+				sa.AddError(n.Token.Position, "cannot dereference non-pointer type %s", rightType.Name())
+				sa.SemanticInfo.Types[n] = types.ErrorType
+			}
 		case "#":
 			sa.SemanticInfo.Types[n] = &types.PointerType{Base: rightType, Leased: true, Kind: types.LeaseRead}
 		case "&":
@@ -3296,6 +3304,22 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				sa.AddError(sel.Pos(), "cannot assign to field of non-struct type %s", leftType.Name())
 				return
 			}
+		} else if pref, ok := n.Left.(*ast.PrefixExpression); ok && pref.Operator == "*" {
+			sa.Analyze(pref.Right)
+			if !sa.checkWritePermission(pref.Right) {
+				sa.AddError(pref.Pos(), "cannot assign through a read-only lease pointer")
+				return
+			}
+			rightType := sa.SemanticInfo.Types[pref.Right]
+			if pt, ok := rightType.(*types.PointerType); ok {
+				targetType = pt.Base
+			} else {
+				if rightType == nil {
+					rightType = types.ErrorType
+				}
+				sa.AddError(pref.Pos(), "cannot dereference non-pointer type %s for assignment", rightType.Name())
+				return
+			}
 		} else {
 			sa.AddError(n.Left.Pos(), "illegal assignment target")
 			return
@@ -3467,6 +3491,10 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				idxExpr := n.Indices[0]
 				idxType := sa.SemanticInfo.Types[idxExpr]
 				if idxType != nil && idxType != types.ErrorType && !isIntegerType(idxType) {
+					if _, isRange := idxExpr.(*ast.RangeExpression); isRange || idxType.Name() == "Range" {
+						sa.SemanticInfo.Types[n] = &types.PointerType{Base: pt.Base, IsArray: true, Leased: pt.Leased}
+						return
+					}
 					sa.AddError(idxExpr.Pos(), "index must be an integer (got %s)", idxType.Name())
 				}
 			}
@@ -3689,7 +3717,18 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 
 		// 2. Check if calling a Generic function or Variant
 		var fnStmt *ast.FunctionStatement
-		if ident, ok := n.Function.(*ast.Identifier); ok {
+		fnCallNode := n.Function
+		var typeArgsFromIndex []ast.TypeNode
+		if idxExpr, ok := fnCallNode.(*ast.IndexExpression); ok {
+			fnCallNode = idxExpr.Left
+			for _, idx := range idxExpr.Indices {
+				if tn, ok := idx.(ast.TypeNode); ok {
+					typeArgsFromIndex = append(typeArgsFromIndex, tn)
+				}
+			}
+		}
+
+		if ident, ok := fnCallNode.(*ast.Identifier); ok {
 			sym, exists := sa.CurrentScope.Resolve(ident.Value)
 			if exists && sym.Kind == SymFunc {
 				var fs *ast.FunctionStatement
@@ -3702,41 +3741,67 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					fnStmt = fs
 				}
 			}
-		} else if sel, ok := n.Function.(*ast.SelectorExpression); ok {
-			if sym, ok := sa.SemanticInfo.Uses[sel.Field]; ok && sym.Kind == SymFunc {
-				var fs *ast.FunctionStatement
-				if f, ok := sym.DefNode.(*ast.FunctionStatement); ok {
-					fs = f
-				} else if ext, ok := sym.DefNode.(*ast.ExternStatement); ok {
-					fs = ext.Function
+		} else if sel, ok := fnCallNode.(*ast.SelectorExpression); ok {
+			leftType := sa.SemanticInfo.Types[sel.Left]
+			var fnNode ast.Node
+			if sym, ok := sa.SemanticInfo.Uses[sel.Field]; ok && sym != nil {
+				if fs, ok := sym.DefNode.(*ast.FunctionStatement); ok && len(fs.TypeParameters) > 0 {
+					fnNode = sym.DefNode
 				}
-				if fs != nil {
-					if len(fs.TypeParameters) > 0 {
-						fnStmt = fs
-					} else {
-						// Even if not generic itself, it might be a method of a specialized struct
-						leftType := sa.SemanticInfo.Types[sel.Left]
-						if st, ok := leftType.(*types.StructType); ok {
-							// Find the specialized method type
-							if methodSyms, ok := sa.SemanticInfo.MethodSymbols[st]; ok {
-								if methodSym, ok := methodSyms[sel.Field.Value]; ok {
-									sa.SemanticInfo.Types[n.Function] = methodSym.Type
-								}
-							}
-						} else if sumT, ok := leftType.(*types.SumType); ok {
-							// Find the specialized method type for SumType
-							if methodSyms, ok := sa.SemanticInfo.MethodSymbols[sumT]; ok {
-								if methodSym, ok := methodSyms[sel.Field.Value]; ok {
-									sa.SemanticInfo.Types[n.Function] = methodSym.Type
+			}
+			if fnNode == nil && leftType != nil {
+				underlying := types.UnwrapLease(leftType)
+				if pt, ok := underlying.(*types.PointerType); ok {
+					underlying = pt.Base
+				}
+				if st, ok := underlying.(*types.StructType); ok {
+					searchTypes := []types.NRType{}
+					if st.BaseType != nil {
+						searchTypes = append(searchTypes, st.BaseType)
+					}
+					searchTypes = append(searchTypes, st)
+					for _, searchT := range searchTypes {
+						if methodSyms, ok := sa.SemanticInfo.MethodSymbols[searchT]; ok {
+							if sym, ok := methodSyms[sel.Field.Value]; ok && sym != nil {
+								if fs, ok := sym.DefNode.(*ast.FunctionStatement); ok && len(fs.TypeParameters) > 0 {
+									fnNode = sym.DefNode
+									break
+								} else if fnNode == nil {
+									fnNode = sym.DefNode
 								}
 							}
 						}
 					}
 				}
 			}
+			if fnNode == nil {
+				pkgScope := sa.CurrentScope
+				for pkgScope != nil && pkgScope.Kind != ScopePackage {
+					pkgScope = pkgScope.Parent
+				}
+				if pkgScope != nil {
+					if sym, exists := pkgScope.Symbols[sel.Field.Value]; exists && sym.Kind == SymFunc {
+						fnNode = sym.DefNode
+					}
+				}
+			}
+			if fnNode != nil {
+				var fs *ast.FunctionStatement
+				if f, ok := fnNode.(*ast.FunctionStatement); ok {
+					fs = f
+				} else if ext, ok := fnNode.(*ast.ExternStatement); ok {
+					fs = ext.Function
+				}
+				if fs != nil && len(fs.TypeParameters) > 0 {
+					fnStmt = fs
+				}
+			}
 		}
 
 		if fnStmt != nil {
+			if len(typeArgsFromIndex) > 0 && len(n.TypeArguments) == 0 {
+				n.TypeArguments = typeArgsFromIndex
+			}
 			sa.handleGenericCall(n, fnStmt)
 			return
 		}
@@ -6103,6 +6168,20 @@ func (sa *SemanticAnalyzer) resolveFunctionType(n *ast.FunctionStatement) *types
 }
 
 func (sa *SemanticAnalyzer) verifyCallArguments(n *ast.CallExpression, functionType *types.FunctionType) {
+	if functionType.Receiver != nil && len(functionType.Params) > 0 && len(n.Arguments) == len(functionType.Params)-1 {
+		leaseOffset := 1
+		if leaseOffset > len(functionType.ParamLeases) {
+			leaseOffset = len(functionType.ParamLeases)
+		}
+		functionType = &types.FunctionType{
+			Params:      functionType.Params[1:],
+			ParamLeases: functionType.ParamLeases[leaseOffset:],
+			Return:      functionType.Return,
+			Receiver:    functionType.Receiver,
+			IsVariadic:  functionType.IsVariadic,
+		}
+	}
+
 	// 3. Check Argument Count
 	expectedCount := len(functionType.Params)
 	if functionType.IsVariadic {
@@ -6118,6 +6197,9 @@ func (sa *SemanticAnalyzer) verifyCallArguments(n *ast.CallExpression, functionT
 	}
 
 	// 4. Analyze and Verify Arguments
+	// [NEW] Track borrows to prevent overlapping mutable aliasing in the same call
+	activeBorrows := make(map[*Symbol]types.LeaseKind)
+
 	for i, arg := range n.Arguments {
 		if arg == nil || arg.Value == nil {
 			continue
@@ -6179,6 +6261,11 @@ func (sa *SemanticAnalyzer) verifyCallArguments(n *ast.CallExpression, functionT
 				if !argSym.WritePerm {
 					sa.AddError(arg.Pos(), "current lease does not allow writing to '%s'", argSym.Name)
 				}
+				// Check for overlapping borrow
+				if activeBorrows[argSym] != 0 {
+					sa.AddError(arg.Pos(), "cannot borrow '%s' mutably more than once in the same call", argSym.Name)
+				}
+				activeBorrows[argSym] = types.LeaseWrite
 			}
 		case types.LeaseMove:
 			// Special Case: Allow literals like 'none' to be passed to move-lease parameters
@@ -6238,6 +6325,12 @@ func (sa *SemanticAnalyzer) verifyCallArguments(n *ast.CallExpression, functionT
 					if !isMoveExpr {
 						sa.AddError(arg.Pos(), "use of moved value '%s'", argSym.Name)
 					}
+				}
+				// Check for overlapping mutable borrow
+				if activeBorrows[argSym] == types.LeaseWrite {
+					sa.AddError(arg.Pos(), "cannot borrow '%s' immutably because it is already borrowed mutably in this call", argSym.Name)
+				} else {
+					activeBorrows[argSym] = types.LeaseRead
 				}
 			}
 		}
@@ -6338,6 +6431,10 @@ func (sa *SemanticAnalyzer) handleGenericCall(n *ast.CallExpression, fnStmt *ast
 	var receiverType types.NRType
 	if sel, ok := n.Function.(*ast.SelectorExpression); ok {
 		receiverType = sa.SemanticInfo.Types[sel.Left]
+	} else if idxExpr, ok := n.Function.(*ast.IndexExpression); ok {
+		if sel, ok := idxExpr.Left.(*ast.SelectorExpression); ok {
+			receiverType = sa.SemanticInfo.Types[sel.Left]
+		}
 	}
 
 	// 1. Resolve Type Arguments
@@ -6354,7 +6451,32 @@ func (sa *SemanticAnalyzer) handleGenericCall(n *ast.CallExpression, fnStmt *ast
 		}
 	}
 
-	if len(typeArgs) != len(fnStmt.TypeParameters) {
+	recParamNames := make(map[string]bool)
+	if fnStmt.Receiver != nil {
+		var baseExp ast.Node = fnStmt.Receiver.Type
+		for {
+			if pt, ok := baseExp.(*ast.PrefixExpression); ok {
+				baseExp = pt.Right
+				continue
+			}
+			break
+		}
+		if idxExpr, ok := baseExp.(*ast.IndexExpression); ok {
+			for _, idx := range idxExpr.Indices {
+				if ident, ok := idx.(*ast.Identifier); ok {
+					recParamNames[ident.Value] = true
+				}
+			}
+		}
+	}
+	methodTypeParamsCount := 0
+	for _, tp := range fnStmt.TypeParameters {
+		if !recParamNames[tp.Name.Value] {
+			methodTypeParamsCount++
+		}
+	}
+
+	if len(typeArgs) != len(fnStmt.TypeParameters) && len(typeArgs) != methodTypeParamsCount {
 		sa.AddError(n.Pos(), "generic function '%s' expects %d type arguments, got %d",
 			fnStmt.Name.Value, len(fnStmt.TypeParameters), len(typeArgs))
 		sa.SemanticInfo.Types[n] = types.ErrorType
@@ -6363,9 +6485,13 @@ func (sa *SemanticAnalyzer) handleGenericCall(n *ast.CallExpression, fnStmt *ast
 
 	// Verify Constraints
 	subs := make(map[string]types.NRType)
-	for i, tp := range fnStmt.TypeParameters {
-		if i < len(typeArgs) {
-			subs[tp.Name.Value] = typeArgs[i]
+	typeArgIdx := 0
+	for _, tp := range fnStmt.TypeParameters {
+		if !recParamNames[tp.Name.Value] {
+			if typeArgIdx < len(typeArgs) {
+				subs[tp.Name.Value] = typeArgs[typeArgIdx]
+				typeArgIdx++
+			}
 		}
 	}
 
@@ -6441,7 +6567,22 @@ func (sa *SemanticAnalyzer) handleGenericCall(n *ast.CallExpression, fnStmt *ast
 			for _, arg := range n.Arguments {
 				sa.Analyze(arg.Value)
 			}
-			sa.verifyCallArguments(n, ft)
+			callFt := ft
+			if fnStmt.Receiver != nil && len(ft.Params) > 0 && len(n.Arguments) < len(ft.Params) {
+				offset := len(ft.Params) - len(n.Arguments)
+				leaseOffset := offset
+				if leaseOffset > len(ft.ParamLeases) {
+					leaseOffset = len(ft.ParamLeases)
+				}
+				callFt = &types.FunctionType{
+					Params:      ft.Params[offset:],
+					ParamLeases: ft.ParamLeases[leaseOffset:],
+					Return:      ft.Return,
+					Receiver:    ft.Receiver,
+					IsVariadic:  ft.IsVariadic,
+				}
+			}
+			sa.verifyCallArguments(n, callFt)
 			return
 		}
 	}
@@ -6514,31 +6655,37 @@ func (sa *SemanticAnalyzer) Monomorphize(fnStmt *ast.FunctionStatement, typeArgs
 	}
 
 	// 3. Generate New Instance
-	// 1. Explicit type parameters
+	// 1. Implicit type parameters from receiver
 	mapping := make(map[string]ast.TypeNode)
-	typeArgIdx := 0
-	for _, tp := range fnStmt.TypeParameters {
-		if typeArgIdx < len(typeArgs) {
-			mapping[tp.Name.Value] = sa.typeToTypeNode(typeArgs[typeArgIdx])
-			typeArgIdx++
-		}
-	}
-
-	// 2. Implicit type parameters from receiver
+	recTypeParamNames := make(map[string]bool)
 	if fnStmt.Receiver != nil && len(recTypeArgs) > 0 {
-		baseExp := fnStmt.Receiver.Type
-		if pt, ok := baseExp.(*ast.PrefixExpression); ok && (pt.Operator == "&" || pt.Operator == "#" || pt.Operator == "@") {
-			if tn, ok := pt.Right.(ast.TypeNode); ok {
-				baseExp = tn
+		var baseExp ast.Node = fnStmt.Receiver.Type
+		for {
+			if pt, ok := baseExp.(*ast.PrefixExpression); ok {
+				baseExp = pt.Right
+				continue
 			}
+			break
 		}
 		if idxExpr, ok := baseExp.(*ast.IndexExpression); ok {
 			for i, idx := range idxExpr.Indices {
 				if ident, ok := idx.(*ast.Identifier); ok {
 					if i < len(recTypeArgs) {
 						mapping[ident.Value] = sa.typeToTypeNode(recTypeArgs[i])
+						recTypeParamNames[ident.Value] = true
 					}
 				}
+			}
+		}
+	}
+
+	// 2. Explicit method-level type parameters
+	typeArgIdx := 0
+	for _, tp := range fnStmt.TypeParameters {
+		if !recTypeParamNames[tp.Name.Value] {
+			if typeArgIdx < len(typeArgs) {
+				mapping[tp.Name.Value] = sa.typeToTypeNode(typeArgs[typeArgIdx])
+				typeArgIdx++
 			}
 		}
 	}
@@ -6586,37 +6733,42 @@ func (sa *SemanticAnalyzer) Monomorphize(fnStmt *ast.FunctionStatement, typeArgs
 
 		// Nora: Define monomorphized type arguments in this temporary scope
 		// so nested generic structs can auto-specialize during Analyze.
-		// 1. Explicit type parameters
-		typeArgIdx := 0
-		for _, tp := range fnStmt.TypeParameters {
-			if typeArgIdx < len(typeArgs) {
-				sa.CurrentScope.Define(tp.Name.Value, typeArgs[typeArgIdx], SymType, tp)
-				concreteType := types.UnwrapLease(typeArgs[typeArgIdx])
-				if concreteType != nil {
-					sa.CurrentScope.Define(concreteType.Name(), concreteType, SymType, tp)
-				}
-				typeArgIdx++
-			}
-		}
-		// 2. Implicit type parameters from receiver
+		// 1. Implicit type parameters from receiver
 		if fnStmt.Receiver != nil && len(recTypeArgs) > 0 {
-			baseExp := fnStmt.Receiver.Type
-			if pt, ok := baseExp.(*ast.PrefixExpression); ok && (pt.Operator == "&" || pt.Operator == "#" || pt.Operator == "@") {
-				if tn, ok := pt.Right.(ast.TypeNode); ok {
-					baseExp = tn
-				}
+		var baseExp ast.Node = fnStmt.Receiver.Type
+		for {
+			if pt, ok := baseExp.(*ast.PrefixExpression); ok {
+				baseExp = pt.Right
+				continue
 			}
-			if idxExpr, ok := baseExp.(*ast.IndexExpression); ok {
-				for i, idx := range idxExpr.Indices {
-					if ident, ok := idx.(*ast.Identifier); ok {
-						if i < len(recTypeArgs) {
-							sa.CurrentScope.Define(ident.Value, recTypeArgs[i], SymType, ident)
-							concreteType := types.UnwrapLease(recTypeArgs[i])
-							if concreteType != nil {
-								sa.CurrentScope.Define(concreteType.Name(), concreteType, SymType, ident)
-							}
+			break
+		}
+		if idxExpr, ok := baseExp.(*ast.IndexExpression); ok {
+			for i, idx := range idxExpr.Indices {
+				if ident, ok := idx.(*ast.Identifier); ok {
+					if i < len(recTypeArgs) {
+						sa.CurrentScope.Define(ident.Value, recTypeArgs[i], SymType, ident)
+						concreteType := types.UnwrapLease(recTypeArgs[i])
+						if concreteType != nil {
+							sa.CurrentScope.Define(concreteType.Name(), concreteType, SymType, ident)
 						}
 					}
+				}
+			}
+		}
+	}
+
+		// 2. Explicit method-level type parameters
+		typeArgIdx := 0
+		for _, tp := range fnStmt.TypeParameters {
+			if !recTypeParamNames[tp.Name.Value] {
+				if typeArgIdx < len(typeArgs) {
+					sa.CurrentScope.Define(tp.Name.Value, typeArgs[typeArgIdx], SymType, tp)
+					concreteType := types.UnwrapLease(typeArgs[typeArgIdx])
+					if concreteType != nil {
+						sa.CurrentScope.Define(concreteType.Name(), concreteType, SymType, tp)
+					}
+					typeArgIdx++
 				}
 			}
 		}
@@ -6640,37 +6792,44 @@ func (sa *SemanticAnalyzer) Monomorphize(fnStmt *ast.FunctionStatement, typeArgs
 		}
 
 		// Define monomorphized type arguments in this temporary scope
-		// 1. Explicit type parameters
-		typeArgIdx := 0
-		for _, tp := range fnStmt.TypeParameters {
-			if typeArgIdx < len(typeArgs) {
-				sa.CurrentScope.Define(tp.Name.Value, typeArgs[typeArgIdx], SymType, tp)
-				concreteType := types.UnwrapLease(typeArgs[typeArgIdx])
-				if concreteType != nil {
-					sa.CurrentScope.Define(concreteType.Name(), concreteType, SymType, tp)
-				}
-				typeArgIdx++
-			}
-		}
-		// 2. Implicit type parameters from receiver
+		// 1. Implicit type parameters from receiver
+		recTypeParamNames := make(map[string]bool)
 		if fnStmt.Receiver != nil && len(recTypeArgs) > 0 {
-			baseExp := fnStmt.Receiver.Type
-			if pt, ok := baseExp.(*ast.PrefixExpression); ok && (pt.Operator == "&" || pt.Operator == "#" || pt.Operator == "@") {
-				if tn, ok := pt.Right.(ast.TypeNode); ok {
-					baseExp = tn
+			var baseExp ast.Node = fnStmt.Receiver.Type
+			for {
+				if pt, ok := baseExp.(*ast.PrefixExpression); ok {
+					baseExp = pt.Right
+					continue
 				}
+				break
 			}
 			if idxExpr, ok := baseExp.(*ast.IndexExpression); ok {
 				for i, idx := range idxExpr.Indices {
 					if ident, ok := idx.(*ast.Identifier); ok {
 						if i < len(recTypeArgs) {
 							sa.CurrentScope.Define(ident.Value, recTypeArgs[i], SymType, ident)
+							recTypeParamNames[ident.Value] = true
 							concreteType := types.UnwrapLease(recTypeArgs[i])
 							if concreteType != nil {
 								sa.CurrentScope.Define(concreteType.Name(), concreteType, SymType, ident)
 							}
 						}
 					}
+				}
+			}
+		}
+
+		// 2. Explicit method-level type parameters
+		typeArgIdx := 0
+		for _, tp := range fnStmt.TypeParameters {
+			if !recTypeParamNames[tp.Name.Value] {
+				if typeArgIdx < len(typeArgs) {
+					sa.CurrentScope.Define(tp.Name.Value, typeArgs[typeArgIdx], SymType, tp)
+					concreteType := types.UnwrapLease(typeArgs[typeArgIdx])
+					if concreteType != nil {
+						sa.CurrentScope.Define(concreteType.Name(), concreteType, SymType, tp)
+					}
+					typeArgIdx++
 				}
 			}
 		}

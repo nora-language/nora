@@ -1658,6 +1658,61 @@ func (g *Generator) genIndexExpression(e *ast.IndexExpression) {
 		return
 	}
 
+	// Check if it's a range slice: arr[start..end] or arr[range_var]
+	isRangeNode := false
+	if _, ok := e.Indices[0].(*ast.RangeExpression); ok {
+		isRangeNode = true
+	} else if idxT := g.SemanticInfo.Types[e.Indices[0]]; idxT != nil && idxT.Name() == "Range" {
+		isRangeNode = true
+	}
+
+	if isRangeNode {
+		t := g.SemanticInfo.Types[e.Left]
+		if t != nil && t.Name() == "str" {
+			g.buf.WriteString("string_slice(")
+			g.genExpression(e.Left)
+			g.buf.WriteString(", ")
+			if re, ok := e.Indices[0].(*ast.RangeExpression); ok {
+				g.genExpression(re.Start)
+				g.buf.WriteString(", ")
+				g.genExpression(re.End)
+			} else {
+				g.genExpression(e.Indices[0])
+				g.buf.WriteString(".start, ")
+				g.genExpression(e.Indices[0])
+				g.buf.WriteString(".end")
+			}
+			g.buf.WriteString(")")
+			return
+		}
+		var elemType types.NRType = types.I32
+		if t != nil {
+			ut := types.UnwrapLease(t)
+			if pt, ok := ut.(*types.PointerType); ok && pt.IsArray {
+				elemType = pt.Base
+			} else if lt, ok := ut.(*types.ListType); ok {
+				elemType = lt.ElementType
+			} else if at, ok := ut.(*types.ArrayType); ok {
+				elemType = at.Base
+			}
+		}
+		g.buf.WriteString("array_slice(")
+		g.genExpression(e.Left)
+		g.buf.WriteString(", ")
+		if re, ok := e.Indices[0].(*ast.RangeExpression); ok {
+			g.genExpression(re.Start)
+			g.buf.WriteString(", ")
+			g.genExpression(re.End)
+		} else {
+			g.genExpression(e.Indices[0])
+			g.buf.WriteString(".start, ")
+			g.genExpression(e.Indices[0])
+			g.buf.WriteString(".end")
+		}
+		g.buf.WriteString(fmt.Sprintf(", sizeof(%s))", g.cType(elemType)))
+		return
+	}
+
 	t := g.SemanticInfo.Types[e.Left]
 	if t != nil {
 		ut := t
