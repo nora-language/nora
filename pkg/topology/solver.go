@@ -296,6 +296,12 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 			sym := s.SemanticInfo.Defs[varStmt.Name]
 			if sym != nil {
 				lc := &Lifecycle{Symbol: sym, DefinedAt: i, LastUsedAt: i}
+				if varStmt.Value != nil {
+					origin := s.getAliasOrigin(varStmt.Value)
+					if origin != nil && origin != sym {
+						lc.AliasOf = origin
+					}
+				}
 
 				// If the variable is initialized from indexing into a LEASED array,
 				// the element is a borrowed reference — the variable does NOT own it.
@@ -546,6 +552,11 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 			for sym, ident := range allIdents {
 				if s.isMoveOperation(stmt, ident) {
 					if lc, exists := allVisible[sym]; exists {
+						for depSym, depLc := range allVisible {
+							if depLc.AliasOf == sym && !depLc.IsMoved && i <= depLc.LastUsedAt {
+								s.ReportError(ident.Pos(), "cannot move out of '%s' while borrowed by '%s'", sym.Name, depSym.Name)
+							}
+						}
 						lc.IsMoved = true
 						lc.MovedBy = stmt // Record the statement that caused the move
 						s.debug("      MOVE DETECTED: %s is now consumed by stmt at line %d", sym.Name, ident.Pos().Line)
@@ -1840,30 +1851,32 @@ func (s *Solver) isSelectorMovedIn(expr ast.Expression, target *ast.SelectorExpr
 }
 
 func (s *Solver) getAliasOrigin(expr ast.Expression) *semantic.Symbol {
+	if expr == nil {
+		return nil
+	}
 	if pref, ok := expr.(*ast.PrefixExpression); ok && (pref.Operator == "#" || pref.Operator == "&") {
 		if id, ok := pref.Right.(*ast.Identifier); ok {
 			return s.SemanticInfo.Uses[id]
 		}
-		// Handle nested aliases: var c = #b (where b is alias of a)
 		if sel, ok := pref.Right.(*ast.SelectorExpression); ok {
-			// For now, only track root symbol as origin
-			root := sel.Left
-			for {
-				if sub, ok := root.(*ast.SelectorExpression); ok {
-					root = sub.Left
-				} else {
-					break
-				}
-			}
-			if id, ok := root.(*ast.Identifier); ok {
+			if id, ok := sel.Left.(*ast.Identifier); ok {
 				return s.SemanticInfo.Uses[id]
 			}
 		}
 	}
-	// Handle simple alias without operator (if allowed by type system)
+	if idx, ok := expr.(*ast.IndexExpression); ok {
+		if len(idx.Indices) > 0 {
+			if _, isSlice := idx.Indices[0].(*ast.SliceExpression); isSlice {
+				return s.getRootSymbol(idx.Left)
+			}
+			if _, isRange := idx.Indices[0].(*ast.RangeExpression); isRange {
+				return s.getRootSymbol(idx.Left)
+			}
+		}
+	}
 	if id, ok := expr.(*ast.Identifier); ok {
 		t := s.SemanticInfo.Types[id]
-		if pt, ok := t.(*types.PointerType); ok && pt.Leased {
+		if isBorrowType(t) {
 			return s.SemanticInfo.Uses[id]
 		}
 	}
@@ -2332,17 +2345,22 @@ func (s *Solver) findCapturedVariables(block *ast.BlockStatement) []*semantic.Sy
 	}
 	return result
 }
-func (s *Solver) getRootSymbol(sel *ast.SelectorExpression) *semantic.Symbol {
-	root := sel.Left
-	for {
-		if sub, ok := root.(*ast.SelectorExpression); ok {
-			root = sub.Left
-		} else {
-			break
-		}
+func (s *Solver) getRootSymbol(expr ast.Node) *semantic.Symbol {
+	if expr == nil {
+		return nil
 	}
-	if id, ok := root.(*ast.Identifier); ok {
-		return s.SemanticInfo.Uses[id]
+	switch e := expr.(type) {
+	case *ast.Identifier:
+		if sym := s.SemanticInfo.Defs[e]; sym != nil {
+			return sym
+		}
+		return s.SemanticInfo.Uses[e]
+	case *ast.SelectorExpression:
+		return s.getRootSymbol(e.Left)
+	case *ast.IndexExpression:
+		return s.getRootSymbol(e.Left)
+	case *ast.PrefixExpression:
+		return s.getRootSymbol(e.Right)
 	}
 	return nil
 }
@@ -2380,6 +2398,9 @@ func (s *Solver) analyzePattern(pattern ast.Expression, visible map[*semantic.Sy
 }
 
 func isBorrowType(t types.NRType) bool {
+	if t == nil {
+		return false
+	}
 	if pt, ok := t.(*types.PointerType); ok && pt.Leased {
 		return pt.Kind == types.LeaseRead
 	}

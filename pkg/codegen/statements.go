@@ -524,6 +524,14 @@ func (g *Generator) genForStatement(s *ast.ForStatement) {
 		var elemType types.NRType = types.I32
 		if lt, ok := t.(*types.ListType); ok {
 			elemType = lt.ElementType
+		} else if at, ok := t.(*types.ArrayType); ok {
+			elemType = at.Base
+		} else if pt, ok := t.(*types.PointerType); ok {
+			if at, ok := pt.Base.(*types.ArrayType); ok {
+				elemType = at.Base
+			} else {
+				elemType = pt.Base
+			}
 		}
 
 		if s.Key != nil {

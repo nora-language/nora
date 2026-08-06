@@ -3373,6 +3373,25 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		leftType := sa.SemanticInfo.Types[n.Left]
 		actualType := sa.unwrapToCollection(leftType)
 
+		if ident, ok := n.Left.(*ast.Identifier); ok {
+			if st, isSum := actualType.(*types.SumType); isSum && len(st.TypeParams) == 0 {
+				if globalSym, found := sa.GlobalScope.Symbols[ident.Value]; found && globalSym != nil && globalSym.Type != nil {
+					gActual := sa.unwrapToCollection(globalSym.Type)
+					if gSt, ok := gActual.(*types.SumType); ok && len(gSt.TypeParams) > 0 {
+						leftType = globalSym.Type
+						actualType = gActual
+						sa.SemanticInfo.Uses[ident] = globalSym
+					} else if gFt, ok := gActual.(*types.FunctionType); ok && gFt.Return != nil {
+						if gSt, ok := types.UnwrapLease(gFt.Return).(*types.SumType); ok && len(gSt.TypeParams) > 0 {
+							leftType = globalSym.Type
+							actualType = gActual
+							sa.SemanticInfo.Uses[ident] = globalSym
+						}
+					}
+				}
+			}
+		}
+
 		// Handle Slicing: arr[start:end]
 		if len(n.Indices) == 1 {
 			if _, ok := n.Indices[0].(*ast.SliceExpression); ok {
@@ -4523,12 +4542,18 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			switch t := actualType.(type) {
 			case *types.ListType:
 				valType = t.ElementType
+			case *types.ArrayType:
+				valType = t.Base
 			case *types.MapType:
 				keyType = t.Key
 				valType = t.Value
 			case *types.PointerType:
 				if t.IsArray {
 					valType = t.Base
+				} else if at, ok := t.Base.(*types.ArrayType); ok {
+					valType = at.Base
+				} else if lt, ok := t.Base.(*types.ListType); ok {
+					valType = lt.ElementType
 				} else {
 					sa.AddError(n.Iterable.Pos(), "cannot iterate over non-array pointer type %s", actualType.Name())
 				}
@@ -5190,6 +5215,16 @@ func (sa *SemanticAnalyzer) resolveTypeNode(n ast.TypeNode) types.NRType {
 	case *ast.IndexExpression:
 		// Generic type instantiation: Option[i32] or Array type: []i32
 		baseType := sa.resolveTypeNode(t.Left.(ast.TypeNode))
+		if ident, ok := t.Left.(*ast.Identifier); ok {
+			if st, ok := baseType.(*types.SumType); ok && len(st.TypeParams) == 0 {
+				if globalSym, found := sa.GlobalScope.Symbols[ident.Value]; found && globalSym != nil && globalSym.Type != nil {
+					gBase := types.UnwrapLease(globalSym.Type)
+					if gSt, ok := gBase.(*types.SumType); ok && len(gSt.TypeParams) > 0 {
+						baseType = gSt
+					}
+				}
+			}
+		}
 		if len(t.Indices) == 0 {
 			// [FIX] T[] is a ListType in Nora
 			res := &types.ListType{ElementType: baseType}

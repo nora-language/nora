@@ -638,15 +638,25 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 					}
 
 					if s.Value != nil {
-						var elemType types.NRType = types.I32
-						if lt, ok := iterOp.GetType().(*types.ListType); ok {
-							elemType = lt.ElementType
-						} else if iterOp.GetType() != nil && iterOp.GetType().Name() == "str" {
-							elemType = types.I8
-						}
 						sym := l.SemanticInfo.Defs[s.Value]
 						if sym == nil {
 							sym = l.SemanticInfo.Uses[s.Value]
+						}
+						var elemType types.NRType = types.I32
+						if sym != nil && sym.Type != nil && sym.Type != types.ErrorType {
+							elemType = sym.Type
+						} else if lt, ok := iterOp.GetType().(*types.ListType); ok {
+							elemType = lt.ElementType
+						} else if at, ok := iterOp.GetType().(*types.ArrayType); ok {
+							elemType = at.Base
+						} else if pt, ok := iterOp.GetType().(*types.PointerType); ok {
+							if at, ok := pt.Base.(*types.ArrayType); ok {
+								elemType = at.Base
+							} else {
+								elemType = pt.Base
+							}
+						} else if iterOp.GetType() != nil && iterOp.GetType().Name() == "str" {
+							elemType = types.I8
 						}
 						l.CurrentBlock.AddInst(&Alloca{Name: s.Value.Value, Type: elemType, Symbol: sym})
 						l.CurrentBlock.AddInst(&Store{
