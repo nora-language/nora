@@ -70,7 +70,8 @@ func (g *Generator) emitPrototypes() {
 			continue
 		}
 		
-		if fn.IsGenericTemplate || len(fn.TypeParameters) > 0 {
+		isMonomorphized := g.MonomorphizedFuncs[sym.Name] || g.MonomorphizedFuncs[g.mangleName(sym)] || sym.Name != fn.Name.Value
+		if (fn.IsGenericTemplate || len(fn.TypeParameters) > 0) && !isMonomorphized {
 			continue
 		}
 

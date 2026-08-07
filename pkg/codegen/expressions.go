@@ -172,7 +172,12 @@ func (g *Generator) genIdentifier(e *ast.Identifier) {
 	if g.Solver != nil && g.Solver.Moves[e] && !g.InMoveOperator && isLocalVarOrParam {
 		t := g.SemanticInfo.Types[e]
 		g.buf.WriteString("({ ")
-		g.buf.WriteString(fmt.Sprintf("%s _tmp = ", g.cType(t)))
+		isPtrType := t == types.Ptr || g.cType(t) == "void*" || strings.HasSuffix(g.cType(t), "*")
+		if isPtrType {
+			g.buf.WriteString(fmt.Sprintf("%s _tmp = (void*)(", g.cType(t)))
+		} else {
+			g.buf.WriteString(fmt.Sprintf("%s _tmp = ", g.cType(t)))
+		}
 		if g.isPointerInC(e) && !strings.HasSuffix(g.cType(t), "*") {
 			g.buf.WriteString("*")
 		}
@@ -180,7 +185,11 @@ func (g *Generator) genIdentifier(e *ast.Identifier) {
 		g.InMoveOperator = true
 		g.genIdentifier(e)
 		g.InMoveOperator = oldInMove
-		g.buf.WriteString("; ")
+		if isPtrType {
+			g.buf.WriteString("); ")
+		} else {
+			g.buf.WriteString("; ")
+		}
 
 		var name string
 		if sym != nil {
@@ -483,7 +492,12 @@ func (g *Generator) genPrefixExpression(e *ast.PrefixExpression) {
 		}
 
 		g.buf.WriteString("({ ")
-		g.buf.WriteString(fmt.Sprintf("%s _tmp = ", g.cType(t)))
+		isPtrType := t == types.Ptr || g.cType(t) == "void*" || strings.HasSuffix(g.cType(t), "*")
+		if isPtrType {
+			g.buf.WriteString(fmt.Sprintf("%s _tmp = (void*)(", g.cType(t)))
+		} else {
+			g.buf.WriteString(fmt.Sprintf("%s _tmp = ", g.cType(t)))
+		}
 		g.buf.WriteString(fmt.Sprintf("/* ptr=%v */", g.isPointerInC(e.Right)))
 		if g.isPointerInC(e.Right) && !strings.HasSuffix(g.cType(t), "*") {
 			g.buf.WriteString("*")
@@ -492,7 +506,11 @@ func (g *Generator) genPrefixExpression(e *ast.PrefixExpression) {
 		g.InMoveOperator = true
 		g.genExpression(e.Right)
 		g.InMoveOperator = oldInMove
-		g.buf.WriteString("; ")
+		if isPtrType {
+			g.buf.WriteString("); ")
+		} else {
+			g.buf.WriteString("; ")
+		}
 		if id, ok := e.Right.(*ast.Identifier); ok {
 			sym := g.SemanticInfo.Uses[id]
 			isLocalVarOrParam := false
@@ -1024,9 +1042,9 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 			itemExpr := e.Arguments[1].Value
 			listType := g.SemanticInfo.Types[listExpr]
 
-			g.buf.WriteString("array_append(")
+			g.buf.WriteString("array_append((void**)(")
 			g.genExpression(listExpr)
-			g.buf.WriteString(", ")
+			g.buf.WriteString("), ")
 
 			if lt, ok := listType.(*types.ListType); ok {
 				itemType := lt.ElementType
@@ -1523,7 +1541,12 @@ func (g *Generator) genSelectorExpression(e *ast.SelectorExpression) {
 		} else {
 			t := g.SemanticInfo.Types[e]
 			g.buf.WriteString("({ ")
-			g.buf.WriteString(fmt.Sprintf("%s _tmp = ", g.cType(t)))
+			isPtrType := t == types.Ptr || g.cType(t) == "void*" || strings.HasSuffix(g.cType(t), "*")
+			if isPtrType {
+				g.buf.WriteString(fmt.Sprintf("%s _tmp = (void*)(", g.cType(t)))
+			} else {
+				g.buf.WriteString(fmt.Sprintf("%s _tmp = ", g.cType(t)))
+			}
 			if g.isPointerInC(e) && !strings.HasSuffix(g.cType(t), "*") {
 				g.buf.WriteString("*")
 			}
@@ -1531,7 +1554,11 @@ func (g *Generator) genSelectorExpression(e *ast.SelectorExpression) {
 			g.InMoveOperator = true
 			g.genSelectorExpression(e)
 			g.InMoveOperator = oldInMove
-			g.buf.WriteString("; ")
+			if isPtrType {
+				g.buf.WriteString("); ")
+			} else {
+				g.buf.WriteString("; ")
+			}
 
 			exprStr := g.genSelectorString(e.Left, e.Field.Value)
 			if g.isPointerTypeInC(t) && strings.HasSuffix(g.cType(t), "*") {
@@ -1604,7 +1631,12 @@ func (g *Generator) genIndexExpression(e *ast.IndexExpression) {
 	if g.Solver != nil && g.Solver.Moves[e] && !g.InMoveOperator {
 		t := g.SemanticInfo.Types[e]
 		g.buf.WriteString("({ ")
-		g.buf.WriteString(fmt.Sprintf("%s _tmp = ", g.cType(t)))
+		isPtrType := t == types.Ptr || g.cType(t) == "void*" || strings.HasSuffix(g.cType(t), "*")
+		if isPtrType {
+			g.buf.WriteString(fmt.Sprintf("%s _tmp = (void*)(", g.cType(t)))
+		} else {
+			g.buf.WriteString(fmt.Sprintf("%s _tmp = ", g.cType(t)))
+		}
 		if g.isPointerInC(e) && !strings.HasSuffix(g.cType(t), "*") {
 			g.buf.WriteString("*")
 		}
@@ -1612,7 +1644,11 @@ func (g *Generator) genIndexExpression(e *ast.IndexExpression) {
 		g.InMoveOperator = true
 		g.genIndexExpression(e)
 		g.InMoveOperator = oldInMove
-		g.buf.WriteString("; ")
+		if isPtrType {
+			g.buf.WriteString("); ")
+		} else {
+			g.buf.WriteString("; ")
+		}
 
 		if g.isPointerTypeInC(t) && strings.HasSuffix(g.cType(t), "*") {
 			if e.NoBoundsCheck {
@@ -2003,10 +2039,17 @@ func (g *Generator) genStructLiteral(e *ast.StructLiteral) {
 			if st, ok := t.(*types.StructType); ok {
 				fieldType = st.Fields[field.Name.Value]
 			}
+			needCast := fieldType != nil && (fieldType == types.Ptr || g.cType(fieldType) == "void*" || g.cType(fieldType) == "void**" || strings.HasSuffix(g.cType(fieldType), "*"))
+			if needCast {
+				g.buf.WriteString("(void*)(")
+			}
 			oldTargetIsValue := g.TargetIsValue
 			g.TargetIsValue = !g.isPointerTypeInC(fieldType)
 			g.genOwnedValue(field.Value, fieldType)
 			g.TargetIsValue = oldTargetIsValue
+			if needCast {
+				g.buf.WriteString(")")
+			}
 		}
 	}
 	g.buf.WriteString("}")

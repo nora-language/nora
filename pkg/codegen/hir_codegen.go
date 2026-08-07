@@ -45,6 +45,10 @@ func collectAllocas(b *hir.HIRBlock) []*hir.Alloca {
 }
 
 func (g *Generator) genHIRFunction(hf *hir.Function) {
+	g.genHIRFunctionWithName(hf, "", nil)
+}
+
+func (g *Generator) genHIRFunctionWithName(hf *hir.Function, overrideName string, overrideSym *semantic.Symbol) {
 	if strings.Contains(hf.Name, "GetModuleHandle") {
 		fmt.Printf("[DEBUG-GEN-HIR] genHIRFunction called for %s, hf.pkg=%s, Lambda=%v\n", hf.Name, g.getHIRFunctionPackage(hf), hf.LambdaExpr != nil)
 	}
@@ -58,10 +62,17 @@ func (g *Generator) genHIRFunction(hf *hir.Function) {
 
 	// Print signature
 	name := g.mangleName(hf.FuncSymbol)
+	if overrideName != "" {
+		name = overrideName
+	}
 	ft := hf.FuncSymbol.Type.(*types.FunctionType)
 	
 	// Use type-erased signature if this is a shared generic monomorphization
-	if declSym, ok := g.Functions[name]; ok && declSym.Type != nil {
+	if overrideSym != nil && overrideSym.Type != nil {
+		if declFT, ok := overrideSym.Type.(*types.FunctionType); ok {
+			ft = declFT
+		}
+	} else if declSym, ok := g.Functions[name]; ok && declSym.Type != nil {
 		if declFT, ok := declSym.Type.(*types.FunctionType); ok {
 			ft = declFT
 		}
@@ -732,9 +743,13 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				return opStr
 			}
 
+			castPrefix := ""
+			if strings.HasSuffix(cType2, "*") {
+				castPrefix = "(void*)"
+			}
 			if varOp, ok := i.Val.(*hir.VarOperand); ok && varOp.Symbol != nil && g.hasDropFlag(varOp.Symbol) {
 				dfName := g.dropFlagName(varOp.Symbol)
-				return fmt.Sprintf("({ %s _tmp = %s; %s = false; _tmp; })", cType2, opStr, dfName)
+				return fmt.Sprintf("({ %s _tmp = %s(%s); %s = false; _tmp; })", cType2, castPrefix, opStr, dfName)
 			} else if instOp, ok := i.Val.(*hir.InstOperand); ok {
 				needsNullify := false
 				if _, ok := instOp.Inst.(*hir.IndexAccess); ok {
@@ -756,7 +771,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 					} else {
 						nullifyStr = fmt.Sprintf("memset(&(%s), 0, sizeof(%s)); ", opStr, cType2)
 					}
-					return fmt.Sprintf("({ %s _tmp = %s; %s_tmp; })", cType2, opStr, nullifyStr)
+					return fmt.Sprintf("({ %s _tmp = %s(%s); %s_tmp; })", cType2, castPrefix, opStr, nullifyStr)
 				}
 			}
 

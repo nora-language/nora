@@ -58,6 +58,9 @@ func (g *Generator) mangleName(sym *semantic.Symbol) string {
 	if sym == nil {
 		return ""
 	}
+	if g.MonomorphizedFuncs[sym.Name] || strings.Contains(sym.Name, "_ptr") {
+		return sanitizeCIdentifier(sym.Name)
+	}
 	base := g.getMangledBaseName(sym)
 	if sym.IsOverloaded && sym.Kind == semantic.SymFunc {
 		if ft, ok := sym.Type.(*types.FunctionType); ok {
@@ -227,7 +230,7 @@ func (g *Generator) getErasedTypeName(t types.NRType) string {
 	if st, ok := underlying.(*types.StructType); ok && st.BaseType != nil && len(st.TypeArgs) > 0 {
 		allPointerLike := true
 		for _, arg := range st.TypeArgs {
-			if !types.IsPointerLike(arg) || types.IsOwnedType(arg) {
+			if !types.IsPointerLike(arg) {
 				allPointerLike = false
 				break
 			}
@@ -245,7 +248,7 @@ func (g *Generator) getErasedTypeName(t types.NRType) string {
 	if sumT, ok := underlying.(*types.SumType); ok && sumT.BaseType != nil && len(sumT.TypeArgs) > 0 {
 		allPointerLike := true
 		for _, arg := range sumT.TypeArgs {
-			if !types.IsPointerLike(arg) || types.IsOwnedType(arg) {
+			if !types.IsPointerLike(arg) {
 				allPointerLike = false
 				break
 			}

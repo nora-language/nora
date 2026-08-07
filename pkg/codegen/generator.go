@@ -155,7 +155,33 @@ func (g *Generator) Generate() (string, error) {
 	hirProg := g.hirProg
 	hirFuncs := make(map[string]*hir.Function)
 	for _, hf := range hirProg.Functions {
-		hirFuncs[g.mangleName(hf.FuncSymbol)] = hf
+		if hf.FuncSymbol != nil {
+			mangled := g.mangleName(hf.FuncSymbol)
+			hirFuncs[mangled] = hf
+			if hf.FuncSymbol.Name != "" {
+				hirFuncs[hf.FuncSymbol.Name] = hf
+			}
+		}
+	}
+	for name, sym := range g.Functions {
+		if _, exists := hirFuncs[name]; !exists {
+			for _, hf := range hirProg.Functions {
+				if hf.FuncSymbol != nil {
+					if hf.FuncSymbol.DefNode == sym.DefNode || hf.FuncSymbol.Name == sym.Name {
+						hirFuncs[name] = hf
+						break
+					}
+					if sel, ok := sym.DefNode.(*ast.FunctionStatement); ok && sel.Receiver != nil {
+						if hfFn, ok := hf.FuncSymbol.DefNode.(*ast.FunctionStatement); ok && hfFn.Receiver != nil {
+							if sel.Name.Value == hfFn.Name.Value || strings.HasPrefix(sel.Name.Value, hfFn.Name.Value+"_") || strings.HasSuffix(name, "_"+hfFn.Name.Value) {
+								hirFuncs[name] = hf
+								break
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// 2. Emit Header
@@ -206,11 +232,12 @@ func (g *Generator) Generate() (string, error) {
 		if !ok || ast.GetAttribute(fn.Attributes, "macro") != nil || fn.Body == nil {
 			continue
 		}
+		isMonomorphized := g.MonomorphizedFuncs[sym.Name] || g.MonomorphizedFuncs[g.mangleName(sym)] || sym.Name != fn.Name.Value
 		if hf, ok := hirFuncs[name]; ok {
-			g.genHIRFunction(hf)
+			g.genHIRFunctionWithName(hf, name, sym)
 		} else {
-			if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok && len(fnStmt.TypeParameters) > 0 {
-				// 
+			if fnStmt, ok := sym.DefNode.(*ast.FunctionStatement); ok && len(fnStmt.TypeParameters) > 0 && !isMonomorphized {
+				continue
 			}
 			g.genFunction(sym, fn)
 		}
@@ -741,6 +768,16 @@ func (g *Generator) collectDefinitions() {
 					}
 					g.Functions[erasedName] = erasedSym
 					g.MonomorphizedFuncs[erasedName] = true
+					pkgPrefix := g.getSymbolPackage(sym)
+					if pkgPrefix != "" && pkgPrefix != "main" {
+						safePkg := strings.ReplaceAll(pkgPrefix, "/", "_")
+						safePkg = strings.ReplaceAll(safePkg, ".", "_")
+						if !strings.HasPrefix(erasedName, safePkg+"_") {
+							pkgErasedName := safePkg + "_" + erasedName
+							g.Functions[pkgErasedName] = erasedSym
+							g.MonomorphizedFuncs[pkgErasedName] = true
+						}
+					}
 				}
 			} else {
 				name := g.mangleName(sym)
@@ -761,6 +798,9 @@ func (g *Generator) collectDefinitions() {
 			if sel, isSel := call.Function.(*ast.SelectorExpression); isSel {
 				isSelector = true
 				methodBase = sel.Field.Value
+			} else if ident, isIdent := call.Function.(*ast.Identifier); isIdent {
+				isSelector = true
+				methodBase = ident.Value
 			}
 		}
 
