@@ -5060,7 +5060,7 @@ func (sa *SemanticAnalyzer) tryResolveAsType(n ast.Expression) types.NRType {
 		sym, exists := sa.CurrentScope.Resolve(t.Value)
 		if exists {
 			// fmt.Printf("[DEBUG tryResolveAsType] resolved identifier %s: kind=%d (SymType=%d), type=%T\n", t.Value, sym.Kind, SymType, sym.Type)
-			if sym.Kind == SymType || sym.Kind == SymVariant {
+			if sym.Kind == SymType {
 				return sym.Type
 			}
 		} else {
@@ -5071,7 +5071,7 @@ func (sa *SemanticAnalyzer) tryResolveAsType(n ast.Expression) types.NRType {
 			sym, exists := sa.CurrentScope.Resolve(ident.Value)
 			if exists && sym.Kind == SymPackage {
 				if modType, ok := sym.Type.(*ModuleType); ok {
-					if pkgSym, exists := modType.Exports.Resolve(t.Field.Value); exists && (pkgSym.Kind == SymType || pkgSym.Kind == SymVariant) {
+					if pkgSym, exists := modType.Exports.Resolve(t.Field.Value); exists && pkgSym.Kind == SymType {
 						return pkgSym.Type
 					}
 				}
@@ -5124,7 +5124,7 @@ func (sa *SemanticAnalyzer) resolveTypeNode(n ast.TypeNode) types.NRType {
 			return prim
 		}
 		if t.Value == "Map" || t.Value == "List" {
-			if sym, exists := sa.CurrentScope.Resolve(t.Value); exists && (sym.Kind == SymType || sym.Kind == SymVariant) {
+			if sym, exists := sa.CurrentScope.Resolve(t.Value); exists && sym.Kind == SymType {
 				// Let standard scope resolution handle it
 			} else {
 				return &types.PrimitiveType{KindName: t.Value}
@@ -5143,9 +5143,9 @@ func (sa *SemanticAnalyzer) resolveTypeNode(n ast.TypeNode) types.NRType {
 			return types.ErrorType
 		}
 
-		// C. Ensure the symbol we found is actually a TYPE or VARIANT
-		if sym.Kind != SymType && sym.Kind != SymVariant {
-			sa.AddError(t.Pos(), "'%s' is not a type or variant (it is a %s)", t.Value, sym.Kind)
+		// C. Ensure the symbol we found is actually a TYPE
+		if sym.Kind != SymType {
+			sa.AddError(t.Pos(), "'%s' is not a type (it is a %s)", t.Value, sym.Kind)
 			return types.ErrorType
 		}
 
