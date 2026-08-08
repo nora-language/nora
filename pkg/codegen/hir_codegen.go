@@ -664,6 +664,12 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 		g.emit("    nr_flush_temps();")
 		g.emit(fmt.Sprintf("    return %s;", valStr))
 
+	case *hir.Goto:
+		g.emit(fmt.Sprintf("    goto %s;", i.LabelName))
+
+	case *hir.Label:
+		g.emit(fmt.Sprintf("%s:;", i.Name))
+
 	case *hir.Call:
 		callStr := g.hirInstructionStr(i)
 		g.emit(fmt.Sprintf("    %s;", callStr))

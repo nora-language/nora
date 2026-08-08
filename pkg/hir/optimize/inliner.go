@@ -193,13 +193,16 @@ func (inl *Inliner) processInstruction(inst hir.Instruction, targetBlock *hir.HI
 			// Clone body
 			clonedBody := inl.cloner.CloneBlock(targetFunc.Body)
 
+			endLabel := inl.cloner.NextTemp() + "_inline_end"
+
 			// Transform Ret instructions into Assignments to retVar
-			inl.transformReturns(clonedBody, retVar)
+			inl.transformReturns(clonedBody, retVar, endLabel)
 
 			// Append cloned body to current block
 			for _, el := range clonedBody.Elements {
 				targetBlock.AddElement(el)
 			}
+			targetBlock.AddInst(&hir.Label{Name: endLabel})
 
 			// Clean up param mappings
 			for _, paramName := range targetFunc.Params {
@@ -222,7 +225,7 @@ func (inl *Inliner) processInstruction(inst hir.Instruction, targetBlock *hir.HI
 	return inst
 }
 
-func (inl *Inliner) transformReturns(block *hir.HIRBlock, retVar string) {
+func (inl *Inliner) transformReturns(block *hir.HIRBlock, retVar string, endLabel string) {
 	if block == nil {
 		return
 	}
@@ -239,16 +242,19 @@ func (inl *Inliner) transformReturns(block *hir.HIRBlock, retVar string) {
 						},
 					})
 				}
+				newElements = append(newElements, &hir.InstElement{
+					Inst: &hir.Goto{LabelName: endLabel},
+				})
 				// Skip the actual Ret instruction!
 			} else {
 				newElements = append(newElements, e)
 			}
 		case *hir.HIRIf:
-			inl.transformReturns(e.Then, retVar)
-			inl.transformReturns(e.Else, retVar)
+			inl.transformReturns(e.Then, retVar, endLabel)
+			inl.transformReturns(e.Else, retVar, endLabel)
 			newElements = append(newElements, e)
 		case *hir.HIRLoop:
-			inl.transformReturns(e.Body, retVar)
+			inl.transformReturns(e.Body, retVar, endLabel)
 			newElements = append(newElements, e)
 		default:
 			newElements = append(newElements, e)

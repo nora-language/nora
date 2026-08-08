@@ -38,6 +38,8 @@ const (
 	InstChanRecv
 	InstLambda
 	InstLineInfo
+	InstGoto
+	InstLabel
 )
 
 type Instruction interface {
@@ -434,3 +436,21 @@ func (l *LineInfo) String() string {
 	}
 	return "lineinfo unknown"
 }
+
+// Goto: jump to a Label
+type Goto struct {
+	LabelName string
+}
+
+func (g *Goto) GetInstructionKind() InstructionKind { return InstGoto }
+func (g *Goto) GetType() types.NRType               { return nil }
+func (g *Goto) String() string                      { return fmt.Sprintf("goto %s", g.LabelName) }
+
+// Label: destination for a Goto
+type Label struct {
+	Name string
+}
+
+func (l *Label) GetInstructionKind() InstructionKind { return InstLabel }
+func (l *Label) GetType() types.NRType               { return nil }
+func (l *Label) String() string                      { return fmt.Sprintf("label %s:", l.Name) }
