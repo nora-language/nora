@@ -9,21 +9,29 @@ import (
 )
 
 type Cloner struct {
-	varMap map[string]string
-	symMap map[*semantic.Symbol]*semantic.Symbol
-	tempID int
+	varMap   map[string]string
+	symMap   map[*semantic.Symbol]*semantic.Symbol
+	labelMap map[string]string
+	tempID   int
 }
 
 func NewCloner() *Cloner {
 	return &Cloner{
-		varMap: make(map[string]string),
-		symMap: make(map[*semantic.Symbol]*semantic.Symbol),
+		varMap:   make(map[string]string),
+		symMap:   make(map[*semantic.Symbol]*semantic.Symbol),
+		labelMap: make(map[string]string),
 	}
 }
 
 func (c *Cloner) NextTemp() string {
 	c.tempID++
 	return fmt.Sprintf("_inline_var_%d", c.tempID)
+}
+
+func (c *Cloner) ResetMaps() {
+	c.varMap = make(map[string]string)
+	c.symMap = make(map[*semantic.Symbol]*semantic.Symbol)
+	c.labelMap = make(map[string]string)
 }
 
 func (c *Cloner) CloneBlock(block *hir.HIRBlock) *hir.HIRBlock {
@@ -294,8 +302,25 @@ func (c *Cloner) CloneInstruction(inst hir.Instruction) hir.Instruction {
 			ASTNode:  i.ASTNode,
 			Type:     i.Type,
 		}
+	case *hir.Goto:
+		return &hir.Goto{
+			LabelName: c.mapLabel(i.LabelName),
+		}
+	case *hir.Label:
+		return &hir.Label{
+			Name: c.mapLabel(i.Name),
+		}
 	}
 	return inst
+}
+
+func (c *Cloner) mapLabel(name string) string {
+	if newName, ok := c.labelMap[name]; ok {
+		return newName
+	}
+	newName := name + "_" + c.NextTemp()
+	c.labelMap[name] = newName
+	return newName
 }
 
 func (c *Cloner) mapExpressionString(expr string) string {

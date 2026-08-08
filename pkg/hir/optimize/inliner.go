@@ -166,6 +166,17 @@ func (inl *Inliner) processInstruction(inst hir.Instruction, targetBlock *hir.HI
 			// INLINE THIS FUNCTION!
 			retVar := inl.cloner.NextTemp()
 
+			// Allocate return variable
+			if i.Type != nil && !types.Equals(i.Type, types.Void) {
+				targetBlock.AddInst(&hir.Alloca{
+					Name: retVar,
+					Type: i.Type,
+				})
+			}
+
+			// Clear maps before cloning so we don't leak variables and labels across inlinings
+			inl.cloner.ResetMaps()
+			
 			// 1. Map parameters to arguments
 			for idx, paramName := range targetFunc.Params {
 				argOp := i.Args[idx]
@@ -182,14 +193,6 @@ func (inl *Inliner) processInstruction(inst hir.Instruction, targetBlock *hir.HI
 				inl.cloner.varMap[paramName] = tempArgName
 			}
 
-			// Allocate return variable
-			if i.Type != nil && !types.Equals(i.Type, types.Void) {
-				targetBlock.AddInst(&hir.Alloca{
-					Name: retVar,
-					Type: i.Type,
-				})
-			}
-
 			// Clone body
 			clonedBody := inl.cloner.CloneBlock(targetFunc.Body)
 
@@ -203,11 +206,6 @@ func (inl *Inliner) processInstruction(inst hir.Instruction, targetBlock *hir.HI
 				targetBlock.AddElement(el)
 			}
 			targetBlock.AddInst(&hir.Label{Name: endLabel})
-
-			// Clean up param mappings
-			for _, paramName := range targetFunc.Params {
-				delete(inl.cloner.varMap, paramName)
-			}
 
 			if i.Type != nil && !types.Equals(i.Type, types.Void) {
 				return &hir.Expression{Expr: retVar, Type: i.Type}
