@@ -266,6 +266,7 @@ func TestCompilerWithTestFolder(t *testing.T) {
 				if runtime.GOOS == "linux" {
 					args = append(args, "-pthread", "-lm")
 				}
+				fmt.Printf("CLANG COMMAND: clang %v\n", args)
 				cmd := exec.Command("clang", args...)
 				output, err := cmd.CombinedOutput()
 

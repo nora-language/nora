@@ -199,7 +199,10 @@ func (l *Lowerer) lowerFunction(sym *semantic.Symbol, fn *ast.FunctionStatement)
 			prevBlock := l.CurrentBlock
 			l.CurrentBlock = hirFn.Body
 			for i := len(l.activeDefers) - 1; i >= 0; i-- {
-				l.lowerExpression(l.activeDefers[i])
+				op := l.lowerExpression(l.activeDefers[i])
+				if instOp, ok := op.(*InstOperand); ok {
+					l.CurrentBlock.AddInst(instOp.Inst)
+				}
 			}
 			l.CurrentBlock = prevBlock
 		}
@@ -452,7 +455,10 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 			}
 		}
 		for i := len(l.activeDefers) - 1; i >= 0; i-- {
-			l.lowerExpression(l.activeDefers[i])
+			op := l.lowerExpression(l.activeDefers[i])
+			if instOp, ok := op.(*InstOperand); ok {
+				l.CurrentBlock.AddInst(instOp.Inst)
+			}
 		}
 		l.emitPreDrops()
 		if tempVar != nil {
@@ -777,6 +783,7 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 		l.CurrentBlock.AddElement(&Select{Cases: cases})
 
 	case *ast.DeferStatement:
+		fmt.Printf("[DEBUG] Encountered DeferStatement: %v\n", s.Call)
 		l.activeDefers = append(l.activeDefers, s.Call)
 	}
 

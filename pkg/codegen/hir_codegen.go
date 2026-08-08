@@ -242,7 +242,13 @@ func (g *Generator) genHIRFunctionWithName(hf *hir.Function, overrideName string
 }
 
 func (g *Generator) genHIRBlock(b *hir.HIRBlock) {
-	for _, el := range b.Elements {
+	for i, el := range b.Elements {
+		if g.CurrentFunc != nil && g.CurrentFunc.Name == "main" {
+			fmt.Printf("[DEBUG-HIR] Element %d: %T\n", i, el)
+			if inst, ok := el.(*hir.InstElement); ok {
+				fmt.Printf("[DEBUG-HIR]  Instruction: %T\n", inst.Inst)
+			}
+		}
 		switch e := el.(type) {
 		case *hir.InstElement:
 			g.genHIRInstruction(e.Inst)
@@ -659,7 +665,8 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 		g.emit(fmt.Sprintf("    return %s;", valStr))
 
 	case *hir.Call:
-		g.emit(fmt.Sprintf("    %s;", g.hirInstructionStr(i)))
+		callStr := g.hirInstructionStr(i)
+		g.emit(fmt.Sprintf("    %s;", callStr))
 	case *hir.Drop:
 		sym := i.Symbol
 		if sym == nil {
@@ -1056,8 +1063,10 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 		}
 
 		if i.Type != nil && i.Type.Name() == "str" && !g.NoTempWrap {
+			fmt.Printf("[DEBUG-CODEGEN] Call %s evaluated to %q (str wrapped)\n", i.FuncName, fmt.Sprintf("nr_temp_str(%s)", callStr))
 			return fmt.Sprintf("nr_temp_str(%s)", callStr)
 		}
+		fmt.Printf("[DEBUG-CODEGEN] Call %s evaluated to %q\n", i.FuncName, callStr)
 		return callStr
 	case *hir.VariantConstructor:
 		var argsStr []string
