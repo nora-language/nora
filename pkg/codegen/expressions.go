@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/nora-language/nora/pkg/diag"
 	"github.com/nora-language/nora/pkg/parser/ast"
 	"github.com/nora-language/nora/pkg/plugin/api"
 	"github.com/nora-language/nora/pkg/semantic"
@@ -2580,12 +2582,34 @@ func (g *Generator) expandMacro(sym *semantic.Symbol, call *ast.CallExpression) 
 
 	resJSON, err := g.PluginMgr.ExecuteMacro(pluginName, macroName, reqJSON)
 	if err != nil {
-		return fmt.Sprintf("/* macro error: %v */", err)
+		d := diag.Diagnostic{
+			Range: diag.Range{
+				Start: diag.Position{Line: call.Pos().Line, Column: call.Pos().Column, Offset: call.Pos().Offset},
+				End:   diag.Position{Line: call.Pos().Line, Column: call.Pos().Column, Offset: call.Pos().Offset},
+			},
+			Severity: diag.Error,
+			Message:  fmt.Sprintf("Failed to execute macro plugin '%s': %v", pluginName, err),
+			Source:   "Codegen",
+			File:     call.Pos().Filename,
+		}
+		diag.Report(&diag.Collection{Diagnostics: []diag.Diagnostic{d}})
+		os.Exit(1)
 	}
 
 	var resp api.CallResponse
 	if err := json.Unmarshal(resJSON, &resp); err != nil {
-		return fmt.Sprintf("/* macro json error: %v */", err)
+		d := diag.Diagnostic{
+			Range: diag.Range{
+				Start: diag.Position{Line: call.Pos().Line, Column: call.Pos().Column, Offset: call.Pos().Offset},
+				End:   diag.Position{Line: call.Pos().Line, Column: call.Pos().Column, Offset: call.Pos().Offset},
+			},
+			Severity: diag.Error,
+			Message:  fmt.Sprintf("Failed to parse JSON response from macro plugin '%s': %v", pluginName, err),
+			Source:   "Codegen",
+			File:     call.Pos().Filename,
+		}
+		diag.Report(&diag.Collection{Diagnostics: []diag.Diagnostic{d}})
+		os.Exit(1)
 	}
 
 	return resp.ReplacementCode
