@@ -46,9 +46,6 @@ func (opt *Optimizer) runInlinePass(prog *hir.Program) *hir.Program {
 			inliner.hirBySymbol[hf.FuncSymbol] = hf
 		}
 		name := hf.Name
-		if hf.FuncSymbol != nil {
-			name = hf.FuncSymbol.Name
-		}
 		inliner.hirByName[name] = hf
 	}
 
@@ -162,9 +159,6 @@ func (inl *Inliner) processInstruction(inst hir.Instruction, targetBlock *hir.HI
 		}
 		if !exists {
 			targetName := i.FuncName
-			if i.FuncSymbol != nil {
-				targetName = i.FuncSymbol.Name
-			}
 			targetFunc, exists = inl.hirByName[targetName]
 		}
 

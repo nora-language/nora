@@ -1232,6 +1232,12 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 		}
 	}
 
+	if ft != nil && g.ErasedMode && isVariableCall {
+		if erasedFT, ok := g.eraseType(ft).(*types.FunctionType); ok {
+			ft = erasedFT
+		}
+	}
+
 	isExtern := false
 	if ident, ok := e.Function.(*ast.Identifier); ok {
 		if sym := g.SemanticInfo.Uses[ident]; sym != nil {

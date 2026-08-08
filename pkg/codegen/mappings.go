@@ -64,7 +64,17 @@ func (g *Generator) mangleName(sym *semantic.Symbol) string {
 	base := g.getMangledBaseName(sym)
 	if sym.IsOverloaded && sym.Kind == semantic.SymFunc {
 		if ft, ok := sym.Type.(*types.FunctionType); ok {
-			hash := types.GetHashSuffix(base, ft.Params)
+			paramsToHash := ft.Params
+			// If the base name was derived from an erased receiver/type,
+			// we must hash the ERASED parameter types so that all instantiations
+			// resolve to the same shared C function.
+			if strings.Contains(base, "_ptr") {
+				paramsToHash = make([]types.NRType, len(ft.Params))
+				for i, p := range ft.Params {
+					paramsToHash[i] = g.eraseType(p)
+				}
+			}
+			hash := types.GetHashSuffix(base, paramsToHash)
 			return base + "_" + hash
 		}
 	}
@@ -115,7 +125,7 @@ func (g *Generator) getMangledBaseName(sym *semantic.Symbol) string {
 					}
 
 					methodBase := baseName
-					if len(methodBase) > 9 && methodBase[len(methodBase)-9] == '_' {
+					for len(methodBase) > 9 && methodBase[len(methodBase)-9] == '_' {
 						isHex := true
 						for _, c := range methodBase[len(methodBase)-8:] {
 							if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
@@ -125,6 +135,8 @@ func (g *Generator) getMangledBaseName(sym *semantic.Symbol) string {
 						}
 						if isHex {
 							methodBase = methodBase[:len(methodBase)-9]
+						} else {
+							break
 						}
 					}
 					return g.sanitizeIdentifier(erasedRec + "_" + methodBase)

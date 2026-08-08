@@ -68,15 +68,23 @@ func (g *Generator) genHIRFunctionWithName(hf *hir.Function, overrideName string
 	ft := hf.FuncSymbol.Type.(*types.FunctionType)
 	
 	// Use type-erased signature if this is a shared generic monomorphization
-	if overrideSym != nil && overrideSym.Type != nil {
-		if declFT, ok := overrideSym.Type.(*types.FunctionType); ok {
-			ft = declFT
-		}
-	} else if declSym, ok := g.Functions[name]; ok && declSym.Type != nil {
-		if declFT, ok := declSym.Type.(*types.FunctionType); ok {
-			ft = declFT
+	oldErasedMode := g.ErasedMode
+	if g.ErasedFuncs[name] {
+		if overrideSym != nil && overrideSym.Type != nil {
+			if declFT, ok := overrideSym.Type.(*types.FunctionType); ok {
+				ft = declFT
+				g.ErasedMode = true
+			}
+		} else if declSym, ok := g.Functions[name]; ok && declSym.Type != nil {
+			if declFT, ok := declSym.Type.(*types.FunctionType); ok {
+				ft = declFT
+				g.ErasedMode = true
+			}
 		}
 	}
+	defer func() {
+		g.ErasedMode = oldErasedMode
+	}()
 	
 	retType := g.cType(ft.Return)
 	mangledName := name
@@ -903,6 +911,12 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 		if ft == nil && i.FuncSymbol != nil {
 			if fType, ok := i.FuncSymbol.Type.(*types.FunctionType); ok {
 				ft = fType
+			}
+		}
+
+		if ft != nil && g.ErasedMode {
+			if erasedFT, ok := g.eraseType(ft).(*types.FunctionType); ok {
+				ft = erasedFT
 			}
 		}
 

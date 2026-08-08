@@ -33,10 +33,13 @@ type Generator struct {
 	InCallExpression bool
 	MultiFileMode    bool
 	TargetIsValue    bool
+	ErasedMode       bool
 
 	// Internal State
 	buf             *bytes.Buffer
 	Functions       map[string]*semantic.Symbol
+	MonomorphizedFuncs map[string]bool
+	ErasedFuncs     map[string]bool
 	Structs         map[string]*types.StructType
 	SumTypes        map[string]*types.SumType
 	Protocols       map[string]*types.ProtocolType
@@ -72,7 +75,6 @@ type Generator struct {
 	eraseCache         map[string]types.NRType
 	NativeHeaders      []string
 	GeneratedLambdas   map[string]bool
-	MonomorphizedFuncs map[string]bool
 
 	// String Literals
 	StringLiterals map[string]string // maps string content to global variable name
@@ -90,9 +92,11 @@ func NewGenerator(prog *ast.Program, sem *semantic.SemanticInfo, solver *topolog
 		SemanticInfo:     sem,
 		Solver:           solver,
 		PluginMgr:        pluginMgr,
-		Functions:        make(map[string]*semantic.Symbol),
-		Structs:          make(map[string]*types.StructType),
-		SumTypes:         make(map[string]*types.SumType),
+		Functions:          make(map[string]*semantic.Symbol),
+		MonomorphizedFuncs: make(map[string]bool),
+		ErasedFuncs:        make(map[string]bool),
+		Structs:            make(map[string]*types.StructType),
+		SumTypes:           make(map[string]*types.SumType),
 		Protocols:        make(map[string]*types.ProtocolType),
 		ArrayTypes:       make(map[string]*types.ArrayType),
 		Globals:          make(map[string]*semantic.Symbol),
@@ -105,7 +109,6 @@ func NewGenerator(prog *ast.Program, sem *semantic.SemanticInfo, solver *topolog
 		NativeHeaders:      nativeHeaders,
 		StringLiterals:     make(map[string]string),
 		GeneratedLambdas:   make(map[string]bool),
-		MonomorphizedFuncs: make(map[string]bool),
 	}
 }
 
@@ -158,9 +161,8 @@ func (g *Generator) Generate() (string, error) {
 		if hf.FuncSymbol != nil {
 			mangled := g.mangleName(hf.FuncSymbol)
 			hirFuncs[mangled] = hf
-			if hf.FuncSymbol.Name != "" {
-				hirFuncs[hf.FuncSymbol.Name] = hf
-			}
+		} else {
+			hirFuncs[hf.Name] = hf
 		}
 	}
 	for name, sym := range g.Functions {
@@ -337,6 +339,14 @@ func (g *Generator) eraseType(t types.NRType) types.NRType {
 				Kind:    pt.Kind,
 			}
 		}
+		if prot, ok := erasedBase.(*types.ProtocolType); ok {
+			return &types.PointerType{
+				Base:    prot,
+				IsArray: pt.IsArray,
+				Leased:  pt.Leased,
+				Kind:    pt.Kind,
+			}
+		}
 		return types.Ptr
 	case *types.ListType:
 		return &types.ListType{
@@ -429,6 +439,27 @@ func (g *Generator) eraseType(t types.NRType) types.NRType {
 					return placeholder
 				}
 			}
+		}
+	case *types.FunctionType:
+		erasedParams := make([]types.NRType, len(pt.Params))
+		for i, p := range pt.Params {
+			erasedParams[i] = g.eraseType(p)
+		}
+		var erasedReturn types.NRType
+		if pt.Return != nil {
+			erasedReturn = g.eraseType(pt.Return)
+		}
+		var erasedReceiver types.NRType
+		if pt.Receiver != nil {
+			erasedReceiver = g.eraseType(pt.Receiver)
+		}
+		return &types.FunctionType{
+			Receiver:      erasedReceiver,
+			ReceiverLease: pt.ReceiverLease,
+			Params:        erasedParams,
+			ParamLeases:   pt.ParamLeases,
+			Return:        erasedReturn,
+			IsVariadic:    pt.IsVariadic,
 		}
 	}
 	return t
@@ -681,7 +712,7 @@ func (g *Generator) collectDefinitions() {
 					erasedRec := g.getErasedTypeName(ft.Receiver)
 					if erasedRec != "" {
 						methodBase := inst.Name.Value
-						if len(methodBase) > 9 && methodBase[len(methodBase)-9] == '_' {
+						for len(methodBase) > 9 && methodBase[len(methodBase)-9] == '_' {
 							isHex := true
 							for _, c := range methodBase[len(methodBase)-8:] {
 								if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
@@ -691,6 +722,8 @@ func (g *Generator) collectDefinitions() {
 							}
 							if isHex {
 								methodBase = methodBase[:len(methodBase)-9]
+							} else {
+								break
 							}
 						}
 						erasedName = erasedRec + "_" + methodBase
@@ -768,6 +801,7 @@ func (g *Generator) collectDefinitions() {
 					}
 					g.Functions[erasedName] = erasedSym
 					g.MonomorphizedFuncs[erasedName] = true
+					g.ErasedFuncs[erasedName] = true
 					pkgPrefix := g.getSymbolPackage(sym)
 					if pkgPrefix != "" && pkgPrefix != "main" {
 						safePkg := strings.ReplaceAll(pkgPrefix, "/", "_")
@@ -776,6 +810,7 @@ func (g *Generator) collectDefinitions() {
 							pkgErasedName := safePkg + "_" + erasedName
 							g.Functions[pkgErasedName] = erasedSym
 							g.MonomorphizedFuncs[pkgErasedName] = true
+							g.ErasedFuncs[pkgErasedName] = true
 						}
 					}
 				}
@@ -990,11 +1025,18 @@ func (g *Generator) genFunction(sym *semantic.Symbol, fn *ast.FunctionStatement)
 	ft := sym.Type.(*types.FunctionType)
 	
 	// Use type-erased signature if this is a shared generic monomorphization
-	if declSym, ok := g.Functions[name]; ok && declSym.Type != nil {
-		if declFT, ok := declSym.Type.(*types.FunctionType); ok {
-			ft = declFT
+	oldErasedMode := g.ErasedMode
+	if g.ErasedFuncs[name] {
+		if declSym, ok := g.Functions[name]; ok && declSym.Type != nil {
+			if declFT, ok := declSym.Type.(*types.FunctionType); ok {
+				ft = declFT
+				g.ErasedMode = true
+			}
 		}
 	}
+	defer func() {
+		g.ErasedMode = oldErasedMode
+	}()
 	
 	retType := g.cType(ft.Return)
 

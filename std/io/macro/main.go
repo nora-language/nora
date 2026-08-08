@@ -123,7 +123,11 @@ func buildPrintfImpl(req *api.CallRequest, newline bool, useStderr bool) int32 {
 		} else if strings.TrimLeft(arg.Type, "#&@*") == "bool" {
 			sb.WriteString(fmt.Sprintf(`%s"%%s%%s", (%s) ? "true" : "false", "%s"); `, target, val, sep))
 		} else {
-			sb.WriteString(fmt.Sprintf(`%s"%s%%s", %s, "%s"); `, target, spec, val, sep))
+			if spec == "%s" {
+				sb.WriteString(fmt.Sprintf(`%s"%s%%s", (char*)(%s), "%s"); `, target, spec, val, sep))
+			} else {
+				sb.WriteString(fmt.Sprintf(`%s"%s%%s", %s, "%s"); `, target, spec, val, sep))
+			}
 		}
 	}
 	sb.WriteString("}")

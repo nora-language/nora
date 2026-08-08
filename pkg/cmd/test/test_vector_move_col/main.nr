@@ -44,4 +44,12 @@ pub fn main() {
     }
     
     io.PrintLn("MoveColumn tested successfully!")
+
+    var vec3 = collections.NewVector[ptr](2)
+    vec3.Push(none)
+    vec3.Push(none)
+    var any3: any = @vec3
+    var vec4 = collections.NewVector[ptr](2)
+    var any5: any = @vec4
+    MoveColumn[ptr](&any3, 0, &any5)
 }
