@@ -18,7 +18,7 @@ fn NewContainer[T]() @Container[T] {
 }
 
 fn (c: &Container[T]) Add(item: T) {
-    append(c.items, item)
+    c.items = append(c.items, item)
 }
 
 fn main() i32 {
