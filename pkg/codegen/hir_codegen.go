@@ -242,13 +242,7 @@ func (g *Generator) genHIRFunctionWithName(hf *hir.Function, overrideName string
 }
 
 func (g *Generator) genHIRBlock(b *hir.HIRBlock) {
-	for i, el := range b.Elements {
-		if g.CurrentFunc != nil && g.CurrentFunc.Name == "main" {
-			fmt.Printf("[DEBUG-HIR] Element %d: %T\n", i, el)
-			if inst, ok := el.(*hir.InstElement); ok {
-				fmt.Printf("[DEBUG-HIR]  Instruction: %T\n", inst.Inst)
-			}
-		}
+	for _, el := range b.Elements {
 		switch e := el.(type) {
 		case *hir.InstElement:
 			g.genHIRInstruction(e.Inst)
@@ -1043,19 +1037,6 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				name = g.mangleName(i.FuncSymbol)
 			}
 
-			if strings.Contains(name, "Take") {
-				_, ok := g.SemanticInfo.MonomorphizedNames[i.ASTNode]
-				if g.DebugSemantic {
-					fmt.Printf("[DEBUG-CODEGEN-CALL] name=%s, pkg=%s, FuncSymbol.Name=%s, in_MonomorphizedNames=%v\n", name, g.getSymbolPackage(i.FuncSymbol), i.FuncSymbol.Name, ok)
-				}
-			}
-
-			if strings.Contains(name, "LoadPtr") {
-				if g.DebugSemantic {
-					fmt.Printf("[DEBUG-LOADPTR] name=%s argsStr=%v\n", name, argsStr)
-				}
-			}
-
 			if ft == nil {
 				if specSym, ok := g.Functions[name]; ok && specSym.Type != nil {
 					if t, ok := specSym.Type.(*types.FunctionType); ok {
@@ -1069,10 +1050,8 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 		}
 
 		if i.Type != nil && i.Type.Name() == "str" && !g.NoTempWrap {
-			fmt.Printf("[DEBUG-CODEGEN] Call %s evaluated to %q (str wrapped)\n", i.FuncName, fmt.Sprintf("nr_temp_str(%s)", callStr))
 			return fmt.Sprintf("nr_temp_str(%s)", callStr)
 		}
-		fmt.Printf("[DEBUG-CODEGEN] Call %s evaluated to %q\n", i.FuncName, callStr)
 		return callStr
 	case *hir.VariantConstructor:
 		var argsStr []string

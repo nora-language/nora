@@ -555,7 +555,6 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 							iterTemp = iterSym.Name
 						}
 					}
-					fmt.Printf("[DEBUG-LOWER-ALLOCA] For-in Iterator Alloca: isIterator=true, iterTemp=%s, iterSym=%p\n", iterTemp, iterSym)
 					l.CurrentBlock.AddInst(&Alloca{Name: iterTemp, Type: iterOp.GetType(), Symbol: iterSym})
 					l.CurrentBlock.AddInst(&Store{Dest: &VarOperand{Name: iterTemp, Type: iterOp.GetType(), Symbol: iterSym}, Val: iterOp})
 
@@ -622,7 +621,6 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 							arrTemp = iterSym.Name // Override temp name with the synthetic symbol's name
 						}
 					}
-					fmt.Printf("[DEBUG-LOWER-ALLOCA] For-in Array Alloca: isIterator=false, arrTemp=%s, iterSym=%p\n", arrTemp, iterSym)
 					l.CurrentBlock.AddInst(&Alloca{Name: arrTemp, Type: iterOp.GetType(), Symbol: iterSym})
 					l.CurrentBlock.AddInst(&Store{Dest: &VarOperand{Name: arrTemp, Type: iterOp.GetType(), Symbol: iterSym}, Val: iterOp})
 
