@@ -909,7 +909,7 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 
 				// Pass 2: Detect violations (with InSecondPass flag)
 				s.InSecondPass = true
-				s.analyzeBlock(n.Body, bodyLifecycles)
+				s.analyzeBlock(n.Body, s.cloneLifecycles(bodyLifecycles))
 				s.InSecondPass = false
 
 				// Pop loop parent variables from stack
@@ -952,6 +952,12 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 						s.updateLifecycle(sym, i, allVisible, visited)
 					}
 				}
+				if n.IteratorVar != nil {
+					if iterSym := s.SemanticInfo.Defs[n.IteratorVar]; iterSym != nil {
+						allVisible[iterSym] = &Lifecycle{Symbol: iterSym, DefinedAt: i, LastUsedAt: i}
+					}
+				}
+
 				// Analyze body (Two passes to catch cross-iteration moves)
 				bodyLifecycles := s.cloneLifecycles(allVisible)
 
@@ -964,7 +970,7 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 
 				s.analyzeBlock(n.Body, bodyLifecycles) // Pass 1
 				s.InSecondPass = true
-				s.analyzeBlock(n.Body, bodyLifecycles) // Pass 2
+				s.analyzeBlock(n.Body, s.cloneLifecycles(bodyLifecycles)) // Pass 2
 				s.InSecondPass = false
 
 				// Pop loop parent variables from stack
@@ -1079,6 +1085,9 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 				minUsed = lc2.LastUsedAt
 			}
 			
+			if strings.Contains(lc1.Symbol.Name, "curr") || strings.Contains(lc1.Symbol.Name, "prev") {
+				fmt.Printf("[DEBUG-NLL] %s: Def=%d, LastUse=%d | %s: Def=%d, LastUse=%d\n", lc1.Symbol.Name, lc1.DefinedAt, lc1.LastUsedAt, lc2.Symbol.Name, lc2.DefinedAt, lc2.LastUsedAt)
+			}
 			if maxDefined <= minUsed && minUsed < AnchorEndOfFunction {
 				if !reported[lc1.Symbol] && !reported[lc2.Symbol] {
 					s.ReportError(lc1.Symbol.DefNode.Pos(), "cannot borrow '%s' mutably, as it is already borrowed in this scope", lc1.AliasOf.Name)
@@ -1166,9 +1175,32 @@ func (s *Solver) isTerminalBlock(block *ast.BlockStatement) bool {
 		return false
 	}
 	for _, stmt := range block.Statements {
-		switch stmt.(type) {
+		switch e := stmt.(type) {
 		case *ast.ReturnStatement, *ast.BreakStatement, *ast.ContinueStatement:
 			return true
+		case *ast.ExpressionStatement:
+			if ifExpr, ok := e.Expression.(*ast.IfExpression); ok {
+				if ifExpr.Alternative != nil {
+					var altBlock *ast.BlockStatement
+					if b, ok := ifExpr.Alternative.(*ast.BlockStatement); ok {
+						altBlock = b
+					}
+					if s.isTerminalBlock(ifExpr.Consequence) && s.isTerminalBlock(altBlock) {
+						return true
+					}
+				}
+			} else if matchExpr, ok := e.Expression.(*ast.MatchExpression); ok {
+				allTerminal := len(matchExpr.Cases) > 0
+				for _, arm := range matchExpr.Cases {
+					if !s.isTerminalBlock(arm.Body) {
+						allTerminal = false
+						break
+					}
+				}
+				if allTerminal {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -1341,6 +1373,9 @@ func (s *Solver) findAllIdentsInStatement(stmt ast.Statement) map[*semantic.Symb
 	ast.Inspect(stmt, func(n ast.Node) bool {
 		if id, ok := n.(*ast.Identifier); ok {
 			if sym := s.SemanticInfo.Uses[id]; sym != nil {
+				if sym.Name == "curr" {
+					fmt.Printf("[DEBUG-FIND-IDENTS] FOUND 'curr' in %T at %s:%d\n", stmt, id.Pos().Filename, id.Pos().Line)
+				}
 				idents[sym] = id
 			}
 		}
@@ -1854,13 +1889,17 @@ func (s *Solver) getAliasOrigin(expr ast.Expression) *semantic.Symbol {
 	if expr == nil {
 		return nil
 	}
-	if pref, ok := expr.(*ast.PrefixExpression); ok && (pref.Operator == "#" || pref.Operator == "&") {
-		if id, ok := pref.Right.(*ast.Identifier); ok {
-			return s.SemanticInfo.Uses[id]
-		}
-		if sel, ok := pref.Right.(*ast.SelectorExpression); ok {
-			if id, ok := sel.Left.(*ast.Identifier); ok {
-				return s.SemanticInfo.Uses[id]
+	if pref, ok := expr.(*ast.PrefixExpression); ok {
+		if pref.Operator == "#" || pref.Operator == "&" {
+			curr := pref.Right
+			for {
+				if id, ok := curr.(*ast.Identifier); ok {
+					return s.SemanticInfo.Uses[id]
+				} else if sel, ok := curr.(*ast.SelectorExpression); ok {
+					curr = sel.Left
+				} else {
+					break
+				}
 			}
 		}
 	}
@@ -1887,6 +1926,11 @@ func (s *Solver) isSameSelector(e1, e2 ast.Node) bool {
 	// Base Case: Identifier
 	if id1, ok1 := e1.(*ast.Identifier); ok1 {
 		if id2, ok2 := e2.(*ast.Identifier); ok2 {
+			u1 := s.SemanticInfo.Uses[id1]
+			u2 := s.SemanticInfo.Uses[id2]
+			if u1 != nil && u2 != nil {
+				return u1 == u2
+			}
 			return id1.Value == id2.Value
 		}
 	}
@@ -2375,6 +2419,8 @@ func (s *Solver) getBaseIdentifier(expr ast.Expression) *ast.Identifier {
 	}
 	return nil
 }
+
+
 func (s *Solver) analyzePattern(pattern ast.Expression, visible map[*semantic.Symbol]*Lifecycle, index int) []*semantic.Symbol {
 	if pattern == nil {
 		return nil
@@ -2383,7 +2429,10 @@ func (s *Solver) analyzePattern(pattern ast.Expression, visible map[*semantic.Sy
 	ast.Inspect(pattern, func(node ast.Node) bool {
 		if id, ok := node.(*ast.Identifier); ok {
 			sym := s.SemanticInfo.Defs[id]
-			if sym != nil {
+			if sym == nil {
+				sym = s.SemanticInfo.Uses[id]
+			}
+			if sym != nil && sym.Kind == semantic.SymVar {
 				if _, exists := visible[sym]; !exists {
 					lc := &Lifecycle{Symbol: sym, DefinedAt: index, LastUsedAt: index}
 					visible[sym] = lc

@@ -195,6 +195,11 @@ func TestCompilerWithTestFolder(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Error writing C file: %v", err)
 				}
+				if strings.Contains(path, "repro_inline_iter_early_return") {
+					fmt.Println("========= GENERATED C CODE =========")
+					fmt.Println(bodyCode)
+					fmt.Println("====================================")
+				}
 
 				// 7. Compile with GCC (Only if main exists)
 				hasMain := false

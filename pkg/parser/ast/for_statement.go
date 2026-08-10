@@ -16,7 +16,8 @@ type ForStatement struct {
 
 	Body *BlockStatement
 
-	NextCall *CallExpression // Synthetic call for generic Next() methods
+	IteratorVar *Identifier // Synthetic variable to hold the iterable for RAII tracking
+	NextCall    *CallExpression // Synthetic call for generic Next() methods
 }
 
 func (fs *ForStatement) statementNode()       {}

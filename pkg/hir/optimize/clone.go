@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/nora-language/nora/pkg/hir"
+	"github.com/nora-language/nora/pkg/parser/ast"
 	"github.com/nora-language/nora/pkg/semantic"
 )
 
@@ -62,6 +63,17 @@ func (c *Cloner) CloneElement(el hir.BlockElement) hir.BlockElement {
 			Step:      c.CloneBlock(e.Step),
 			Body:      c.CloneBlock(e.Body),
 		}
+	case *hir.IteratorLoop:
+		return &hir.IteratorLoop{
+			Iterator:    c.CloneOperand(e.Iterator),
+			NextMangled: e.NextMangled,
+			NextSymbol:  e.NextSymbol,
+			ElemName:    c.cloneVarName(e.ElemName),
+			KeyName:     c.cloneVarName(e.KeyName),
+			ElemType:    e.ElemType,
+			KeyType:     e.KeyType,
+			Body:        c.CloneBlock(e.Body),
+		}
 	case *hir.Select:
 		var newCases []hir.SelectCase
 		for _, sc := range e.Cases {
@@ -88,6 +100,13 @@ func (c *Cloner) mapVarName(name string) string {
 		return newName
 	}
 	// It's a global variable or undeclared, return as is
+	return name
+}
+
+func (c *Cloner) cloneVarName(name string) string {
+	if newName, ok := c.varMap[name]; ok {
+		return newName
+	}
 	return name
 }
 
@@ -248,7 +267,7 @@ func (c *Cloner) CloneInstruction(inst hir.Instruction) hir.Instruction {
 		}
 	case *hir.ASTExpr:
 		return &hir.ASTExpr{
-			ASTNode: i.ASTNode,
+			ASTNode: c.cloneASTNode(i.ASTNode),
 			Type:    i.Type,
 		}
 	case *hir.Drop:
@@ -351,4 +370,70 @@ func (c *Cloner) mapExpressionString(expr string) string {
 		}
 	}
 	return result.String()
+}
+
+func (c *Cloner) cloneASTNode(node ast.Expression) ast.Expression {
+	if node == nil {
+		return nil
+	}
+	switch n := node.(type) {
+	case *ast.Identifier:
+		newName := c.mapVarName(n.Value)
+		return &ast.Identifier{Token: n.Token, Value: newName, Type: n.Type}
+	case *ast.StructLiteral:
+		newFields := make([]*ast.FieldDefinition, len(n.Fields))
+		for i, f := range n.Fields {
+			newFields[i] = &ast.FieldDefinition{
+				Name:  f.Name,
+				Value: c.cloneASTNode(f.Value),
+				Doc:   f.Doc,
+				Token: f.Token,
+				Type:  f.Type,
+				Attributes: f.Attributes,
+			}
+		}
+		var newName ast.Expression
+		if n.Name != nil {
+			newName = c.cloneASTNode(n.Name)
+		}
+		return &ast.StructLiteral{Token: n.Token, Name: newName, Fields: newFields}
+	case *ast.ArrayLiteral:
+		newElements := make([]ast.Expression, len(n.Elements))
+		for i, el := range n.Elements {
+			newElements[i] = c.cloneASTNode(el)
+		}
+		return &ast.ArrayLiteral{Token: n.Token, Elements: newElements}
+	case *ast.PrefixExpression:
+		return &ast.PrefixExpression{Token: n.Token, Operator: n.Operator, Right: c.cloneASTNode(n.Right), Type: n.Type}
+	case *ast.InfixExpression:
+		return &ast.InfixExpression{Token: n.Token, Left: c.cloneASTNode(n.Left), Operator: n.Operator, Right: c.cloneASTNode(n.Right), Type: n.Type}
+	case *ast.CallExpression:
+		newArgs := make([]*ast.ArgumentsExpression, len(n.Arguments))
+		for i, arg := range n.Arguments {
+			newArgs[i] = &ast.ArgumentsExpression{
+				Token: arg.Token,
+				Name:  arg.Name,
+				Value: c.cloneASTNode(arg.Value),
+				Lease: arg.Lease,
+			}
+		}
+		
+		newTypeArgs := make([]ast.TypeNode, len(n.TypeArguments))
+		for i, ta := range n.TypeArguments {
+			// Deep copying TypeNode is complex since it's an interface, but normally type args don't mutate.
+			// However, since we're in AST level, we can just copy the slice.
+			newTypeArgs[i] = ta
+		}
+		
+		return &ast.CallExpression{Token: n.Token, Function: c.cloneASTNode(n.Function), Arguments: newArgs, TypeArguments: newTypeArgs, Type: n.Type}
+	case *ast.IndexExpression:
+		newIndices := make([]ast.Expression, len(n.Indices))
+		for i, idx := range n.Indices {
+			newIndices[i] = c.cloneASTNode(idx)
+		}
+		return &ast.IndexExpression{Token: n.Token, Left: c.cloneASTNode(n.Left), Indices: newIndices, NoBoundsCheck: n.NoBoundsCheck, Type: n.Type}
+	case *ast.SelectorExpression:
+		return &ast.SelectorExpression{Token: n.Token, Left: c.cloneASTNode(n.Left), Field: n.Field}
+	}
+	return node
 }

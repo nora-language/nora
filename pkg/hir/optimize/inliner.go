@@ -95,6 +95,10 @@ func (inl *Inliner) processBlock(block *hir.HIRBlock) *hir.HIRBlock {
 				e.Cases[i] = sc
 			}
 			newBlock.AddElement(e)
+		case *hir.IteratorLoop:
+			e.Iterator = inl.processOperand(e.Iterator, newBlock)
+			e.Body = inl.processBlock(e.Body)
+			newBlock.AddElement(e)
 		case *hir.InstElement:
 			newInst := inl.processInstruction(e.Inst, newBlock)
 			if newInst != nil {
@@ -253,6 +257,14 @@ func (inl *Inliner) transformReturns(block *hir.HIRBlock, retVar string, endLabe
 			newElements = append(newElements, e)
 		case *hir.HIRLoop:
 			inl.transformReturns(e.Body, retVar, endLabel)
+			newElements = append(newElements, e)
+		case *hir.IteratorLoop:
+			inl.transformReturns(e.Body, retVar, endLabel)
+			newElements = append(newElements, e)
+		case *hir.Select:
+			for _, cas := range e.Cases {
+				inl.transformReturns(cas.Body, retVar, endLabel)
+			}
 			newElements = append(newElements, e)
 		default:
 			newElements = append(newElements, e)

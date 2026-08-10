@@ -4530,9 +4530,22 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		}
 
 		// Handle For-In loops
-		if n.Value != nil {
+		var iterSym *Symbol
+		if n.Iterable != nil {
 			sa.Analyze(n.Iterable)
 			iterType := sa.SemanticInfo.Types[n.Iterable]
+			
+			if _, isRange := n.Iterable.(*ast.RangeExpression); !isRange {
+				// Create a synthetic symbol for the iterable to ensure RAII tracks it
+				n.IteratorVar = &ast.Identifier{Token: n.Token, Value: "_iter"}
+				iterSym = &Symbol{
+					Name: fmt.Sprintf("_iter_%d_%d", n.Token.Position.Line, n.Token.Position.Column),
+					Kind: SymVar,
+					Type: iterType,
+				}
+				sa.SemanticInfo.Defs[n.IteratorVar] = iterSym
+			}
+
 			actualType := sa.unwrapToCollection(iterType)
 
 			var keyType types.NRType = types.I32 // Default key type (for array indices)

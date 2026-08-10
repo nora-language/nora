@@ -548,8 +548,16 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 
 				if isIterator {
 					iterTemp := l.makeTempName()
-					l.CurrentBlock.AddInst(&Alloca{Name: iterTemp, Type: iterOp.GetType()})
-					l.CurrentBlock.AddInst(&Store{Dest: &VarOperand{Name: iterTemp, Type: iterOp.GetType()}, Val: iterOp})
+					var iterSym *semantic.Symbol
+					if s.IteratorVar != nil {
+						iterSym = l.SemanticInfo.Defs[s.IteratorVar]
+						if iterSym != nil {
+							iterTemp = iterSym.Name
+						}
+					}
+					fmt.Printf("[DEBUG-LOWER-ALLOCA] For-in Iterator Alloca: isIterator=true, iterTemp=%s, iterSym=%p\n", iterTemp, iterSym)
+					l.CurrentBlock.AddInst(&Alloca{Name: iterTemp, Type: iterOp.GetType(), Symbol: iterSym})
+					l.CurrentBlock.AddInst(&Store{Dest: &VarOperand{Name: iterTemp, Type: iterOp.GetType(), Symbol: iterSym}, Val: iterOp})
 
 					bodyBlock := NewHIRBlock()
 					prevBlock := l.CurrentBlock
@@ -593,8 +601,9 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 						}
 					}
 
+
 					iterLoop := &IteratorLoop{
-						Iterator:    &VarOperand{Name: iterTemp, Type: iterOp.GetType()},
+						Iterator:    &VarOperand{Name: iterTemp, Type: iterOp.GetType(), Symbol: iterSym},
 						NextMangled: nextMangled,
 						NextSymbol:  nextSymbol,
 						ElemName:    elemName,
@@ -606,8 +615,16 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 					l.CurrentBlock.AddElement(iterLoop)
 				} else {
 					arrTemp := l.makeTempName()
-					l.CurrentBlock.AddInst(&Alloca{Name: arrTemp, Type: iterOp.GetType()})
-					l.CurrentBlock.AddInst(&Store{Dest: &VarOperand{Name: arrTemp, Type: iterOp.GetType()}, Val: iterOp})
+					var iterSym *semantic.Symbol
+					if s.IteratorVar != nil {
+						iterSym = l.SemanticInfo.Defs[s.IteratorVar]
+						if iterSym != nil {
+							arrTemp = iterSym.Name // Override temp name with the synthetic symbol's name
+						}
+					}
+					fmt.Printf("[DEBUG-LOWER-ALLOCA] For-in Array Alloca: isIterator=false, arrTemp=%s, iterSym=%p\n", arrTemp, iterSym)
+					l.CurrentBlock.AddInst(&Alloca{Name: arrTemp, Type: iterOp.GetType(), Symbol: iterSym})
+					l.CurrentBlock.AddInst(&Store{Dest: &VarOperand{Name: arrTemp, Type: iterOp.GetType(), Symbol: iterSym}, Val: iterOp})
 
 					lenTemp := l.makeTempName()
 					l.CurrentBlock.AddInst(&Alloca{Name: lenTemp, Type: types.I32})
@@ -783,7 +800,6 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 		l.CurrentBlock.AddElement(&Select{Cases: cases})
 
 	case *ast.DeferStatement:
-		fmt.Printf("[DEBUG] Encountered DeferStatement: %v\n", s.Call)
 		l.activeDefers = append(l.activeDefers, s.Call)
 	}
 
@@ -1447,6 +1463,15 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 		astExpr := &ASTExpr{ASTNode: e, Type: t}
 		return &InstOperand{Inst: astExpr}
 
+	case *ast.IndexExpression:
+		if st, vName := l.isVariantConstructor(e); st != nil {
+			vc := &VariantConstructor{SumType: st, VariantName: vName, Args: nil, Type: t}
+			return &InstOperand{Inst: vc}
+		}
+		l.collectHiddenLambdas(expr)
+		astExpr := &ASTExpr{ASTNode: expr, Type: t}
+		return &InstOperand{Inst: astExpr}
+
 	default:
 		l.collectHiddenLambdas(expr)
 		astExpr := &ASTExpr{ASTNode: expr, Type: t}
@@ -1764,7 +1789,10 @@ func (l *Lowerer) lowerLambdaFunction(e *ast.LambdaExpression) *Function {
 			prevBlock := l.CurrentBlock
 			l.CurrentBlock = hirFn.Body
 			for i := len(l.activeDefers) - 1; i >= 0; i-- {
-				l.lowerExpression(l.activeDefers[i])
+				op := l.lowerExpression(l.activeDefers[i])
+				if instOp, ok := op.(*InstOperand); ok {
+					l.CurrentBlock.AddInst(instOp.Inst)
+				}
 			}
 			l.CurrentBlock = prevBlock
 		}
