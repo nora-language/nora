@@ -297,22 +297,7 @@ func (l *Lowerer) lowerBlock(block *ast.BlockStatement) *HIRBlock {
 	return hirBlock
 }
 
-func (l *Lowerer) emitPreDrops() {
-	if l.Solver != nil && l.currentASTBlock != nil && l.Solver.PreDrops[l.currentASTBlock] != nil {
-		drops := l.Solver.PreDrops[l.currentASTBlock][l.currentASTStmtIndex]
-		for _, d := range drops {
-			var field ast.Expression
-			if d.Field != nil {
-				field = d.Field
-			}
-			var index ast.Expression
-			if d.Index != nil {
-				index = d.Index
-			}
-			l.emitDrop(d, field, index)
-		}
-	}
-}
+
 
 func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 	if stmt == nil {
@@ -460,7 +445,23 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 				l.CurrentBlock.AddInst(instOp.Inst)
 			}
 		}
-		l.emitPreDrops()
+
+		// Emit pre-drops for return statement here, because it is explicitly skipped in lowerStatementsWithDrops
+		if l.Solver != nil && l.currentASTBlock != nil && l.Solver.PreDrops[l.currentASTBlock] != nil {
+			drops := l.Solver.PreDrops[l.currentASTBlock][l.currentASTStmtIndex]
+			for _, d := range drops {
+				var field ast.Expression
+				if d.Field != nil {
+					field = d.Field
+				}
+				var index ast.Expression
+				if d.Index != nil {
+					index = d.Index
+				}
+				l.emitDrop(d, field, index)
+			}
+		}
+
 		if tempVar != nil {
 			l.CurrentBlock.AddInst(&Ret{Val: tempVar})
 		} else if valOp != nil {
@@ -743,15 +744,12 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 		l.CurrentBlock.AddElement(hirLoop)
 
 	case *ast.BreakStatement:
-		l.emitPreDrops()
 		l.CurrentBlock.AddInst(&Expression{Expr: "break", Type: types.Void})
 
 	case *ast.ContinueStatement:
-		l.emitPreDrops()
 		l.CurrentBlock.AddInst(&Expression{Expr: "continue", Type: types.Void})
 
 	case *ast.BranchStatement:
-		l.emitPreDrops()
 		if s.Token.Literal == "break" {
 			l.CurrentBlock.AddInst(&Expression{Expr: "break", Type: types.Void})
 		} else {

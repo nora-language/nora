@@ -707,6 +707,8 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 				isTerm = true
 			} else if _, ok := stmt.(*ast.ContinueStatement); ok {
 				isTerm = true
+			} else if _, ok := stmt.(*ast.BreakStatement); ok {
+				isTerm = true
 			} else if _, ok := stmt.(*ast.BranchStatement); ok {
 				isTerm = true
 			}
@@ -1085,9 +1087,6 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 				minUsed = lc2.LastUsedAt
 			}
 			
-			if strings.Contains(lc1.Symbol.Name, "curr") || strings.Contains(lc1.Symbol.Name, "prev") {
-				fmt.Printf("[DEBUG-NLL] %s: Def=%d, LastUse=%d | %s: Def=%d, LastUse=%d\n", lc1.Symbol.Name, lc1.DefinedAt, lc1.LastUsedAt, lc2.Symbol.Name, lc2.DefinedAt, lc2.LastUsedAt)
-			}
 			if maxDefined <= minUsed && minUsed < AnchorEndOfFunction {
 				if !reported[lc1.Symbol] && !reported[lc2.Symbol] {
 					s.ReportError(lc1.Symbol.DefNode.Pos(), "cannot borrow '%s' mutably, as it is already borrowed in this scope", lc1.AliasOf.Name)
@@ -1176,7 +1175,7 @@ func (s *Solver) isTerminalBlock(block *ast.BlockStatement) bool {
 	}
 	for _, stmt := range block.Statements {
 		switch e := stmt.(type) {
-		case *ast.ReturnStatement, *ast.BreakStatement, *ast.ContinueStatement:
+		case *ast.ReturnStatement, *ast.BreakStatement, *ast.ContinueStatement, *ast.BranchStatement:
 			return true
 		case *ast.ExpressionStatement:
 			if ifExpr, ok := e.Expression.(*ast.IfExpression); ok {
@@ -1213,7 +1212,6 @@ func (s *Solver) registerScopeDrops(block *ast.BlockStatement, index int, visibl
 	}
 
 	for sym, lc := range visible {
-		s.debug("      Checking visibility: %s (kind=%v, moved=%v)", sym.Name, sym.Kind, lc.IsMoved)
 		if excluded[sym] || (excludeParents != nil && excludeParents[sym]) {
 			continue
 		}
@@ -1373,9 +1371,6 @@ func (s *Solver) findAllIdentsInStatement(stmt ast.Statement) map[*semantic.Symb
 	ast.Inspect(stmt, func(n ast.Node) bool {
 		if id, ok := n.(*ast.Identifier); ok {
 			if sym := s.SemanticInfo.Uses[id]; sym != nil {
-				if sym.Name == "curr" {
-					fmt.Printf("[DEBUG-FIND-IDENTS] FOUND 'curr' in %T at %s:%d\n", stmt, id.Pos().Filename, id.Pos().Line)
-				}
 				idents[sym] = id
 			}
 		}
