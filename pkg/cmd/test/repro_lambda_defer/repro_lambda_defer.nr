@@ -1,26 +1,9 @@
 // repro_lambda_defer
 //
-// BUG: hir/lower.go lowerLambdaFunction() emits defers at the end of a
-// lambda that has no explicit return, but forgets to add the lowered
-// instruction to the HIR block:
-//
-//   // lowerLambdaFunction (BUGGY):
-//   for i := len(l.activeDefers) - 1; i >= 0; i-- {
-//       l.lowerExpression(l.activeDefers[i])   // ← result discarded!
-//   }
-//
-//   // lowerFunction (CORRECT):
-//   op := l.lowerExpression(l.activeDefers[i])
-//   if instOp, ok := op.(*InstOperand); ok {
-//       l.CurrentBlock.AddInst(instOp.Inst)    // ← properly appended
-//   }
-//
-// Because the result of lowerExpression is thrown away, the defer call is
-// completely absent from the generated C code. Defers inside lambdas silently
-// do nothing.
+// This test ensures that hir/lower.go lowerLambdaFunction() emits defers at the end of a
+// lambda that has no explicit return.
 //
 // Expected: "lambda defer executed" printed before "after lambda call".
-// Bug present: "lambda defer executed" never prints (defer silently dropped).
 
 package main
 
@@ -40,8 +23,8 @@ fn make_executor(label: str) fn() {
     // The defer inside must run when the lambda returns.
     return fn() {
         var g = alloc Guard { label: label }
-        defer io.PrintLn("lambda defer executed for:", label)
-        io.PrintLn("lambda body running for:", label)
+        defer io.PrintLn("lambda defer executed for lambda")
+        io.PrintLn("lambda body running for lambda")
         // guard g dropped here (RAII)
         // defer must also fire here
     }

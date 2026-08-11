@@ -50,7 +50,7 @@ func (g *Generator) genHIRFunction(hf *hir.Function) {
 
 func (g *Generator) genHIRFunctionWithName(hf *hir.Function, overrideName string, overrideSym *semantic.Symbol) {
 	if strings.Contains(hf.Name, "GetModuleHandle") {
-		fmt.Printf("[DEBUG-GEN-HIR] genHIRFunction called for %s, hf.pkg=%s, Lambda=%v\n", hf.Name, g.getHIRFunctionPackage(hf), hf.LambdaExpr != nil)
+		// Debug print removed
 	}
 	g.CurrentFunc = hf.FuncSymbol
 	if hf.LambdaExpr != nil {

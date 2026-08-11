@@ -197,6 +197,11 @@ func (s *Solver) Solve(node ast.Node) {
 					params[sym] = &Lifecycle{Symbol: sym, DefinedAt: -1, LastUsedAt: 0}
 				}
 			}
+			if scope := s.SemanticInfo.Scopes[n]; scope != nil {
+				for sym := range scope.Captures {
+					params[sym] = &Lifecycle{Symbol: sym, DefinedAt: -1, LastUsedAt: 0}
+				}
+			}
 			oldFn := s.CurrentFunction
 			if lambdaType, ok := s.SemanticInfo.Types[n].(*types.FunctionType); ok {
 				s.CurrentFunction = lambdaType
