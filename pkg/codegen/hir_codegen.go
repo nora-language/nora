@@ -1765,7 +1765,6 @@ func (g *Generator) alignCallArgument(arg hir.Operand, paramType types.NRType, l
 			break
 		}
 	}
-
 	if operandStars > targetStars {
 		if paramType != nil && paramType.Name() != "ptr" && paramType.Name() != "str" && types.UnwrapLease(paramType).Name() != "ptr" && types.UnwrapLease(paramType).Name() != "str" {
 			argStr = strings.Repeat("*", operandStars-targetStars) + argStr
@@ -1874,7 +1873,6 @@ func (g *Generator) isOperandPointerInC(op hir.Operand) bool {
 	}
 	cTypeStr := g.cTypeOfOperand(op)
 	hasSuffix := strings.HasSuffix(cTypeStr, "*")
-	// fmt.Printf("[DEBUG] isOperandPointerInC: op %s, Nora Type: %s, C Type: %s, hasSuffix: %v\n", op.String(), op.GetType().Name(), cTypeStr, hasSuffix)
 	return hasSuffix
 }
 

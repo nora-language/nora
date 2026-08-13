@@ -2783,29 +2783,27 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		}
 
 		var expectedType types.NRType
-		var funcName string
 		if sa.CurrentLambda != nil {
 			expectedType = sa.resolveTypeNode(sa.CurrentLambda.ReturnType)
-			funcName = "lambda"
 		} else {
 			expectedType = sa.resolveTypeNode(sa.CurrentFunction.ReturnType)
-			funcName = sa.CurrentFunction.Name.Value
 		}
 
 		if expectedType == nil {
-			panic("EXPECTED TYPE IS NIL INTERFACE: func=" + funcName)
+			expectedType = sa.resolveTypeNode(sa.CurrentFunction.ReturnType)
+		}
+		
+		if expectedType == nil {
+			return // error already added elsewhere
 		}
 		if pt, ok := expectedType.(*types.PointerType); ok && pt.Base == nil {
-			panic("EXPECTED TYPE HAS NIL BASE: func=" + funcName)
+			return
 		}
 		if returnType == nil {
-			panic("RETURN TYPE IS NIL INTERFACE: func=" + funcName)
+			return
 		}
 		if pt, ok := returnType.(*types.PointerType); ok && pt.Base == nil {
-			panic("RETURN TYPE HAS NIL BASE: func=" + funcName)
-		}
-		if expectedType == nil {
-			expectedType = sa.resolveTypeNode(sa.CurrentFunction.ReturnType)
+			return
 		}
 		sa.checkImplicitMoveLoad(n.ReturnValue, expectedType)
 
@@ -4344,15 +4342,12 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				if syms, ok := sa.SemanticInfo.MethodSymbols[t]; ok {
 					if sym, ok := syms[n.Field.Value]; ok && sym != nil {
 						sa.SemanticInfo.Uses[n.Field] = sym
-						// Use the specialized type if available (e.g. Node_i32.insert_front)
-						sa.SemanticInfo.Types[n] = sym.Type
 					}
 				}
 				if sa.SemanticInfo.Uses[n.Field] == nil && t.BaseType != nil {
 					if syms, ok := sa.SemanticInfo.MethodSymbols[t.BaseType]; ok {
 						if sym, ok := syms[n.Field.Value]; ok && sym != nil {
 							sa.SemanticInfo.Uses[n.Field] = sym
-							sa.SemanticInfo.Types[n] = sym.Type
 						}
 					}
 				}
@@ -4380,14 +4375,12 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				if syms, ok := sa.SemanticInfo.MethodSymbols[t]; ok {
 					if sym, ok := syms[n.Field.Value]; ok && sym != nil {
 						sa.SemanticInfo.Uses[n.Field] = sym
-						sa.SemanticInfo.Types[n] = sym.Type
 					}
 				}
 				if sa.SemanticInfo.Uses[n.Field] == nil && t.BaseType != nil {
 					if syms, ok := sa.SemanticInfo.MethodSymbols[t.BaseType]; ok {
 						if sym, ok := syms[n.Field.Value]; ok && sym != nil {
 							sa.SemanticInfo.Uses[n.Field] = sym
-							sa.SemanticInfo.Types[n] = sym.Type
 						}
 					}
 				}
@@ -4487,7 +4480,6 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				if syms, ok := sa.SemanticInfo.MethodSymbols[t]; ok {
 					if sym, ok := syms[n.Field.Value]; ok && sym != nil {
 						sa.SemanticInfo.Uses[n.Field] = sym
-						sa.SemanticInfo.Types[n] = sym.Type
 					}
 				}
 				return
@@ -5695,7 +5687,7 @@ func (sa *SemanticAnalyzer) specializeStructType(base *types.StructType, argType
 				}
 				if !types.Equals(baseConstraint, gtConstraint) {
 					if gtConstraint == types.Any || gtConstraint == nil {
-						gt.Constraint = baseConstraint
+						// DO NOT MUTATE
 					} else {
 						if sa.DebugMode {
 							fmt.Printf("[DEBUG identity] failed because constraint mismatch: baseName=%s, gtName=%s\n", baseConstraint.Name(), gtConstraint.Name())

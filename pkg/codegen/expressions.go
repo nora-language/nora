@@ -1520,9 +1520,9 @@ func (g *Generator) emitArgument(expr ast.Expression, targetType types.NRType, l
 	if !passByPointer && targetType != nil {
 		passByPointer = g.shouldPassByPointer(types.UnwrapLease(targetType), lease, isExtern)
 	}
+
 	if passByPointer {
-		isMoved := g.Solver != nil && g.Solver.Moves[expr]
-		if g.isPointerInC(expr) && !isMoved {
+		if g.isPointerInC(expr) {
 			g.genExpression(expr)
 		} else {
 			g.genAddressOf(expr, targetType, lease)
@@ -2780,6 +2780,11 @@ func (g *Generator) genInterpolatedPart(expr ast.Expression) {
 			g.buf.WriteString("nr_i64_to_str(")
 			g.genExpression(expr)
 			g.buf.WriteString(")")
+			return
+		case "f32":
+			g.buf.WriteString("nr_f64_to_str((double)(")
+			g.genExpression(expr)
+			g.buf.WriteString("))")
 			return
 		case "f64":
 			g.buf.WriteString("nr_f64_to_str(")

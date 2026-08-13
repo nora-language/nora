@@ -77,7 +77,7 @@ func TestCompilerWithTestFolder(t *testing.T) {
 					}
 				}
 				inputFile := path
-				expectFail := (strings.HasPrefix(info.Name(), "fail_") || strings.Contains(info.Name(), "violation")) && !strings.Contains(info.Name(), "div_zero")
+				expectFail := (strings.Contains(path, "fail_") || strings.Contains(path, "violation")) && !strings.Contains(path, "div_zero")
 
 				// 1. Read Source
 				input, err := ioutil.ReadFile(inputFile)

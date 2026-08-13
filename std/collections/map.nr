@@ -55,7 +55,8 @@ pub fn (m: &HashMap[K, V]) rehash[K: hash.Hashable, V](new_cap: i32) {
     var i = 0
     while i < old_cap {
         if (old_entries[i].occupied) {
-            m.Insert(@old_entries[i].key, @old_entries[i].value)
+            var entry = @old_entries[i]
+            m.Insert(@entry.key, @entry.value)
         }
         i = i + 1
     }
