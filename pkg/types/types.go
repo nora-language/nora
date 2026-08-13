@@ -202,6 +202,10 @@ func IsPointerLike(t NRType) bool {
 		if _, isProtocol := pt.Base.(*ProtocolType); isProtocol {
 			return false
 		}
+		// Closures are fat pointers (16-byte structs) in C, so they cannot be type-erased to void*.
+		if _, isClosure := pt.Base.(*FunctionType); isClosure {
+			return false
+		}
 		return true
 	}
 	return false
@@ -319,12 +323,7 @@ func IsOwnedType(t NRType) bool {
 		return true
 	}
 	if kind == KindGeneric {
-		if gType, ok := t.(*GenericType); ok && gType.Constraint != nil {
-			if gType.Constraint.Name() == "Copy" {
-				return false // [T: Copy] is not an owned linear type
-			}
-		}
-		return true
+		return false
 	}
 	// Strings are primitive but owned in Nora
 	if t.Name() == "str" {

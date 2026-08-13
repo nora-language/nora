@@ -5498,19 +5498,6 @@ func (sa *SemanticAnalyzer) specializeSumType(st *types.SumType, argTypes []type
 			if gt, ok := ta.(*types.GenericType); !ok || gt.TypeParam != st.TypeParams[i].Name {
 				isIdentity = false
 				break
-			} else {
-				baseConstraint := st.TypeParams[i].Constraint
-				gtConstraint := gt.Constraint
-				if baseConstraint == nil {
-					baseConstraint = types.Any
-				}
-				if gtConstraint == nil {
-					gtConstraint = types.Any
-				}
-				if !types.Equals(baseConstraint, gtConstraint) {
-					isIdentity = false
-					break
-				}
 			}
 		}
 	}
@@ -5670,32 +5657,8 @@ func (sa *SemanticAnalyzer) specializeStructType(base *types.StructType, argType
 	if isIdentity {
 		for i, ta := range argTypes {
 			if gt, ok := ta.(*types.GenericType); !ok || gt.TypeParam != base.TypeParams[i].Name {
-				if sa.DebugMode {
-					fmt.Printf("[DEBUG identity] failed because ta is not gt or name mismatch: ta=%#v, name=%s\n", ta, base.TypeParams[i].Name)
-				}
 				isIdentity = false
 				break
-			} else {
-				// Must also check if constraints are compatible.
-				baseConstraint := base.TypeParams[i].Constraint
-				gtConstraint := gt.Constraint
-				if baseConstraint == nil {
-					baseConstraint = types.Any
-				}
-				if gtConstraint == nil {
-					gtConstraint = types.Any
-				}
-				if !types.Equals(baseConstraint, gtConstraint) {
-					if gtConstraint == types.Any || gtConstraint == nil {
-						// DO NOT MUTATE
-					} else {
-						if sa.DebugMode {
-							fmt.Printf("[DEBUG identity] failed because constraint mismatch: baseName=%s, gtName=%s\n", baseConstraint.Name(), gtConstraint.Name())
-						}
-						isIdentity = false
-						break
-					}
-				}
 			}
 		}
 	}

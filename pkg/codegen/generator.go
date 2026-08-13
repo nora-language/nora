@@ -314,37 +314,20 @@ func (g *Generator) eraseType(t types.NRType) types.NRType {
 	}
 	switch pt := t.(type) {
 	case *types.PointerType:
-		erasedBase := g.eraseType(pt.Base)
-		if st, ok := erasedBase.(*types.StructType); ok && st.BaseType != nil {
+		if _, isProto := pt.Base.(*types.ProtocolType); isProto {
 			return &types.PointerType{
-				Base:    erasedBase,
-				IsArray: pt.IsArray,
+				Base:    g.eraseType(pt.Base),
 				Leased:  pt.Leased,
 				Kind:    pt.Kind,
+				IsArray: pt.IsArray,
 			}
 		}
-		if sum, ok := erasedBase.(*types.SumType); ok && sum.BaseType != nil {
+		if _, isClosure := pt.Base.(*types.FunctionType); isClosure {
 			return &types.PointerType{
-				Base:    erasedBase,
-				IsArray: pt.IsArray,
+				Base:    g.eraseType(pt.Base),
 				Leased:  pt.Leased,
 				Kind:    pt.Kind,
-			}
-		}
-		if fn, ok := erasedBase.(*types.FunctionType); ok {
-			return &types.PointerType{
-				Base:    fn,
 				IsArray: pt.IsArray,
-				Leased:  pt.Leased,
-				Kind:    pt.Kind,
-			}
-		}
-		if prot, ok := erasedBase.(*types.ProtocolType); ok {
-			return &types.PointerType{
-				Base:    prot,
-				IsArray: pt.IsArray,
-				Leased:  pt.Leased,
-				Kind:    pt.Kind,
 			}
 		}
 		return types.Ptr
@@ -590,6 +573,9 @@ func (g *Generator) collectDefinitions() {
 			erasedMangled := g.getErasedTypeName(st)
 			if erasedMangled != "" {
 				// Check if already registered
+				if erasedMangled == "MyOption_ptr" {
+					fmt.Printf("[DEBUG-STRUCT] Added %s to g.Structs from type %T\n", erasedMangled, t)
+				}
 				if _, exists := g.Structs[erasedMangled]; !exists {
 					erasedSt := types.NewStructType(erasedMangled)
 					erasedSt.BaseType = st.BaseType

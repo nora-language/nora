@@ -156,8 +156,8 @@ fn resize_hashmap[K, V](self: &HashMap[K, V], new_cap: i32, hash_fn: fn(#K) i32)
         i++
     }
 }
-
 fn hash_i32(key: i32) i32 {
+    // Invalidate cache
     if (key < 0) {
         return -key
     }

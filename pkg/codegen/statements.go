@@ -155,7 +155,14 @@ func (g *Generator) genVarStatement(s *ast.VarStatement) {
 		if proto, ok := finalType.(*types.ProtocolType); ok {
 			g.genInterfaceCast(s.Value, proto)
 		} else {
-			g.genOwnedValue(s.Value, finalType)
+			ct := g.cType(finalType)
+			if strings.HasSuffix(ct, "*") || ct == "void*" {
+				g.buf.WriteString(fmt.Sprintf("(%s)(", ct))
+				g.genOwnedValue(s.Value, finalType)
+				g.buf.WriteString(")")
+			} else {
+				g.genOwnedValue(s.Value, finalType)
+			}
 		}
 		g.TargetIsValue = oldTargetIsValue
 		g.NoTempWrap = oldNoTemp
@@ -277,7 +284,21 @@ func (g *Generator) genAssignment(s *ast.AssignmentStatement) {
 		if proto, ok := targetType.(*types.ProtocolType); ok {
 			g.genInterfaceCast(s.Value, proto)
 		} else {
-			g.genOwnedValue(s.Value, targetType)
+			ct := cType
+			if shouldDeref {
+				if pt, ok := targetType.(*types.PointerType); ok {
+					ct = g.cType(pt.Base)
+				} else {
+					ct = g.cType(types.UnwrapLease(targetType))
+				}
+			}
+			if strings.HasSuffix(ct, "*") || ct == "void*" {
+				g.buf.WriteString(fmt.Sprintf("(%s)(", ct))
+				g.genOwnedValue(s.Value, targetType)
+				g.buf.WriteString(")")
+			} else {
+				g.genOwnedValue(s.Value, targetType)
+			}
 		}
 		g.NoTempWrap = oldNoTemp
 
@@ -293,7 +314,21 @@ func (g *Generator) genAssignment(s *ast.AssignmentStatement) {
 		if proto, ok := targetType.(*types.ProtocolType); ok {
 			g.genInterfaceCast(s.Value, proto)
 		} else {
-			g.genOwnedValue(s.Value, targetType)
+			ct := g.cType(targetType)
+			if shouldDeref {
+				if pt, ok := targetType.(*types.PointerType); ok {
+					ct = g.cType(pt.Base)
+				} else {
+					ct = g.cType(types.UnwrapLease(targetType))
+				}
+			}
+			if strings.HasSuffix(ct, "*") || ct == "void*" {
+				g.buf.WriteString(fmt.Sprintf("(%s)(", ct))
+				g.genOwnedValue(s.Value, targetType)
+				g.buf.WriteString(")")
+			} else {
+				g.genOwnedValue(s.Value, targetType)
+			}
 		}
 		g.NoTempWrap = oldNoTemp
 	}

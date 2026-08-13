@@ -799,13 +799,13 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 			return opStr
 		}
 		if isLVal {
-			return fmt.Sprintf("&(%s)", opStr)
+			return fmt.Sprintf("((%s)&(%s))", g.cType(i.Type), opStr)
 		} else {
 			baseType := i.Type
 			if pt, ok := i.Type.(*types.PointerType); ok {
 				baseType = pt.Base
 			}
-			return fmt.Sprintf("((%s[]){ %s })", g.cType(baseType), opStr)
+			return fmt.Sprintf("((%s)((%s[]){ %s }))", g.cType(i.Type), g.cType(baseType), opStr)
 		}
 	case *hir.Deref:
 		opStr := g.hirOperandStr(i.Val)
@@ -1104,12 +1104,32 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 
 		opStr := g.hirOperandStr(i.Base)
 		res := ""
-		ptrLevel := strings.Count(g.cType(i.Base.GetType()), "*")
+		cBaseType := g.cType(i.Base.GetType())
+		ptrLevel := strings.Count(cBaseType, "*")
 		if _, ok := i.Base.(*hir.VarOperand); ok && g.CurrentFunc != nil {
 			if g.isOperandPointerInC(i.Base) && ptrLevel == 0 {
 				ptrLevel = 1
 			}
 		}
+
+		castType := cBaseType
+		baseTypeAsterisks := strings.Count(cBaseType, "*")
+		if ptrLevel > baseTypeAsterisks {
+			castType += strings.Repeat("*", ptrLevel-baseTypeAsterisks)
+		}
+		
+		// If it's a pointer in C, we must explicitly cast it to its correct C-type before field access,
+		// because type erasure might have replaced it with void** in the function signature.
+		if ptrLevel > 0 {
+			opStr = fmt.Sprintf("((%s)%s)", castType, opStr)
+		}
+		
+		funcName := "unknown"
+		if g.CurrentFunc != nil {
+			funcName = g.CurrentFunc.Name
+		}
+		fmt.Printf("[DEBUG] FieldAccess func=%s opStr=%s cBaseType=%s ptrLevel=%d isOperandPointerInC=%v i.Base.GetType()=%v\n", funcName, opStr, cBaseType, ptrLevel, g.isOperandPointerInC(i.Base), i.Base.GetType())
+
 		if ptrLevel == 0 {
 			res = fmt.Sprintf("%s.%s", opStr, i.FieldName)
 		} else if ptrLevel == 1 {
@@ -1187,11 +1207,19 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 		if destStr == "_" {
 			return fmt.Sprintf("(%s)", g.hirOperandStr(i.Val))
 		}
+		destCType := g.cTypeOfOperand(i.Dest)
+		if strings.HasSuffix(destCType, "*") || destCType == "void*" {
+			return fmt.Sprintf("(%s = (%s)(%s))", destStr, destCType, g.hirOperandStr(i.Val))
+		}
 		return fmt.Sprintf("(%s = %s)", destStr, g.hirOperandStr(i.Val))
 	case *hir.Assign:
 		destStr := g.getDestStr(i.Dest)
 		if destStr == "_" {
 			return fmt.Sprintf("(%s)", g.hirOperandStr(i.Val))
+		}
+		destCType := g.cTypeOfOperand(i.Dest)
+		if strings.HasSuffix(destCType, "*") || destCType == "void*" {
+			return fmt.Sprintf("(%s = (%s)(%s))", destStr, destCType, g.hirOperandStr(i.Val))
 		}
 		return fmt.Sprintf("(%s = %s)", destStr, g.hirOperandStr(i.Val))
 	case *hir.InterfaceCast:
@@ -1873,6 +1901,12 @@ func (g *Generator) isOperandPointerInC(op hir.Operand) bool {
 	}
 	cTypeStr := g.cTypeOfOperand(op)
 	hasSuffix := strings.HasSuffix(cTypeStr, "*")
+	if !hasSuffix {
+		opStr := strings.TrimSpace(g.hirOperandStr(op))
+		if strings.HasPrefix(opStr, "((") && strings.Contains(opStr, "[]){") && (strings.HasSuffix(opStr, "})") || strings.HasSuffix(opStr, "}))")) {
+			return true
+		}
+	}
 	return hasSuffix
 }
 

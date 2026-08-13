@@ -640,7 +640,10 @@ func (g *Generator) genPrefixExpression(e *ast.PrefixExpression) {
 				g.buf.WriteString(" })")
 				return
 			}
-			g.buf.WriteString("&")
+			g.buf.WriteString(fmt.Sprintf("((%s)&(", cTypeExpr))
+			g.genExpression(e.Right)
+			g.buf.WriteString("))")
+			return
 		}
 		g.genExpression(e.Right)
 		return
@@ -1522,8 +1525,25 @@ func (g *Generator) emitArgument(expr ast.Expression, targetType types.NRType, l
 	}
 
 	if passByPointer {
+		isMoved := false
+		if g.Solver != nil && g.Solver.Moves[expr] {
+			isMoved = true
+		}
+
 		if g.isPointerInC(expr) {
-			g.genExpression(expr)
+			evaluatesToValue := false
+			if isMoved {
+				t := g.SemanticInfo.Types[expr]
+				if t != nil && !g.isPointerTypeInC(t) && !strings.HasSuffix(g.cType(t), "*") {
+					evaluatesToValue = true
+				}
+			}
+
+			if !evaluatesToValue {
+				g.genExpression(expr)
+			} else {
+				g.genAddressOf(expr, targetType, lease)
+			}
 		} else {
 			g.genAddressOf(expr, targetType, lease)
 		}
@@ -1631,6 +1651,20 @@ func (g *Generator) genSelectorString(leftExpr ast.Expression, field string) str
 	if strings.HasSuffix(cTypeName, "**") {
 		return fmt.Sprintf("(*%s)%s%s", leftStr, op, field)
 	}
+
+	// [NEW] Cast leftStr to its explicit C type if it's being accessed via pointer in C
+	if op == "->" && cTypeName != "void*" {
+		// Calculate how many asterisks we need based on cTypeName
+		ptrLevel := 1
+		baseTypeAsterisks := strings.Count(cTypeName, "*")
+		castType := cTypeName
+		if ptrLevel > baseTypeAsterisks {
+			castType += strings.Repeat("*", ptrLevel-baseTypeAsterisks)
+		}
+		// Apply cast to base struct type to fix void* member access errors
+		leftStr = fmt.Sprintf("((%s)%s)", castType, leftStr)
+	}
+
 	return fmt.Sprintf("%s%s%s", leftStr, op, field)
 }
 

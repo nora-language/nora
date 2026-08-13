@@ -33,7 +33,7 @@ fn main() i32 {
         {
             var j = 0
             while j < total {
-            var val = <-ch
+            var _val = <-ch
                 j++
             }
         }
