@@ -25,12 +25,12 @@ pub fn (b: &Builder) Build() i32 {
 pub fn main() {
     var b = NewBuilder()
     
-    // Testing leading dot line continuation!
-    var result = b
-        .Add(10)
+    // Testing trailing dot line continuation!
+    var result = b.
+        Add(10).
         // With a comment in between!
-        .Sub(5)
-        .Build()
+        Sub(5).
+        Build()
         
     if result != 5 {
         // Just a dummy check to make sure it runs correctly

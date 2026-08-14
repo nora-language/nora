@@ -224,3 +224,43 @@ pub fn FormatInt()`
 		}
 	}
 }
+
+func TestSemicolonInsertionMultilineArithmetic(t *testing.T) {
+	input := `var a = 10
+		- 5
+		/ 2
+		+ 1`
+
+	tests := []struct {
+		expectedType    token.TokenType
+		expectedLiteral string
+	}{
+		{token.VAR, "var"},
+		{token.IDENT, "a"},
+		{token.ASSIGN, "="},
+		{token.INT, "10"},
+		{token.MINUS, "-"},
+		{token.INT, "5"},
+		{token.SLASH, "/"},
+		{token.INT, "2"},
+		{token.PLUS, "+"},
+		{token.INT, "1"},
+		{token.EOF, ""},
+	}
+
+	l := New(input, "test.nr")
+
+	for i, tt := range tests {
+		tok := l.NextToken()
+
+		if tok.Type != tt.expectedType {
+			t.Fatalf("tests[%d] - tokentype wrong. expected=%q, got=%q",
+				i, tt.expectedType, tok.Type)
+		}
+
+		if tok.Literal != tt.expectedLiteral {
+			t.Fatalf("tests[%d] - literal wrong. expected=%q, got=%q",
+				i, tt.expectedLiteral, tok.Literal)
+		}
+	}
+}

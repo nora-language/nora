@@ -1889,7 +1889,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			if pt, ok := actualType.(*types.PointerType); ok {
 				sa.SemanticInfo.Types[n] = pt.Base
 			} else {
-				sa.AddError(n.Token.Position, "cannot dereference non-pointer type %s", rightType.Name())
+				sa.AddError(n.Token.Position, "cannot dereference non-pointer type %s (Hint: If you are doing multiline multiplication, the '*' operator must be placed at the end of the previous line)", rightType.Name())
 				sa.SemanticInfo.Types[n] = types.ErrorType
 			}
 		case "#":
@@ -3315,7 +3315,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				if rightType == nil {
 					rightType = types.ErrorType
 				}
-				sa.AddError(pref.Pos(), "cannot dereference non-pointer type %s for assignment", rightType.Name())
+				sa.AddError(pref.Pos(), "cannot dereference non-pointer type %s for assignment (Hint: If you are doing multiline multiplication, the '*' operator must be placed at the end of the previous line)", rightType.Name())
 				return
 			}
 		} else {

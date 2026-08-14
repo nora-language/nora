@@ -48,7 +48,17 @@ pub fn ModifyData(data: &String) {
 }
 ```
 
-### 5. Manual Pinning (`pin`)
+### 5. Explicit Dereference (`*`)
+When a variable is a lease (`&` or `#`), you must use the `*` prefix operator to explicitly read or mutate the underlying memory it points to. This guarantees there is no ambiguity between re-binding a pointer variable to a new address versus mutating the value at the pointer's address.
+
+```nora
+fn increment(counter: &i32) {
+    // counter = &other_val  <-- Rebinds the pointer itself to point to other_val
+    *counter = *counter + 1  <-- Dereferences and mutates the integer in memory
+}
+```
+
+### 6. Manual Pinning (`pin`)
 For fine-grained manual overrides of the topological solver, developers can use the `pin` keyword. This forces a resource's lease to remain alive for the remainder of the current scope, circumventing any implicit moves or drops that might otherwise occur. This is exceptionally useful when passing resources to asynchronous C functions via FFI that retain a pointer across an asynchronous boundary.
 
 ```nora

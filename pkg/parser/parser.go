@@ -2440,6 +2440,15 @@ func (p *Parser) noPrefixParseFnError(tok token.Token) {
 	if tok.Type == token.ILLEGAL {
 		return
 	}
+	
+	// Provide a helpful hint for common binary operators that users might try to put at the start of a new line.
+	if tok.Type == token.SLASH || tok.Type == token.ASTERISK || tok.Type == token.PLUS || tok.Type == token.MINUS || tok.Type == token.REM || tok.Type == token.OR || tok.Type == token.XOR || tok.Type == token.DOT {
+		p.ReportErrorWithHint(tok.Position, 
+			fmt.Sprintf("no prefix parse function for %s found (literal: %q)", tok.Type, tok.Literal),
+			"Did you put an operator at the start of a new line? Multiline arithmetic operators must be placed at the END of the previous line.")
+		return
+	}
+
 	p.ReportError(tok.Position, "no prefix parse function for %s found (literal: %q)", tok.Type, tok.Literal)
 }
 

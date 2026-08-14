@@ -530,35 +530,9 @@ func isHexDigit(ch rune) bool {
 	return isDigit(ch) || ('a' <= ch && ch <= 'f') || ('A' <= ch && ch <= 'F')
 }
 
-func (l *Lexer) peekNextNonWhitespaceChar() rune {
-	pos := l.readPosition
-	for pos < len(l.input) {
-		r, size := utf8.DecodeRuneInString(l.input[pos:])
-		if r == ' ' || r == '\t' || r == '\r' || r == '\n' {
-			pos += size
-			continue
-		}
-		if r == '/' && pos+1 < len(l.input) && l.input[pos+1] == '/' {
-			// skip line comment
-			pos += 2
-			for pos < len(l.input) && l.input[pos] != '\n' {
-				pos++
-			}
-			continue
-		}
-		return r
-	}
-	return 0
-}
-
 func (l *Lexer) shouldInsertSemicolon() bool {
 	// RULE: Do not insert semicolons inside nested expressions like () or []
 	if l.parenDepth > 0 || l.bracketDepth > 0 {
-		return false
-	}
-
-	// NEW RULE: Do not insert a semicolon if the next non-whitespace character is a dot (.)
-	if l.peekNextNonWhitespaceChar() == '.' {
 		return false
 	}
 
