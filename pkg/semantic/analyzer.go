@@ -1914,16 +1914,26 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 				}
 			}
 		case "@":
-			// In Nora, @x is move lease. Only for owned types.
 			actualType := rightType
-			if pt, ok := rightType.(*types.PointerType); ok && pt.Leased && pt.Kind != types.LeaseMove {
-				actualType = pt.Base
+			// Only strip mutable leases (&). We cannot move out of a read-only lease (#).
+			// If it's a read-only lease, moving it just means moving the pointer value itself,
+			// which is equivalent to the pointer itself because borrows are copyable.
+			if pt, ok := rightType.(*types.PointerType); ok && pt.Leased {
+				if pt.Kind == types.LeaseWrite {
+					actualType = pt.Base
+				} else if pt.Kind == types.LeaseRead {
+					// Taking a move of a read-only borrow just returns the borrow itself.
+					sa.SemanticInfo.Types[n] = rightType
+					return
+				}
 			}
-			if types.IsOwnedType(actualType) {
-				sa.SemanticInfo.Types[n] = &types.PointerType{Base: actualType, Leased: true, Kind: types.LeaseMove}
-			} else {
-				sa.SemanticInfo.Types[n] = rightType
+			
+			// If the actual type is not an owned type (e.g. primitive), moving it just returns the value.
+			if !types.IsOwnedType(actualType) {
+				sa.SemanticInfo.Types[n] = actualType
+				return
 			}
+			sa.SemanticInfo.Types[n] = &types.PointerType{Base: actualType, Leased: true, Kind: types.LeaseMove}
 			if id, ok := n.Right.(*ast.Identifier); ok {
 				if sym := sa.SemanticInfo.Uses[id]; sym != nil {
 					sa.SemanticInfo.Kill(sym, n)
@@ -4257,21 +4267,25 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			return
 		}
 
-		// SPECIAL CASE: unchecked_get and unchecked_set for arrays/slices
-		if n.Field != nil && (n.Field.Value == "unchecked_get" || n.Field.Value == "unchecked_set") {
+		// SPECIAL CASE: unchecked_get, unchecked_set, and unchecked_free for arrays/slices
+		if n.Field != nil && (n.Field.Value == "unchecked_get" || n.Field.Value == "unchecked_set" || n.Field.Value == "unchecked_free") {
 			actual := sa.unwrapToCollection(leftType)
 			if lt, ok := actual.(*types.ListType); ok {
 				if n.Field.Value == "unchecked_get" {
 					sa.SemanticInfo.Types[n] = &types.FunctionType{Params: []types.NRType{types.I32}, Return: lt.ElementType}
-				} else {
+				} else if n.Field.Value == "unchecked_set" {
 					sa.SemanticInfo.Types[n] = &types.FunctionType{Params: []types.NRType{types.I32, lt.ElementType}, Return: types.Void}
+				} else {
+					sa.SemanticInfo.Types[n] = &types.FunctionType{Params: []types.NRType{}, Return: types.Void}
 				}
 				return
 			} else if pt, ok := actual.(*types.PointerType); ok && pt.IsArray {
 				if n.Field.Value == "unchecked_get" {
 					sa.SemanticInfo.Types[n] = &types.FunctionType{Params: []types.NRType{types.I32}, Return: pt.Base}
-				} else {
+				} else if n.Field.Value == "unchecked_set" {
 					sa.SemanticInfo.Types[n] = &types.FunctionType{Params: []types.NRType{types.I32, pt.Base}, Return: types.Void}
+				} else {
+					sa.SemanticInfo.Types[n] = &types.FunctionType{Params: []types.NRType{}, Return: types.Void}
 				}
 				return
 			}

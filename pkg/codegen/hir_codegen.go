@@ -1045,8 +1045,17 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				}
 			}
 
-			argsStr = append(argsStr, g.packCallArguments(i.Args, ft, isExtern, name)...)
-			callStr = fmt.Sprintf("%s(%s)", name, strings.Join(argsStr, ", "))
+			if name == "nr_free_array_unchecked" && len(i.Args) == 1 {
+				argStr := g.hirOperandStr(i.Args[0])
+				if !g.isOperandPointerInC(i.Args[0]) {
+					callStr = fmt.Sprintf("nr_free((void*)(%s.data))", argStr)
+				} else {
+					callStr = fmt.Sprintf("nr_free((void*)%s)", argStr)
+				}
+			} else {
+				argsStr = append(argsStr, g.packCallArguments(i.Args, ft, isExtern, name)...)
+				callStr = fmt.Sprintf("%s(%s)", name, strings.Join(argsStr, ", "))
+			}
 		}
 
 		if i.Type != nil && i.Type.Name() == "str" && !g.NoTempWrap {
@@ -1072,7 +1081,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 		if i.IsArray {
 			pt := i.Type.(*types.PointerType)
 			cElemType := g.cType(pt.Base)
-			return fmt.Sprintf("({ int _n = %s; void* _p = nr_malloc_debug(_n * sizeof(%s), \"%s\", %d); nr_header_t* _h = (nr_header_t*)((char*)_p - NR_HEADER_SIZE); _h->count = _n; _h->elem_size = sizeof(%s); %s* _data = (%s*)_p; _data; })",
+			return fmt.Sprintf("({ int _n = %s; void* _p = nr_malloc_debug(_n * sizeof(%s), \"%s\", %d); nr_header_t* _h = (nr_header_t*)((char*)_p - NR_HEADER_SIZE); _h->count = _n; _h->elem_size = sizeof(%s); _h->magic = NR_HEADER_MAGIC; %s* _data = (%s*)_p; _data; })",
 				g.hirOperandStr(i.Val), cElemType, strings.ReplaceAll(i.PosFile, "\\", "/"), i.PosLine, cElemType, cElemType, cElemType)
 		} else {
 			pt, ok := i.Type.(*types.PointerType)

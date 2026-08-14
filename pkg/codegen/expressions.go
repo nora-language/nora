@@ -960,8 +960,8 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 		return
 	}
 
-	// 1.35 Built-in: unchecked_get and unchecked_set
-	if sel, ok := e.Function.(*ast.SelectorExpression); ok && (sel.Field.Value == "unchecked_get" || sel.Field.Value == "unchecked_set") {
+	// 1.35 Built-in: unchecked_get, unchecked_set, unchecked_free
+	if sel, ok := e.Function.(*ast.SelectorExpression); ok && (sel.Field.Value == "unchecked_get" || sel.Field.Value == "unchecked_set" || sel.Field.Value == "unchecked_free") {
 		if lt := g.SemanticInfo.Types[sel.Left]; lt != nil {
 			unwrapped := types.UnwrapLease(lt)
 			isCollection := false
@@ -974,7 +974,15 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 				elemType = pt.Base
 			}
 			if isCollection {
-				if sel.Field.Value == "unchecked_get" && len(e.Arguments) == 1 {
+				if sel.Field.Value == "unchecked_free" && len(e.Arguments) == 0 {
+					g.buf.WriteString("nr_free((void*)(")
+					g.genExpression(sel.Left)
+					if !g.isPointerInC(sel.Left) {
+						g.buf.WriteString(".data")
+					}
+					g.buf.WriteString("))")
+					return
+				} else if sel.Field.Value == "unchecked_get" && len(e.Arguments) == 1 {
 					g.buf.WriteString("(((")
 					g.buf.WriteString(g.cType(elemType))
 					g.buf.WriteString("*)")

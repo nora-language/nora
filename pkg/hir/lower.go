@@ -952,7 +952,7 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 		}
 
 		if sel, ok := e.Function.(*ast.SelectorExpression); ok {
-			if sel.Field.Value == "unchecked_get" || sel.Field.Value == "unchecked_set" {
+			if sel.Field.Value == "unchecked_get" || sel.Field.Value == "unchecked_set" || sel.Field.Value == "unchecked_free" {
 				actualType := l.getType(sel.Left)
 				if actualType != nil {
 					unwrapped := types.UnwrapLease(actualType)
@@ -966,7 +966,14 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 						elemType = pt.Base
 					}
 					if isCollection {
-						if sel.Field.Value == "unchecked_get" && len(e.Arguments) == 1 {
+						if sel.Field.Value == "unchecked_free" && len(e.Arguments) == 0 {
+							baseOp := l.lowerExpression(sel.Left)
+							return &InstOperand{Inst: &Call{
+								FuncName: "nr_free_array_unchecked",
+								Args:     []Operand{baseOp},
+								Type:     types.Void,
+							}}
+						} else if sel.Field.Value == "unchecked_get" && len(e.Arguments) == 1 {
 							idxOp := l.lowerExpression(e.Arguments[0])
 							baseOp := l.lowerExpression(sel.Left)
 							return &InstOperand{Inst: &IndexAccess{

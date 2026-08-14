@@ -2175,12 +2175,21 @@ func (s *Solver) isMoveOperation(stmt ast.Statement, target *ast.Identifier) boo
 					}
 				}
 				// Handle method receiver move
+				// Handle method receiver move
 				if fn.IsMethod && ((fn.ReceiverLease == types.LeaseMove && s.isImplicitMoveType(fn.Receiver)) || s.isImplicitMoveReceiver(fn.Receiver)) {
 					if sel, ok := call.Function.(*ast.SelectorExpression); ok {
 						if isTarget(sel.Left) {
+							s.debug("        Move detected: Method receiver move lease")
 							isMove = true
 							return false
 						}
+					}
+				}
+				if sel, ok := call.Function.(*ast.SelectorExpression); ok && sel.Field.Value == "unchecked_free" {
+					if isTarget(sel.Left) {
+						s.debug("        Move detected: unchecked_free receiver")
+						isMove = true
+						return false
 					}
 				}
 			} else {
@@ -2533,6 +2542,9 @@ func (s *Solver) walkUnconsumedRValues(node ast.Node, isConsumed bool, out *[]as
 			if (ft.ReceiverLease == types.LeaseMove && s.isImplicitMoveType(ft.Receiver)) || s.isImplicitMoveReceiver(ft.Receiver) {
 				recvConsumed = true
 			}
+		}
+		if sel, ok := n.Function.(*ast.SelectorExpression); ok && sel.Field.Value == "unchecked_free" {
+			recvConsumed = true
 		}
 		s.walkUnconsumedRValues(n.Function, recvConsumed, out)
 		if ft, ok := fnTypeObj.(*types.FunctionType); ok {

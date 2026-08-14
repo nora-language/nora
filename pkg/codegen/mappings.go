@@ -242,7 +242,7 @@ func (g *Generator) getErasedTypeName(t types.NRType) string {
 	if st, ok := underlying.(*types.StructType); ok && st.BaseType != nil && len(st.TypeArgs) > 0 {
 		allPointerLike := true
 		for _, arg := range st.TypeArgs {
-			if !types.IsPointerLike(arg) {
+			if !types.IsPointerLike(arg) || types.IsOwnedType(arg) {
 				allPointerLike = false
 				break
 			}
@@ -260,7 +260,7 @@ func (g *Generator) getErasedTypeName(t types.NRType) string {
 	if sumT, ok := underlying.(*types.SumType); ok && sumT.BaseType != nil && len(sumT.TypeArgs) > 0 {
 		allPointerLike := true
 		for _, arg := range sumT.TypeArgs {
-			if !types.IsPointerLike(arg) {
+			if !types.IsPointerLike(arg) || types.IsOwnedType(arg) {
 				allPointerLike = false
 				break
 			}

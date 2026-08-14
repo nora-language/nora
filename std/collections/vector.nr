@@ -42,8 +42,10 @@ pub fn (v: &Vector[T]) Push[T](val: T) {
             i++
         }
 
+        var old_data = v.data
         v.data = @new_data
         v.capacity = new_cap
+        old_data.unchecked_free()
     }
 
     v.data.unchecked_set(v.size, @val)
@@ -110,8 +112,10 @@ pub fn (v: &Vector[T]) Insert[T](index: i32, val: T) {
             new_data.unchecked_set(i, @v.data.unchecked_get(i))
             i = i + 1
         }
+        var old_data = v.data
         v.data = @new_data
         v.capacity = new_cap
+        old_data.unchecked_free()
     }
     var i = v.size
     while i > index {
@@ -141,9 +145,11 @@ pub fn (v: &Vector[T]) Resize[T](new_size: i32) {
             new_data.unchecked_set(i, @v.data.unchecked_get(i))
             i = i + 1
         }
+        var old_data = v.data
         v.data = @new_data
         v.capacity = new_size
         v.size = new_size
+        old_data.unchecked_free()
     } else if (new_size > v.size) {
         if (new_size > v.capacity) {
             var new_data = alloc T[new_size]
@@ -152,8 +158,10 @@ pub fn (v: &Vector[T]) Resize[T](new_size: i32) {
                 new_data.unchecked_set(i, @v.data.unchecked_get(i))
                 i = i + 1
             }
+            var old_data = v.data
             v.data = @new_data
             v.capacity = new_size
+            old_data.unchecked_free()
         }
         v.size = new_size
     }

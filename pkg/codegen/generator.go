@@ -1337,11 +1337,7 @@ func (g *Generator) emitAutoDropMethods() {
 
 			if st, ok := t.(*types.StructType); ok {
 				if userDrop := g.getUserDropMethod(t); userDrop != "" {
-					if g.isDropMethodReceiverOwned(t) {
-						g.emit("    %s(*self);", userDrop)
-					} else {
-						g.emit("    %s(NULL, self);", userDrop)
-					}
+					g.emit("    %s(NULL, self);", userDrop)
 				}
 				for _, fName := range st.FieldNames {
 					fType := st.Fields[fName]
@@ -1352,11 +1348,7 @@ func (g *Generator) emitAutoDropMethods() {
 				}
 			} else if st, ok := t.(*types.SumType); ok {
 				if userDrop := g.getUserDropMethod(t); userDrop != "" {
-					if g.isDropMethodReceiverOwned(t) {
-						g.emit("    %s(*self);", userDrop)
-					} else {
-						g.emit("    %s(NULL, self);", userDrop)
-					}
+					g.emit("    %s(NULL, self);", userDrop)
 				}
 				vNames := g.sortedVariantNames(st)
 				emittedCount := 0
@@ -1830,6 +1822,7 @@ func (g *Generator) emitGlobalCleanups() {
 
 func (g *Generator) requestVTable(t types.NRType, p *types.ProtocolType) string {
 	sanitizedName := t.Name()
+	fmt.Printf("[DEBUG] requestVTable called with t.Name()=%s\n", sanitizedName)
 
 	// Sanitize any characters that are invalid in C identifiers
 	r := strings.NewReplacer(
@@ -1851,6 +1844,9 @@ func (g *Generator) requestVTable(t types.NRType, p *types.ProtocolType) string 
 	key := fmt.Sprintf("%s_%s", sanitizedName, p.ProtocolName)
 	if _, ok := g.VTables[key]; !ok {
 		g.VTables[key] = VTableInstance{Type: t, Protocol: p}
+		if g.PastHeaderPhase {
+			g.LatePrototypes.WriteString(fmt.Sprintf("extern void* vtable_%s[];\n", key))
+		}
 	}
 	return "vtable_" + key
 }
