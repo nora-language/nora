@@ -179,6 +179,8 @@ graph TD
 
 ---
 
+---
+
 ### 4.3 Compiler Output Noise Gating
 * **Severity:** P2 (Toolchain DX)
 * **Observed Problem:**  
@@ -192,6 +194,15 @@ graph TD
 
 ---
 
+### 4.4 Topological Move Checker on Borrowed Struct Field Reads
+* **Severity:** P1 (Language Consistency & DX)
+* **Observed Problem:**  
+  When copying primitive/value-typed fields from an element in a collection (e.g. `var evt = self.event_queue.Get(0)`), extracting a `str` field (`data_str: evt.data_str`) triggers `Error: cannot move out of borrowed context 'evt'`.
+* **Proposed Solution:**  
+  Implement explicit copy-on-read or auto-clone syntax for string field reads from borrowed structs, or provide clear diagnostic hints (`help: use string.Clone(evt.data_str)`).
+
+---
+
 ## 5. Summary Priority & Action Matrix
 
 | Subsystem | Issue / Feature | Priority | Proposed Milestone |
@@ -200,6 +211,7 @@ graph TD
 | **`pkg/parser`** | Contextual keyword disambiguation in formal parameter lists (`chan: T`) | **P0** | Nora v0.2.0 |
 | **`std/collections`** | In-place mutable vector indexing (`GetMut(i) &T` / `&v[i]`) | **P0** | Nora v0.2.0 |
 | **`pkg/semantic`** | Auto-borrow coercion for method receivers on heap types (`@T` $\to$ `&T`) | **P1** | Nora v0.2.1 |
+| **`pkg/topology`** | Auto-clone / diagnostic hint for `str` field read on borrowed structs | **P1** | Nora v0.2.1 |
 | **`pkg/parser`** | Native Tuple return types and destructuring (`var (a, b) = fn()`) | **P1** | Nora v0.2.1 |
 | **`std/math`** | Standard 3D Linear Algebra module (`std/math/linalg`) | **P1** | Nora v0.2.1 |
 | **`pkg/codegen`** | Suppress codegen debug trace logging in standard builds | **P2** | Immediate |
