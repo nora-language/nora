@@ -128,8 +128,6 @@ pub fn (v: &Vector[T]) Insert[T](index: i32, val: T) {
 
 [unsafe]
 pub fn (v: &Vector[T]) Clear[T]() {
-    var new_data = alloc T[v.capacity]
-    v.data = @new_data
     v.size = 0
 }
 
