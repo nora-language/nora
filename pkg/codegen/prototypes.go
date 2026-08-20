@@ -395,9 +395,6 @@ func (g *Generator) emitCombinedTypeDefs() {
 				if len(variant.Fields) > 0 {
 					if len(variant.Fields) == 1 {
 						for _, fType := range variant.Fields {
-							if g.cType(fType) == "void" {
-								fmt.Printf("[DEBUG-VOID] fType=%T %#v\n", fType, fType)
-							}
 							g.emit("        %s %s;", g.cType(fType), vName)
 							break
 						}

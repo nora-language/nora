@@ -1490,7 +1490,7 @@ func (g *Generator) emitArgument(expr ast.Expression, targetType types.NRType, l
 		argCType := g.cType(argType)
 		targetLevel := strings.Count(targetCType, "*")
 		argLevel := strings.Count(argCType, "*")
-		if isExtern {
+		if isExtern && g.EnableDebug {
 			g.buf.WriteString(fmt.Sprintf("/* [DEBUG isExtern=true, targetCType=%s, argCType=%s, targetStars=%d, argStars=%d] */", targetCType, argCType, targetLevel, argLevel))
 		}
 		if argLevel > targetLevel {

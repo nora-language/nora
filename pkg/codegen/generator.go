@@ -573,9 +573,7 @@ func (g *Generator) collectDefinitions() {
 			erasedMangled := g.getErasedTypeName(st)
 			if erasedMangled != "" {
 				// Check if already registered
-				if erasedMangled == "MyOption_ptr" {
-					fmt.Printf("[DEBUG-STRUCT] Added %s to g.Structs from type %T\n", erasedMangled, t)
-				}
+
 				if _, exists := g.Structs[erasedMangled]; !exists {
 					erasedSt := types.NewStructType(erasedMangled)
 					erasedSt.BaseType = st.BaseType
@@ -1822,7 +1820,6 @@ func (g *Generator) emitGlobalCleanups() {
 
 func (g *Generator) requestVTable(t types.NRType, p *types.ProtocolType) string {
 	sanitizedName := t.Name()
-	fmt.Printf("[DEBUG] requestVTable called with t.Name()=%s\n", sanitizedName)
 
 	// Sanitize any characters that are invalid in C identifiers
 	r := strings.NewReplacer(

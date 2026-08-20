@@ -317,8 +317,6 @@ func IsOwnedType(t NRType) bool {
 			if st.IsPrimitiveEnum {
 				return false
 			}
-		} else {
-			fmt.Printf("[DEBUG-IsOwnedType] t is KindSum but not *SumType. Type: %T\n", t)
 		}
 		return true
 	}

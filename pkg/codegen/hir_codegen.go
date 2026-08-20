@@ -1133,11 +1133,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 			opStr = fmt.Sprintf("((%s)%s)", castType, opStr)
 		}
 		
-		funcName := "unknown"
-		if g.CurrentFunc != nil {
-			funcName = g.CurrentFunc.Name
-		}
-		fmt.Printf("[DEBUG] FieldAccess func=%s opStr=%s cBaseType=%s ptrLevel=%d isOperandPointerInC=%v i.Base.GetType()=%v\n", funcName, opStr, cBaseType, ptrLevel, g.isOperandPointerInC(i.Base), i.Base.GetType())
+
 
 		if ptrLevel == 0 {
 			res = fmt.Sprintf("%s.%s", opStr, i.FieldName)
@@ -1444,9 +1440,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 					paramCType = g.cParamType(ft.Params[idx], lease, false)
 				}
 				memberCType := g.cType(unwrapped)
-				if g.EnableDebug {
-					fmt.Printf("[DEBUG-SPAWN] idx=%d paramCType='%s' memberCType='%s'\n", idx, paramCType, memberCType)
-				}
+
 				if strings.HasSuffix(paramCType, "*") && !strings.HasSuffix(memberCType, "*") {
 					wrapSB.WriteString(fmt.Sprintf("&args->arg%d", idx))
 				} else if paramCType != "" && strings.HasSuffix(paramCType, "*") && strings.HasSuffix(memberCType, "*") && paramCType != memberCType {
@@ -1514,9 +1508,7 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 				if targetStars > 0 {
 					valStr = fmt.Sprintf("(%s)(%s)", targetCType, valStr)
 				}
-				if g.EnableDebug {
-					fmt.Printf("[DEBUG-SPAWN-STRUCT] idx=%d targetCType='%s' operandCType='%s' valStr='%s'\n", idx, targetCType, operandCType, valStr)
-				}
+
 				initBlock.WriteString(fmt.Sprintf("_args->arg%d = %s; ", idx, valStr))
 				if g.isChanType(targetType) {
 					initBlock.WriteString(fmt.Sprintf("channel_ref(_args->arg%d); ", idx))
