@@ -1196,13 +1196,14 @@ func runBuild(args []string) {
 		Verbose:          *verboseFlag,
 	}
 
+	startTime := time.Now()
 	outC, finalExe, err := compile(inputFile, exeName, pluginPaths, dependencies, opts)
 	if err != nil {
 		fmt.Printf("Build Failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Success! Built '%s' (via %s)\n", finalExe, outC)
+	fmt.Printf("Success! Built '%s' (via %s) in %v\n", finalExe, outC, time.Since(startTime))
 }
 
 func runRun(args []string) {
@@ -1388,10 +1389,17 @@ func runRun(args []string) {
 		CFlags:           cliCFlags,
 		Verbose:          *verboseFlag,
 	}
+	startTime := time.Now()
 	_, exeName, err := compile(inputFile, outExe, pluginPaths, dependencies, opts)
 	if err != nil {
 		fmt.Printf("Run Failed: %v\n", err)
 		os.Exit(1)
+	}
+
+	if opts.Verbose {
+		fmt.Printf("[Nora] Compilation finished in %v\n", time.Since(startTime))
+	} else {
+		fmt.Printf("  [Nora] Compilation finished in %v\n", time.Since(startTime))
 	}
 
 	runCmdStr := "./" + exeName
