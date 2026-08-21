@@ -2570,6 +2570,21 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 
 		// Custom/Extra cflags
 		args = append(args, activeConfig.CFlags...)
+
+		// Safe Fast Linker (LLD) auto-detection for Clang if not explicitly configured
+		if canUseLLD(activeConfig.Compiler) && !hasExplicitLinkerFlag(activeConfig.CFlags) && !hasExplicitLinkerFlag(args) {
+			args = append(args, "-fuse-ld=lld")
+		}
+
+		if (opts.Target.OS == "windows" || runtime.GOOS == "windows") && !isMSVC {
+			// Ensure essential Windows runtime libraries are linked
+			for _, winLib := range []string{"ws2_32", "dbghelp", "user32", "advapi32", "kernel32", "shell32"} {
+				flag := "-l" + winLib
+				if !contains(args, flag) && !contains(opts.Native.DynamicLibs, winLib) {
+					args = append(args, flag)
+				}
+			}
+		}
 	}
 
 	// 6. Handle Wasm clang / WASI-SDK overrides if applicable
@@ -3682,4 +3697,34 @@ func copyDynamicLibraries(buildDir string, opts BuildOptions) error {
 		}
 	}
 	return nil
+}
+
+func hasExplicitLinkerFlag(cflags []string) bool {
+	for _, f := range cflags {
+		if strings.HasPrefix(f, "-fuse-ld=") {
+			return true
+		}
+	}
+	return false
+}
+
+func canUseLLD(compiler string) bool {
+	compilerBase := strings.ToLower(filepath.Base(compiler))
+	if !strings.Contains(compilerBase, "clang") {
+		return false
+	}
+	if _, err := exec.LookPath("lld"); err == nil {
+		return true
+	}
+	if _, err := exec.LookPath("lld-link"); err == nil {
+		return true
+	}
+	compilerDir := filepath.Dir(compiler)
+	if _, err := os.Stat(filepath.Join(compilerDir, "lld.exe")); err == nil {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(compilerDir, "lld-link.exe")); err == nil {
+		return true
+	}
+	return false
 }

@@ -79,6 +79,9 @@ type Generator struct {
 	// String Literals
 	StringLiterals map[string]string // maps string content to global variable name
 	hirProg        *hir.Program
+	hirFuncs       map[string]*hir.Function
+	packageFuncs   map[string][]string
+	packageLambdas map[string][]*hir.Function
 }
 
 type VTableInstance struct {
@@ -1973,7 +1976,7 @@ func (g *Generator) GeneratePackageCode(pkgName string) (string, error) {
 	g.SpawnWrappers = nil
 	g.GeneratedLambdas = make(map[string]bool)
 
-	// Lower AST to HIR
+	// Ensure HIR is lowered and hirFuncs map is cached
 	if g.hirProg == nil {
 		lowerer := hir.NewLowerer(g.SemanticInfo, g.Solver)
 		lowerer.DebugLog = g.DebugSemantic
@@ -1982,16 +1985,14 @@ func (g *Generator) GeneratePackageCode(pkgName string) (string, error) {
 		g.hirProg = opt.OptimizeProgram(prog)
 	}
 	hirProg := g.hirProg
-	hirFuncs := make(map[string]*hir.Function)
-	for _, hf := range hirProg.Functions {
-		hirFuncs[g.mangleName(hf.FuncSymbol)] = hf
+	if g.hirFuncs == nil {
+		g.hirFuncs = make(map[string]*hir.Function, len(hirProg.Functions))
+		for _, hf := range hirProg.Functions {
+			g.hirFuncs[g.mangleName(hf.FuncSymbol)] = hf
+		}
 	}
 
 	g.emit("// Package %s", pkgName)
-	g.emit("// [DEBUG] len(hirProg.Functions) = %d", len(hirProg.Functions))
-	for _, hf := range hirProg.Functions {
-		g.emit("// [DEBUG] hf: name=%s, isLambda=%v, pkg=%s", hf.Name, hf.LambdaExpr != nil, g.getHIRFunctionPackage(hf))
-	}
 	g.emit("#include \"out.h\"")
 	g.emit("")
 
@@ -2006,7 +2007,7 @@ func (g *Generator) GeneratePackageCode(pkgName string) (string, error) {
 	// Loop through sorted function names and emit functions belonging to this package
 	for _, name := range g.sortedFunctionNames() {
 		sym := g.Functions[name]
-		if sym.DefNode == nil {
+		if sym == nil || sym.DefNode == nil {
 			continue
 		}
 
@@ -2022,13 +2023,10 @@ func (g *Generator) GeneratePackageCode(pkgName string) (string, error) {
 		}
 
 		fn, ok := sym.DefNode.(*ast.FunctionStatement)
-		if strings.Contains(name, "GetModuleHandle") {
-			g.emit("// [DEBUG] CHECKING %s: ok=%v, macro=%v, bodyNil=%v", name, ok, ast.GetAttribute(fn.Attributes, "macro") != nil, fn != nil && fn.Body == nil)
-		}
 		if !ok || ast.GetAttribute(fn.Attributes, "macro") != nil || fn.Body == nil {
 			continue
 		}
-		if hf, ok := hirFuncs[name]; ok {
+		if hf, ok := g.hirFuncs[name]; ok {
 			g.genHIRFunction(hf)
 		} else {
 			g.genFunction(sym, fn)
