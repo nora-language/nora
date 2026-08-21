@@ -1455,9 +1455,16 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 	prog := &ast.Program{Files: []*ast.File{}}
 	diags := &diag.Collection{}
 
+	modeStr := "Debug"
+	if opts.Release {
+		modeStr = "Release"
+	}
+
 	if opts.Verbose {
+		fmt.Printf("[Nora] Compiling in %s mode...\n", modeStr)
 		fmt.Printf("[Nora] Parsing source files from '%s'...\n", inputFile)
 	} else {
+		fmt.Printf("  [Nora] Compiling in %s mode...\n", modeStr)
 		fmt.Println("  [Nora] Parsing source files...")
 	}
 
