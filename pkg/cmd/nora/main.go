@@ -1176,11 +1176,12 @@ func runBuild(args []string) {
 		cliCFlags = strings.Fields(*cflagsFlag)
 	}
 
+	isDebug := !isRelease || *debugFlag
 	opts := BuildOptions{
 		Target:           t,
 		Release:          isRelease,
-		Debug:            !isRelease || *debugFlag,
-		DebugMemory:      *debugMemFlag,
+		Debug:            isDebug,
+		DebugMemory:      *debugMemFlag || isDebug,
 		DebugSemantic:    *debugSemanticFlag,
 		DebugTopology:    *debugTopologyFlag,
 		DebugFiber:       *fiberReportFlag,
@@ -1212,6 +1213,8 @@ func runRun(args []string) {
 	targetFeatureFlag := runFlags.String("target-feature", "", "Comma-separated list of target features (e.g., avx, neon)")
 	wasmFlag := runFlags.Bool("wasm", false, "Run as WebAssembly (via internal runner)")
 	wasiFlag := runFlags.Bool("wasi", false, "Run as WebAssembly WASI")
+	releaseFlag := runFlags.Bool("release", false, "Build in release mode")
+	debugFlag := runFlags.Bool("debug", false, "Build in debug mode")
 	debugMemFlag := runFlags.Bool("debug-memory", false, "Enable runtime memory leak tracking")
 	debugSemanticFlag := runFlags.Bool("debug-semantic", false, "Enable semantic analyzer debug logs")
 	debugTopologyFlag := runFlags.Bool("debug-topology", false, "Enable topology solver debug logs")
@@ -1225,6 +1228,10 @@ func runRun(args []string) {
 	cflagsFlag := runFlags.String("cflags", "", "Custom flags passed directly to the C compiler (quote multiple flags)")
 	verboseFlag := runFlags.Bool("verbose", false, "Show detailed compilation logs and commands")
 	exampleFlag := runFlags.String("example", "", "Run a specific example from the examples/ directory")
+
+	// Shorthands
+	runFlags.BoolVar(releaseFlag, "r", false, "Build in release mode (shorthand)")
+	runFlags.BoolVar(debugFlag, "d", false, "Build in debug mode (shorthand)")
 
 	// Pre-process args to allow flags after filename
 	var cleanArgs []string
@@ -1359,14 +1366,19 @@ func runRun(args []string) {
 		cliCFlags = strings.Fields(*cflagsFlag)
 	}
 
+	isRelease := *releaseFlag
+	enableDebug := *gFlag || *debugFlag || !isRelease
+
+	isDebug := !isRelease || *debugFlag
 	opts := BuildOptions{
 		Target:           t,
-		Debug:            true,
-		DebugMemory:      *debugMemFlag,
+		Release:          isRelease,
+		Debug:            isDebug,
+		DebugMemory:      *debugMemFlag || isDebug,
 		DebugSemantic:    *debugSemanticFlag,
 		DebugTopology:    *debugTopologyFlag,
 		DebugFiber:       *fiberReportFlag,
-		G:                *gFlag,
+		G:                enableDebug,
 		WasmExperimental: *wasmExpFlag,
 		AllowUnsafe:      *allowUnsafeFlag,
 		NoStdlib:         *noStdlibFlag || (config != nil && config.NoStdlib),
