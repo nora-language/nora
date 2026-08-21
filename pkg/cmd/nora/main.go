@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"context"
@@ -1961,7 +1962,19 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 		return hashStr
 	}
 
-	// Compile or skip package files
+	type packageCompileTask struct {
+		pkg         string
+		currentHash string
+		objPath     string
+		pkgCFile    string
+	}
+
+	var compileTasks []packageCompileTask
+	var allPackageObjectsMu sync.Mutex
+	var catalogMu sync.Mutex
+	var logMu sync.Mutex
+
+	// Determine cache hits vs misses and write package C files
 	for pkg := range packages {
 		currentHash := getPackageHash(pkg, make(map[string]bool))
 
@@ -1991,30 +2004,91 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 			}
 			allPackageObjects = append(allPackageObjects, cachedEntry.ObjectPath)
 		} else {
-			if opts.Verbose {
-				fmt.Printf("[Nora] Cache MISS for package '%s'. Transpiling & Compiling...\n", pkg)
-			} else {
-				fmt.Printf("  [Nora] Compiling package: %s...\n", pkg)
-			}
-
 			recompiledAny = true
 			pkgCFile := filepath.Join(buildDir, fmt.Sprintf("out_pkg_%s.c", safePkgName))
 			if err := os.WriteFile(pkgCFile, []byte(packageCodeMap[pkg]), 0644); err != nil {
 				return "", "", fmt.Errorf("error writing package C file: %v", err)
 			}
 
-			err := compileCToObject(compilerName, pkgCFile, objPath, isMSVC, activeConfig, opts)
-			if err != nil {
-				return "", "", fmt.Errorf("compilation failed for package %s: %v", pkg, err)
-			}
-
-			catalog.Packages[pkg] = PackageCacheEntry{
-				Hash:       currentHash,
-				ObjectPath: objPath,
-			}
-			allPackageObjects = append(allPackageObjects, objPath)
+			compileTasks = append(compileTasks, packageCompileTask{
+				pkg:         pkg,
+				currentHash: currentHash,
+				objPath:     objPath,
+				pkgCFile:    pkgCFile,
+			})
 		}
 	}
+
+	// Compile package C files concurrently via worker pool
+	if len(compileTasks) > 0 {
+		numWorkers := runtime.NumCPU()
+		if numWorkers < 1 {
+			numWorkers = 1
+		}
+		if numWorkers > len(compileTasks) {
+			numWorkers = len(compileTasks)
+		}
+
+		taskCh := make(chan packageCompileTask, len(compileTasks))
+		for _, task := range compileTasks {
+			taskCh <- task
+		}
+		close(taskCh)
+
+		var wg sync.WaitGroup
+		var firstErr error
+		var errOnce sync.Once
+
+		for w := 0; w < numWorkers; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for task := range taskCh {
+					if firstErr != nil {
+						return
+					}
+
+					if opts.Verbose {
+						logMu.Lock()
+						fmt.Printf("[Nora] Cache MISS for package '%s'. Transpiling & Compiling...\n", task.pkg)
+						logMu.Unlock()
+					} else {
+						logMu.Lock()
+						fmt.Printf("  [Nora] Compiling package: %s...\n", task.pkg)
+						logMu.Unlock()
+					}
+
+					err := compileCToObject(compilerName, task.pkgCFile, task.objPath, isMSVC, activeConfig, opts)
+					if err != nil {
+						errOnce.Do(func() {
+							firstErr = fmt.Errorf("compilation failed for package %s: %v", task.pkg, err)
+						})
+						return
+					}
+
+					catalogMu.Lock()
+					catalog.Packages[task.pkg] = PackageCacheEntry{
+						Hash:       task.currentHash,
+						ObjectPath: task.objPath,
+					}
+					catalogMu.Unlock()
+
+					allPackageObjectsMu.Lock()
+					allPackageObjects = append(allPackageObjects, task.objPath)
+					allPackageObjectsMu.Unlock()
+				}
+			}()
+		}
+
+		wg.Wait()
+
+		if firstErr != nil {
+			return "", "", firstErr
+		}
+	}
+
+	// Sort package objects to ensure deterministic linking order
+	sort.Strings(allPackageObjects)
 
 	// Always generate shared globals file
 	globalsCode, err := gen.GenerateSharedGlobals()
@@ -2071,6 +2145,13 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 	var buildCmd *exec.Cmd
 
 	// 3.5 Dynamic Native C Source File Compilation Cache
+
+	type nativeCompileTask struct {
+		srcPath       string
+		absSrcPath    string
+		cachedObjPath string
+	}
+	var nativeTasks []nativeCompileTask
 
 	for i, srcPath := range opts.Native.SourceFiles {
 		// Clean and get absolute path of source file to avoid relative path confusion
@@ -2141,91 +2222,11 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 		cachedObjPath := filepath.Join(cacheDir, cacheName)
 
 		if _, err := os.Stat(cachedObjPath); os.IsNotExist(err) {
-			if opts.Verbose {
-				fmt.Printf("[Nora] Compiling C source dependency to cache: %s -> %s\n", srcPath, cachedObjPath)
-			} else {
-				fmt.Printf("  [Nora] Compiling C source: %s (one-time cache)...\n", srcPath)
-			}
-
-			var objArgs []string
-			if isMSVC {
-				objArgs = append(objArgs, "/c", absSrcPath)
-				objOutFlag := "/Fo:"
-				if strings.HasSuffix(objOutFlag, ":") {
-					objArgs = append(objArgs, objOutFlag+cachedObjPath)
-				} else {
-					objArgs = append(objArgs, objOutFlag, cachedObjPath)
-				}
-			} else {
-				objArgs = append(objArgs, "-c", absSrcPath)
-				if strings.HasSuffix(activeConfig.OutFlag, ":") {
-					objArgs = append(objArgs, activeConfig.OutFlag+cachedObjPath)
-				} else {
-					objArgs = append(objArgs, activeConfig.OutFlag, cachedObjPath)
-				}
-			}
-
-			// Optimization and Debug symbols
-			if opts.Release {
-				if activeConfig.OptRelease != "" {
-					objArgs = append(objArgs, activeConfig.OptRelease)
-				}
-			} else {
-				if activeConfig.OptDebug != "" {
-					objArgs = append(objArgs, activeConfig.OptDebug)
-				}
-			}
-			if opts.G && activeConfig.DebugSymbols != "" {
-				objArgs = append(objArgs, activeConfig.DebugSymbols)
-			}
-
-			// Macro defines
-			definePrefix := activeConfig.DefineFlag
-			if opts.DebugFiber {
-				objArgs = append(objArgs, definePrefix+"NR_DEBUG_FIBER")
-			}
-			if opts.DebugMemory {
-				objArgs = append(objArgs, definePrefix+"NR_DEBUG_MEM=1")
-			}
-
-			// Include directories
-			for _, dir := range opts.Native.IncludeDirs {
-				objArgs = append(objArgs, activeConfig.IncFlag+dir)
-			}
-
-			// Custom compiler flags
-			objArgs = append(objArgs, activeConfig.CFlags...)
-
-			// Wasm experimental or specific sysroots
-			if opts.Target.Wasm && (strings.Contains(strings.ToLower(activeConfig.Compiler), "clang") || strings.Contains(strings.ToLower(activeConfig.Compiler), "wasi-sdk")) {
-				if sdkPath := os.Getenv("WASI_SDK_PATH"); sdkPath != "" {
-					objArgs = append(objArgs, "--sysroot="+filepath.Join(sdkPath, "share", "wasi-sysroot"))
-					if opts.WasmExperimental {
-						objArgs = append(objArgs, "-DNR_USE_FIBERS")
-					}
-				}
-			}
-
-			if opts.Verbose {
-				fmt.Printf("[Nora] Compile command: %s %s\n", activeConfig.Compiler, strings.Join(objArgs, " "))
-			}
-
-			cmd := exec.Command(activeConfig.Compiler, objArgs...)
-			var stdoutBuf, stderrBuf bytes.Buffer
-			cmd.Stdout = &stdoutBuf
-			cmd.Stderr = &stderrBuf
-			runErr := cmd.Run()
-			if opts.Verbose {
-				os.Stdout.Write(stdoutBuf.Bytes())
-				os.Stderr.Write(stderrBuf.Bytes())
-			}
-			if runErr != nil {
-				if !opts.Verbose {
-					os.Stdout.Write(stdoutBuf.Bytes())
-					os.Stderr.Write(stderrBuf.Bytes())
-				}
-				return "", "", fmt.Errorf("failed to compile standard C runtime: %v", runErr)
-			}
+			nativeTasks = append(nativeTasks, nativeCompileTask{
+				srcPath:       srcPath,
+				absSrcPath:    absSrcPath,
+				cachedObjPath: cachedObjPath,
+			})
 		} else {
 			if opts.Verbose {
 				fmt.Printf("[Nora] Using cached object for dependency: %s (%s)\n", srcPath, cachedObjPath)
@@ -2234,6 +2235,144 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 
 		// Swap the source file path with the cached object file path
 		opts.Native.SourceFiles[i] = cachedObjPath
+	}
+
+	// Concurrent compilation of uncached native C sources
+	if len(nativeTasks) > 0 {
+		numNativeWorkers := runtime.NumCPU()
+		if numNativeWorkers < 1 {
+			numNativeWorkers = 1
+		}
+		if numNativeWorkers > len(nativeTasks) {
+			numNativeWorkers = len(nativeTasks)
+		}
+
+		nativeTaskCh := make(chan nativeCompileTask, len(nativeTasks))
+		for _, task := range nativeTasks {
+			nativeTaskCh <- task
+		}
+		close(nativeTaskCh)
+
+		var nativeWg sync.WaitGroup
+		var nativeFirstErr error
+		var nativeErrOnce sync.Once
+
+		for w := 0; w < numNativeWorkers; w++ {
+			nativeWg.Add(1)
+			go func() {
+				defer nativeWg.Done()
+				for task := range nativeTaskCh {
+					if nativeFirstErr != nil {
+						return
+					}
+
+					if opts.Verbose {
+						logMu.Lock()
+						fmt.Printf("[Nora] Compiling C source dependency to cache: %s -> %s\n", task.srcPath, task.cachedObjPath)
+						logMu.Unlock()
+					} else {
+						logMu.Lock()
+						fmt.Printf("  [Nora] Compiling C source: %s (one-time cache)...\n", task.srcPath)
+						logMu.Unlock()
+					}
+
+					var objArgs []string
+					if isMSVC {
+						objArgs = append(objArgs, "/c", task.absSrcPath)
+						objOutFlag := "/Fo:"
+						if strings.HasSuffix(objOutFlag, ":") {
+							objArgs = append(objArgs, objOutFlag+task.cachedObjPath)
+						} else {
+							objArgs = append(objArgs, objOutFlag, task.cachedObjPath)
+						}
+					} else {
+						objArgs = append(objArgs, "-c", task.absSrcPath)
+						if strings.HasSuffix(activeConfig.OutFlag, ":") {
+							objArgs = append(objArgs, activeConfig.OutFlag+task.cachedObjPath)
+						} else {
+							objArgs = append(objArgs, activeConfig.OutFlag, task.cachedObjPath)
+						}
+					}
+
+					// Optimization and Debug symbols
+					if opts.Release {
+						if activeConfig.OptRelease != "" {
+							objArgs = append(objArgs, activeConfig.OptRelease)
+						}
+					} else {
+						if activeConfig.OptDebug != "" {
+							objArgs = append(objArgs, activeConfig.OptDebug)
+						}
+					}
+					if opts.G && activeConfig.DebugSymbols != "" {
+						objArgs = append(objArgs, activeConfig.DebugSymbols)
+					}
+
+					// Macro defines
+					definePrefix := activeConfig.DefineFlag
+					if opts.DebugFiber {
+						objArgs = append(objArgs, definePrefix+"NR_DEBUG_FIBER")
+					}
+					if opts.DebugMemory {
+						objArgs = append(objArgs, definePrefix+"NR_DEBUG_MEM=1")
+					}
+
+					// Include directories
+					for _, dir := range opts.Native.IncludeDirs {
+						objArgs = append(objArgs, activeConfig.IncFlag+dir)
+					}
+
+					// Custom compiler flags
+					objArgs = append(objArgs, activeConfig.CFlags...)
+
+					// Wasm experimental or specific sysroots
+					if opts.Target.Wasm && (strings.Contains(strings.ToLower(activeConfig.Compiler), "clang") || strings.Contains(strings.ToLower(activeConfig.Compiler), "wasi-sdk")) {
+						if sdkPath := os.Getenv("WASI_SDK_PATH"); sdkPath != "" {
+							objArgs = append(objArgs, "--sysroot="+filepath.Join(sdkPath, "share", "wasi-sysroot"))
+							if opts.WasmExperimental {
+								objArgs = append(objArgs, "-DNR_USE_FIBERS")
+							}
+						}
+					}
+
+					if opts.Verbose {
+						logMu.Lock()
+						fmt.Printf("[Nora] Compile command: %s %s\n", activeConfig.Compiler, strings.Join(objArgs, " "))
+						logMu.Unlock()
+					}
+
+					cmd := exec.Command(activeConfig.Compiler, objArgs...)
+					var stdoutBuf, stderrBuf bytes.Buffer
+					cmd.Stdout = &stdoutBuf
+					cmd.Stderr = &stderrBuf
+					runErr := cmd.Run()
+					if opts.Verbose {
+						logMu.Lock()
+						os.Stdout.Write(stdoutBuf.Bytes())
+						os.Stderr.Write(stderrBuf.Bytes())
+						logMu.Unlock()
+					}
+					if runErr != nil {
+						if !opts.Verbose {
+							logMu.Lock()
+							os.Stdout.Write(stdoutBuf.Bytes())
+							os.Stderr.Write(stderrBuf.Bytes())
+							logMu.Unlock()
+						}
+						nativeErrOnce.Do(func() {
+							nativeFirstErr = fmt.Errorf("failed to compile standard C runtime: %v", runErr)
+						})
+						return
+					}
+				}
+			}()
+		}
+
+		nativeWg.Wait()
+
+		if nativeFirstErr != nil {
+			return "", "", nativeFirstErr
+		}
 	}
 
 	// 4. Parse target CFlags to extract libraries/linker-paths for MSVC or preserve warning/target options for POSIX
