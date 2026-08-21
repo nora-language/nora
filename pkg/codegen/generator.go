@@ -1969,6 +1969,93 @@ func (g *Generator) CollectDefinitions() {
 	g.collectDefinitions()
 }
 
+func (g *Generator) PrepareForMultiPackage() {
+	if g.hirProg == nil {
+		lowerer := hir.NewLowerer(g.SemanticInfo, g.Solver)
+		lowerer.DebugLog = g.DebugSemantic
+		prog := lowerer.LowerProgram(g.Program)
+		opt := optimize.NewOptimizer(g.SemanticInfo)
+		g.hirProg = opt.OptimizeProgram(prog)
+	}
+	if g.hirFuncs == nil {
+		g.hirFuncs = make(map[string]*hir.Function, len(g.hirProg.Functions))
+		for _, hf := range g.hirProg.Functions {
+			g.hirFuncs[g.mangleName(hf.FuncSymbol)] = hf
+		}
+	}
+}
+
+func (g *Generator) CloneForPackage() *Generator {
+	g.PrepareForMultiPackage()
+
+	funcsCopy := make(map[string]*semantic.Symbol, len(g.Functions))
+	for k, v := range g.Functions {
+		funcsCopy[k] = v
+	}
+	monoCopy := make(map[string]bool, len(g.MonomorphizedFuncs))
+	for k, v := range g.MonomorphizedFuncs {
+		monoCopy[k] = v
+	}
+	erasedCopy := make(map[string]bool, len(g.ErasedFuncs))
+	for k, v := range g.ErasedFuncs {
+		erasedCopy[k] = v
+	}
+
+	pkgGen := &Generator{
+		Program:            g.Program,
+		SemanticInfo:       g.SemanticInfo,
+		Solver:             g.Solver,
+		PluginMgr:          g.PluginMgr,
+		Target:             g.Target,
+		EnableDebug:        g.EnableDebug,
+		DebugMemory:        g.DebugMemory,
+		DebugSemantic:      g.DebugSemantic,
+		NoStdlib:           g.NoStdlib,
+		MultiFileMode:      g.MultiFileMode,
+		Functions:          funcsCopy,
+		MonomorphizedFuncs: monoCopy,
+		ErasedFuncs:        erasedCopy,
+		Structs:            g.Structs,
+		SumTypes:           g.SumTypes,
+		Protocols:          g.Protocols,
+		ArrayTypes:         g.ArrayTypes,
+		Globals:            g.Globals,
+		GlobalInits:        g.GlobalInits,
+		buf:                new(bytes.Buffer),
+		currentLine:        -1,
+		AutoDropMethods:    make(map[string]types.NRType),
+		AutoEqMethods:      make(map[string]types.NRType),
+		VTables:            make(map[string]VTableInstance),
+		eraseCache:         make(map[string]types.NRType),
+		NativeHeaders:      g.NativeHeaders,
+		StringLiterals:     make(map[string]string),
+		hirProg:            g.hirProg,
+		hirFuncs:           g.hirFuncs,
+	}
+	return pkgGen
+}
+
+func (g *Generator) MergeFrom(other *Generator) {
+	for k, v := range other.Functions {
+		g.Functions[k] = v
+	}
+	for k, v := range other.MonomorphizedFuncs {
+		g.MonomorphizedFuncs[k] = v
+	}
+	for k, v := range other.ErasedFuncs {
+		g.ErasedFuncs[k] = v
+	}
+	for k, v := range other.AutoDropMethods {
+		g.AutoDropMethods[k] = v
+	}
+	for k, v := range other.AutoEqMethods {
+		g.AutoEqMethods[k] = v
+	}
+	for k, v := range other.VTables {
+		g.VTables[k] = v
+	}
+}
+
 func (g *Generator) GeneratePackageCode(pkgName string) (string, error) {
 	g.buf.Reset()
 	g.StringLiterals = make(map[string]string)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
@@ -15,6 +16,7 @@ type NativeMacro func(requestJSON []byte) ([]byte, error)
 
 // PluginManager handles loading and executing WebAssembly macros.
 type PluginManager struct {
+	mu           sync.Mutex
 	runtime      wazero.Runtime
 	modules      map[string]api.Module
 	nativeMacros map[string]map[string]NativeMacro
@@ -83,6 +85,9 @@ func (m *PluginManager) Close() {
 // ExecuteMacro writes a JSON payload into the WASM sandbox memory, executes the
 // macro function, and returns the modified JSON payload.
 func (m *PluginManager) ExecuteMacro(pluginName string, macroName string, requestJSON []byte) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	// 1. Check for WASM modules first
 	module, ok := m.modules[pluginName]
 	if ok {

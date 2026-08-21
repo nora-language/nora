@@ -1898,14 +1898,74 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 		}
 	}
 
-	// Transpile package C files first to dynamically discover and populate g.AutoDropMethods, g.AutoEqMethods, and g.VTables!
+	// Pre-lower and index HIR once before spawning transpilation workers
+	gen.PrepareForMultiPackage()
+
+	// Transpile package C files concurrently across CPU cores!
 	packageCodeMap := make(map[string]string)
+	var packageTranspileMu sync.Mutex
+
+	var pkgList []string
 	for pkg := range packages {
-		pkgCode, err := gen.GeneratePackageCode(pkg)
-		if err != nil {
-			return "", "", fmt.Errorf("codegen error for package %s: %v", pkg, err)
-		}
-		packageCodeMap[pkg] = pkgCode
+		pkgList = append(pkgList, pkg)
+	}
+
+	numTranspileWorkers := runtime.NumCPU()
+	if numTranspileWorkers < 1 {
+		numTranspileWorkers = 1
+	}
+	if numTranspileWorkers > len(pkgList) {
+		numTranspileWorkers = len(pkgList)
+	}
+
+	pkgCh := make(chan string, len(pkgList))
+	for _, pkg := range pkgList {
+		pkgCh <- pkg
+	}
+	close(pkgCh)
+
+	var transpileWg sync.WaitGroup
+	var transpileFirstErr error
+	var transpileErrOnce sync.Once
+
+	var workerGens []*codegen.Generator
+	for w := 0; w < numTranspileWorkers; w++ {
+		workerGens = append(workerGens, gen.CloneForPackage())
+	}
+
+	for w := 0; w < numTranspileWorkers; w++ {
+		transpileWg.Add(1)
+		wIdx := w
+		go func(pkgGen *codegen.Generator) {
+			defer transpileWg.Done()
+			for pkg := range pkgCh {
+				if transpileFirstErr != nil {
+					return
+				}
+
+				pkgCode, err := pkgGen.GeneratePackageCode(pkg)
+				if err != nil {
+					transpileErrOnce.Do(func() {
+						transpileFirstErr = fmt.Errorf("codegen error for package %s: %v", pkg, err)
+					})
+					return
+				}
+
+				packageTranspileMu.Lock()
+				packageCodeMap[pkg] = pkgCode
+				packageTranspileMu.Unlock()
+			}
+		}(workerGens[wIdx])
+	}
+
+	transpileWg.Wait()
+
+	if transpileFirstErr != nil {
+		return "", "", transpileFirstErr
+	}
+
+	for _, wg := range workerGens {
+		gen.MergeFrom(wg)
 	}
 
 	// Always generate shared contract header out.h BEFORE compiling package files so that C compilation can resolve includes!
