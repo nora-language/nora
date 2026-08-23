@@ -612,7 +612,6 @@ void resume(fiber_info_t* info) {
             if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
             else queue_push(&g_queue, info);
         }
-        ReleaseSemaphore(g_worker_sem, 1, NULL);
     } else {
 #ifdef NR_DEBUG_FIBER
         printf("[C-SCHED] resume: CAS failed for fiber %s (%p) (not in PARKED state). Incrementing resume_pending (currently %ld)...\n", info->name ? info->name : "unnamed", info, (long)NR_ATOMIC_LOAD(&info->resume_pending));
@@ -634,7 +633,6 @@ void resume(fiber_info_t* info) {
                     if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
                     else queue_push(&g_queue, info);
                 }
-                ReleaseSemaphore(g_worker_sem, 1, NULL);
             }
         }
     }
@@ -1729,7 +1727,6 @@ void resume(fiber_info_t* info) {
             if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
             else queue_push(&g_queue, info);
         }
-        sem_post(&g_worker_sem);
     } else {
         atomic_fetch_add(&info->resume_pending, 1);
         expected = 3;
@@ -1743,7 +1740,6 @@ void resume(fiber_info_t* info) {
                 if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
                 else queue_push(&g_queue, info);
             }
-            sem_post(&g_worker_sem);
         }
     }
 }
@@ -1857,7 +1853,6 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
             queue_push(&g_queue, info);
         }
     }
-    sem_post(&g_worker_sem);
     return (fiber_t)info;
 }
 
