@@ -1,4 +1,5 @@
 *.exe
+/nora
 node_modules
 build/
 glfw-3.4.bin.WIN64/

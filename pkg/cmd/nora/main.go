@@ -1469,6 +1469,7 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 		modeStr = "Release"
 	}
 
+	parseStart := time.Now()
 	if opts.Verbose {
 		fmt.Printf("[Nora] Compiling in %s mode...\n", modeStr)
 		fmt.Printf("[Nora] Parsing source files from '%s'...\n", inputFile)
@@ -1556,6 +1557,13 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 		return "", "", fmt.Errorf("no .nr files found to compile")
 	}
 
+	if opts.Verbose {
+		fmt.Printf("[Nora] Parsing completed in %v\n", time.Since(parseStart))
+	} else {
+		fmt.Printf("  [Nora] Parsing completed in %v\n", time.Since(parseStart))
+	}
+
+	macroStart := time.Now()
 	pluginMgr := plugin.NewPluginManager()
 	defer pluginMgr.Close()
 	pluginMgr.RegisterBuiltinMacros()
@@ -1592,6 +1600,11 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 		}
 	}
 
+	if opts.Verbose {
+		fmt.Printf("[Nora] Plugin macros processed in %v\n", time.Since(macroStart))
+	}
+
+	semanticStart := time.Now()
 	if opts.Verbose {
 		fmt.Println("[Nora] Running semantic analyzer & scope resolution...")
 	} else {
@@ -1651,6 +1664,13 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 	}
 
 	if opts.Verbose {
+		fmt.Printf("[Nora] Semantic analysis completed in %v\n", time.Since(semanticStart))
+	} else {
+		fmt.Printf("  [Nora] Semantic analysis completed in %v\n", time.Since(semanticStart))
+	}
+
+	topologyStart := time.Now()
+	if opts.Verbose {
 		fmt.Println("[Nora] Solving declaration dependency topology...")
 	} else {
 		fmt.Println("  [Nora] Resolving dependency topology...")
@@ -1664,6 +1684,12 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 	if solver.Diagnostics.HasErrors() {
 		diag.Report(solver.Diagnostics)
 		return "", "", fmt.Errorf("topology errors")
+	}
+
+	if opts.Verbose {
+		fmt.Printf("[Nora] Topology resolution completed in %v\n", time.Since(topologyStart))
+	} else {
+		fmt.Printf("  [Nora] Topology resolution completed in %v\n", time.Since(topologyStart))
 	}
 
 	// Resolve active C compiler name
@@ -1821,6 +1847,7 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 	}
 	finalExe := filepath.Join(buildDir, exeName)
 
+	transpileStart := time.Now()
 	if opts.Verbose {
 		fmt.Println("[Nora] Transpiling source AST using Package-Scoped Splitting...")
 	} else {
@@ -1977,6 +2004,24 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 	if err := os.WriteFile(outH, []byte(headerCode), 0644); err != nil {
 		return "", "", fmt.Errorf("error writing out.h: %v", err)
 	}
+
+	// Always generate shared globals file
+	globalsCode, err := gen.GenerateSharedGlobals()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to generate out_globals.c: %v", err)
+	}
+	outGlobalsC := filepath.Join(buildDir, "out_globals.c")
+	if err := os.WriteFile(outGlobalsC, []byte(globalsCode), 0644); err != nil {
+		return "", "", fmt.Errorf("error writing out_globals.c: %v", err)
+	}
+
+	if opts.Verbose {
+		fmt.Printf("[Nora] Transpilation completed in %v\n", time.Since(transpileStart))
+	} else {
+		fmt.Printf("  [Nora] Transpilation completed in %v\n", time.Since(transpileStart))
+	}
+
+	cObjStart := time.Now()
 
 	var allPackageObjects []string
 	var recompiledAny bool
@@ -2149,16 +2194,6 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 
 	// Sort package objects to ensure deterministic linking order
 	sort.Strings(allPackageObjects)
-
-	// Always generate shared globals file
-	globalsCode, err := gen.GenerateSharedGlobals()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to generate out_globals.c: %v", err)
-	}
-	outGlobalsC := filepath.Join(buildDir, "out_globals.c")
-	if err := os.WriteFile(outGlobalsC, []byte(globalsCode), 0644); err != nil {
-		return "", "", fmt.Errorf("error writing out_globals.c: %v", err)
-	}
 
 	objExt := ".o"
 	if isMSVC {
@@ -2435,6 +2470,12 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 		}
 	}
 
+	if opts.Verbose {
+		fmt.Printf("[Nora] C object compilation completed in %v\n", time.Since(cObjStart))
+	} else {
+		fmt.Printf("  [Nora] C object compilation completed in %v\n", time.Since(cObjStart))
+	}
+
 	// 4. Parse target CFlags to extract libraries/linker-paths for MSVC or preserve warning/target options for POSIX
 	var filteredTargetFlags []string
 	for _, feat := range opts.Target.Features {
@@ -2664,6 +2705,7 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 		}
 	}
 
+	linkStart := time.Now()
 	if opts.Verbose {
 		fmt.Printf("[Nora] Invoking C toolchain: %s\n", activeConfig.Compiler)
 		family := "POSIX (GCC/Clang/TCC)"
@@ -2702,6 +2744,12 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 
 	if err := copyDynamicLibraries(buildDir, opts); err != nil {
 		return "", "", err
+	}
+
+	if opts.Verbose {
+		fmt.Printf("[Nora] C toolchain linking completed in %v\n", time.Since(linkStart))
+	} else {
+		fmt.Printf("  [Nora] C toolchain compilation completed in %v\n", time.Since(linkStart))
 	}
 
 	return outC, finalExe, nil
