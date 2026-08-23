@@ -568,7 +568,14 @@ func (g *Generator) collectDefinitions() {
 	}
 
 	// 1. Collect specialized types (monomorphized structs/sums) WITH type erasure
-	for mangled, t := range g.SemanticInfo.SpecTypes {
+	var specKeys []string
+	for mangled := range g.SemanticInfo.SpecTypes {
+		specKeys = append(specKeys, mangled)
+	}
+	sort.Strings(specKeys)
+
+	for _, mangled := range specKeys {
+		t := g.SemanticInfo.SpecTypes[mangled]
 		if g.isGeneric(t) {
 			continue
 		}
@@ -654,8 +661,35 @@ func (g *Generator) collectDefinitions() {
 	}
 
 	// 2. Collect monomorphized function instances WITH type erasure
-	for fnStmt, instMap := range g.SemanticInfo.Instances {
-		for typeKey, inst := range instMap {
+	var fnStmts []*ast.FunctionStatement
+	for fnStmt := range g.SemanticInfo.Instances {
+		fnStmts = append(fnStmts, fnStmt)
+	}
+	sort.Slice(fnStmts, func(i, j int) bool {
+		nameI := ""
+		if fnStmts[i].Name != nil {
+			nameI = fnStmts[i].Name.Value
+		}
+		nameJ := ""
+		if fnStmts[j].Name != nil {
+			nameJ = fnStmts[j].Name.Value
+		}
+		if nameI != nameJ {
+			return nameI < nameJ
+		}
+		return fnStmts[i].Pos().String() < fnStmts[j].Pos().String()
+	})
+
+	for _, fnStmt := range fnStmts {
+		instMap := g.SemanticInfo.Instances[fnStmt]
+		var typeKeys []string
+		for typeKey := range instMap {
+			typeKeys = append(typeKeys, typeKey)
+		}
+		sort.Strings(typeKeys)
+
+		for _, typeKey := range typeKeys {
+			inst := instMap[typeKey]
 			if inst.IsGenericTemplate {
 				continue
 			}
@@ -871,8 +905,33 @@ func (g *Generator) collectDefinitions() {
 					}
 				}
 			} else {
-				for fnStmt, instMap := range g.SemanticInfo.Instances {
-					for typeKey, inst := range instMap {
+				var fnStmts []*ast.FunctionStatement
+				for fnStmt := range g.SemanticInfo.Instances {
+					fnStmts = append(fnStmts, fnStmt)
+				}
+				sort.Slice(fnStmts, func(i, j int) bool {
+					nameI := ""
+					if fnStmts[i].Name != nil {
+						nameI = fnStmts[i].Name.Value
+					}
+					nameJ := ""
+					if fnStmts[j].Name != nil {
+						nameJ = fnStmts[j].Name.Value
+					}
+					if nameI != nameJ {
+						return nameI < nameJ
+					}
+					return fnStmts[i].Pos().String() < fnStmts[j].Pos().String()
+				})
+				for _, fnStmt := range fnStmts {
+					instMap := g.SemanticInfo.Instances[fnStmt]
+					var typeKeys []string
+					for typeKey := range instMap {
+						typeKeys = append(typeKeys, typeKey)
+					}
+					sort.Strings(typeKeys)
+					for _, typeKey := range typeKeys {
+						inst := instMap[typeKey]
 						sym := g.SemanticInfo.Defs[inst.Name]
 						if sym == nil {
 							sym = g.findDefSymbol(inst.Name.Value)
@@ -1361,6 +1420,7 @@ func (g *Generator) emitAutoDropMethods() {
 							ownedFields = append(ownedFields, fName)
 						}
 					}
+					sort.Strings(ownedFields)
 					if len(ownedFields) == 0 {
 						continue
 					}
@@ -1856,7 +1916,14 @@ func (g *Generator) emitVTables() {
 		return
 	}
 	g.emit("// --- VTABLES ---")
-	for key, inst := range g.VTables {
+	keys := make([]string, 0, len(g.VTables))
+	for key := range g.VTables {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		inst := g.VTables[key]
 		vtableName := "vtable_" + key
 		if g.MultiFileMode {
 			g.emit("void* %s[] = {", vtableName)
@@ -1969,6 +2036,121 @@ func (g *Generator) CollectDefinitions() {
 	g.collectDefinitions()
 }
 
+func (g *Generator) collectVTablesFromOperand(op hir.Operand) {
+	if op == nil {
+		return
+	}
+	if instOp, ok := op.(*hir.InstOperand); ok && instOp.Inst != nil {
+		g.collectVTablesFromInst(instOp.Inst)
+	}
+}
+
+func (g *Generator) collectVTablesFromInst(inst hir.Instruction) {
+	if inst == nil {
+		return
+	}
+	switch i := inst.(type) {
+	case *hir.InterfaceCast:
+		valType := i.Val.GetType()
+		if instOp, ok := i.Val.(*hir.InstOperand); ok {
+			if addrOf, isAddr := instOp.Inst.(*hir.AddressOf); isAddr && addrOf.Operator != "@" {
+				valType = addrOf.Val.GetType()
+			}
+		}
+		unwrapped := types.UnwrapLease(valType)
+		if pt, ok := unwrapped.(*types.PointerType); ok {
+			unwrapped = pt.Base
+		}
+		if _, ok := unwrapped.(*types.ProtocolType); !ok {
+			g.requestVTable(valType, i.Type)
+		}
+		g.collectVTablesFromOperand(i.Val)
+	case *hir.InterfaceCall:
+		g.collectVTablesFromOperand(i.Base)
+		for _, arg := range i.Args {
+			g.collectVTablesFromOperand(arg)
+		}
+	case *hir.Call:
+		for _, arg := range i.Args {
+			g.collectVTablesFromOperand(arg)
+		}
+	case *hir.Store:
+		g.collectVTablesFromOperand(i.Dest)
+		g.collectVTablesFromOperand(i.Val)
+	case *hir.Assign:
+		g.collectVTablesFromOperand(i.Dest)
+		g.collectVTablesFromOperand(i.Val)
+	case *hir.Ret:
+		if i.Val != nil {
+			g.collectVTablesFromOperand(i.Val)
+		}
+	case *hir.AddressOf:
+		g.collectVTablesFromOperand(i.Val)
+	case *hir.Deref:
+		g.collectVTablesFromOperand(i.Val)
+	case *hir.FieldAccess:
+		g.collectVTablesFromOperand(i.Base)
+	case *hir.IndexAccess:
+		g.collectVTablesFromOperand(i.Base)
+		g.collectVTablesFromOperand(i.Index)
+	case *hir.BinOp:
+		g.collectVTablesFromOperand(i.Left)
+		g.collectVTablesFromOperand(i.Right)
+	case *hir.UnOp:
+		g.collectVTablesFromOperand(i.Val)
+	case *hir.Cast:
+		g.collectVTablesFromOperand(i.Val)
+	case *hir.Alloc:
+		g.collectVTablesFromOperand(i.Val)
+	case *hir.Try:
+		g.collectVTablesFromOperand(i.Val)
+	case *hir.VariantConstructor:
+		for _, arg := range i.Args {
+			g.collectVTablesFromOperand(arg)
+		}
+	case *hir.Spawn:
+		if i.Call != nil {
+			g.collectVTablesFromInst(i.Call)
+		}
+		g.collectVTablesFromOperand(i.MonitorChannel)
+	case *hir.ChanSend:
+		g.collectVTablesFromOperand(i.Chan)
+		g.collectVTablesFromOperand(i.Val)
+	case *hir.ChanRecv:
+		g.collectVTablesFromOperand(i.Chan)
+	}
+}
+
+func (g *Generator) collectVTablesFromBlock(block *hir.HIRBlock) {
+	if block == nil {
+		return
+	}
+	for _, el := range block.Elements {
+		switch e := el.(type) {
+		case *hir.InstElement:
+			g.collectVTablesFromInst(e.Inst)
+		case *hir.HIRIf:
+			g.collectVTablesFromOperand(e.Condition)
+			g.collectVTablesFromBlock(e.Then)
+			g.collectVTablesFromBlock(e.Else)
+		case *hir.HIRLoop:
+			g.collectVTablesFromBlock(e.Init)
+			g.collectVTablesFromOperand(e.Condition)
+			g.collectVTablesFromBlock(e.Step)
+			g.collectVTablesFromBlock(e.Body)
+		case *hir.IteratorLoop:
+			g.collectVTablesFromOperand(e.Iterator)
+			g.collectVTablesFromBlock(e.Body)
+		case *hir.Select:
+			for _, sc := range e.Cases {
+				g.collectVTablesFromOperand(sc.Chan)
+				g.collectVTablesFromOperand(sc.Val)
+				g.collectVTablesFromBlock(sc.Body)
+			}
+		}
+	}
+}
+
 func (g *Generator) PrepareForMultiPackage() {
 	if g.hirProg == nil {
 		lowerer := hir.NewLowerer(g.SemanticInfo, g.Solver)
@@ -1981,6 +2163,29 @@ func (g *Generator) PrepareForMultiPackage() {
 		g.hirFuncs = make(map[string]*hir.Function, len(g.hirProg.Functions))
 		for _, hf := range g.hirProg.Functions {
 			g.hirFuncs[g.mangleName(hf.FuncSymbol)] = hf
+		}
+	}
+
+	// Pre-scan all HIR instructions to register all VTables and AutoDrops upfront
+	for _, hf := range g.hirProg.Functions {
+		g.collectVTablesFromBlock(hf.Body)
+	}
+
+	// Also scan AST expressions in SemanticInfo for interface conversions
+	for exprNode, t := range g.SemanticInfo.Types {
+		if proto, isProto := t.(*types.ProtocolType); isProto {
+			if infix, ok := exprNode.(*ast.InfixExpression); ok && infix.Operator == "as" {
+				valType := g.SemanticInfo.Types[infix.Left]
+				if valType != nil {
+					unwrapped := types.UnwrapLease(valType)
+					if pt, ok := unwrapped.(*types.PointerType); ok {
+						unwrapped = pt.Base
+					}
+					if _, ok := unwrapped.(*types.ProtocolType); !ok {
+						g.requestVTable(valType, proto)
+					}
+				}
+			}
 		}
 	}
 }
@@ -1999,6 +2204,18 @@ func (g *Generator) CloneForPackage() *Generator {
 	erasedCopy := make(map[string]bool, len(g.ErasedFuncs))
 	for k, v := range g.ErasedFuncs {
 		erasedCopy[k] = v
+	}
+	vtablesCopy := make(map[string]VTableInstance, len(g.VTables))
+	for k, v := range g.VTables {
+		vtablesCopy[k] = v
+	}
+	autoDropCopy := make(map[string]types.NRType, len(g.AutoDropMethods))
+	for k, v := range g.AutoDropMethods {
+		autoDropCopy[k] = v
+	}
+	autoEqCopy := make(map[string]types.NRType, len(g.AutoEqMethods))
+	for k, v := range g.AutoEqMethods {
+		autoEqCopy[k] = v
 	}
 
 	pkgGen := &Generator{
@@ -2023,9 +2240,9 @@ func (g *Generator) CloneForPackage() *Generator {
 		GlobalInits:        g.GlobalInits,
 		buf:                new(bytes.Buffer),
 		currentLine:        -1,
-		AutoDropMethods:    make(map[string]types.NRType),
-		AutoEqMethods:      make(map[string]types.NRType),
-		VTables:            make(map[string]VTableInstance),
+		AutoDropMethods:    autoDropCopy,
+		AutoEqMethods:      autoEqCopy,
+		VTables:            vtablesCopy,
 		eraseCache:         make(map[string]types.NRType),
 		NativeHeaders:      g.NativeHeaders,
 		StringLiterals:     make(map[string]string),
@@ -2206,6 +2423,14 @@ func (g *Generator) GenerateHeader() (string, error) {
 
 func (g *Generator) GenerateSharedGlobals() (string, error) {
 	g.buf.Reset()
+	g.StringLiterals = make(map[string]string)
+	g.SpawnStructs = nil
+	g.SpawnWrappers = nil
+	g.spawnCounter = 0
+	g.scopeCounter = 0
+	g.loopCounter = 0
+	g.GeneratedLambdas = make(map[string]bool)
+
 	g.emit("// Shared Globals, drop methods, equality methods, and vtables")
 	g.emit("#include \"out.h\"")
 	g.emit("")
@@ -2259,8 +2484,9 @@ func (g *Generator) GenerateSharedGlobals() (string, error) {
 
 	// Emit Main Wrapper
 	mainName := "main" // Default Nora main
-	for _, sym := range g.Functions {
-		if sym.Name == "main" {
+	for _, name := range g.sortedFunctionNames() {
+		sym := g.Functions[name]
+		if sym != nil && sym.Name == "main" {
 			mainName = g.mangleName(sym)
 			break
 		}
@@ -2276,14 +2502,25 @@ func (g *Generator) emitVTableDecls() {
 		return
 	}
 	g.emit("// --- VTABLE DECLARATIONS ---")
+	keys := make([]string, 0, len(g.VTables))
 	for key := range g.VTables {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
 		vtableName := "vtable_" + key
 		g.emit("extern void* %s[];", vtableName)
 	}
 }
 
 func (g *Generator) emitPackageGlobalDefs(pkgName string) {
-	for _, sym := range g.Globals {
+	keys := make([]string, 0, len(g.Globals))
+	for k := range g.Globals {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		sym := g.Globals[k]
 		if g.getSymbolPackage(sym) == pkgName {
 			g.emit("%s %s;", g.cType(sym.Type), g.mangleName(sym))
 		}

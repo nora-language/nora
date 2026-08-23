@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 
 	"math"
@@ -114,8 +115,33 @@ func (s *Solver) Solve(node ast.Node) {
 		for _, file := range n.Files {
 			s.Solve(file)
 		}
-		for _, instances := range s.SemanticInfo.Instances {
-			for _, inst := range instances {
+		var fnStmts []*ast.FunctionStatement
+		for fnStmt := range s.SemanticInfo.Instances {
+			fnStmts = append(fnStmts, fnStmt)
+		}
+		sort.Slice(fnStmts, func(i, j int) bool {
+			nameI := ""
+			if fnStmts[i].Name != nil {
+				nameI = fnStmts[i].Name.Value
+			}
+			nameJ := ""
+			if fnStmts[j].Name != nil {
+				nameJ = fnStmts[j].Name.Value
+			}
+			if nameI != nameJ {
+				return nameI < nameJ
+			}
+			return fnStmts[i].Pos().String() < fnStmts[j].Pos().String()
+		})
+		for _, fnStmt := range fnStmts {
+			instances := s.SemanticInfo.Instances[fnStmt]
+			var typeKeys []string
+			for typeKey := range instances {
+				typeKeys = append(typeKeys, typeKey)
+			}
+			sort.Strings(typeKeys)
+			for _, typeKey := range typeKeys {
+				inst := instances[typeKey]
 				s.Solve(inst)
 			}
 		}
@@ -174,7 +200,15 @@ func (s *Solver) Solve(node ast.Node) {
 			s.analyzeBlock(n.Body, params)
 
 			// Register drops for parameters in the function's main block if not moved
-			for sym, lc := range params {
+			var paramSyms []*semantic.Symbol
+			for sym := range params {
+				paramSyms = append(paramSyms, sym)
+			}
+			sort.Slice(paramSyms, func(i, j int) bool {
+				return paramSyms[i].Name < paramSyms[j].Name
+			})
+			for _, sym := range paramSyms {
+				lc := params[sym]
 				if !lc.IsMoved && sym.Kind == semantic.SymParam {
 					if s.isOwned(sym) {
 						// Ensure it's dropped at least at the end of the block
@@ -210,7 +244,15 @@ func (s *Solver) Solve(node ast.Node) {
 			s.CurrentFunction = oldFn
 
 			// Register drops for parameters in the lambda's body if not moved
-			for sym, lc := range params {
+			var lambdaParamSyms []*semantic.Symbol
+			for sym := range params {
+				lambdaParamSyms = append(lambdaParamSyms, sym)
+			}
+			sort.Slice(lambdaParamSyms, func(i, j int) bool {
+				return lambdaParamSyms[i].Name < lambdaParamSyms[j].Name
+			})
+			for _, sym := range lambdaParamSyms {
+				lc := params[sym]
 				if !lc.IsMoved && sym.Kind == semantic.SymParam {
 					if s.isOwned(sym) {
 						dropIdx := lc.LastUsedAt + 1
@@ -269,7 +311,15 @@ func (s *Solver) registerTryDrops(try *ast.TryExpression, visible map[*semantic.
 	if s.InSecondPass {
 		return
 	}
-	for sym, lc := range visible {
+	var syms []*semantic.Symbol
+	for sym := range visible {
+		syms = append(syms, sym)
+	}
+	sort.Slice(syms, func(i, j int) bool {
+		return syms[i].Name < syms[j].Name
+	})
+	for _, sym := range syms {
+		lc := visible[sym]
 		if !lc.IsMoved && (sym.Kind == semantic.SymVar || sym.Kind == semantic.SymParam) {
 			if s.isOwned(sym) {
 				s.TryDrops[try] = append(s.TryDrops[try], DropInfo{Symbol: sym})
@@ -1101,7 +1151,16 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 		}
 	}
 
-	for _, lc := range localLifecycles {
+	var localSyms []*semantic.Symbol
+	for sym := range localLifecycles {
+		localSyms = append(localSyms, sym)
+	}
+	sort.Slice(localSyms, func(i, j int) bool {
+		return localSyms[i].Name < localSyms[j].Name
+	})
+
+	for _, sym := range localSyms {
+		lc := localLifecycles[sym]
 		if lc.Symbol.Kind == semantic.SymVar || lc.Symbol.Kind == semantic.SymParam {
 			if (!lc.IsMoved || lc.IsConditionallyMoved) && s.isOwned(lc.Symbol) {
 				dropIdx := lc.LastUsedAt + 1
@@ -1216,7 +1275,16 @@ func (s *Solver) registerScopeDrops(block *ast.BlockStatement, index int, visibl
 		excluded[exclude] = true
 	}
 
-	for sym, lc := range visible {
+	var syms []*semantic.Symbol
+	for sym := range visible {
+		syms = append(syms, sym)
+	}
+	sort.Slice(syms, func(i, j int) bool {
+		return syms[i].Name < syms[j].Name
+	})
+
+	for _, sym := range syms {
+		lc := visible[sym]
 		if excluded[sym] || (excludeParents != nil && excludeParents[sym]) {
 			continue
 		}

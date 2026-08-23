@@ -225,14 +225,26 @@ func (g *Generator) emitProtocolDefs() {
 
 func (g *Generator) emitGlobalDecls() {
 	g.emit("// --- GLOBAL DECLARATIONS ---")
-	for _, sym := range g.Globals {
+	keys := make([]string, 0, len(g.Globals))
+	for k := range g.Globals {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		sym := g.Globals[k]
 		g.emit("extern %s %s;", g.cType(sym.Type), g.mangleName(sym))
 	}
 }
 
 func (g *Generator) emitGlobalDefs() {
 	g.emit("// --- GLOBAL DEFINITIONS ---")
-	for _, sym := range g.Globals {
+	keys := make([]string, 0, len(g.Globals))
+	for k := range g.Globals {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		sym := g.Globals[k]
 		g.emit("%s %s;", g.cType(sym.Type), g.mangleName(sym))
 	}
 }
@@ -243,6 +255,7 @@ func (g *Generator) emitVariantConstructors() {
 	for name := range g.SumTypes {
 		sumNames = append(sumNames, name)
 	}
+	sort.Strings(sumNames)
 	for _, name := range sumNames {
 		st := g.SumTypes[name]
 		vNames := g.sortedVariantNames(st)

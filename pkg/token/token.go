@@ -1,5 +1,7 @@
 package token
 
+import "fmt"
+
 type TokenType string
 
 type Position struct {
@@ -7,6 +9,10 @@ type Position struct {
 	Column   int
 	Offset   int
 	Filename string
+}
+
+func (p Position) String() string {
+	return fmt.Sprintf("%s:%d:%d", p.Filename, p.Line, p.Column)
 }
 
 type Token struct {

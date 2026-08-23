@@ -1865,6 +1865,7 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 
 	// Pre-populate structural AST definitions
 	gen.CollectDefinitions()
+	gen.PrepareForMultiPackage()
 
 	// Gather unique packages
 	packages := make(map[string]bool)
@@ -1925,104 +1926,6 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 		}
 	}
 
-	// Pre-lower and index HIR once before spawning transpilation workers
-	gen.PrepareForMultiPackage()
-
-	// Transpile package C files concurrently across CPU cores!
-	packageCodeMap := make(map[string]string)
-	var packageTranspileMu sync.Mutex
-
-	var pkgList []string
-	for pkg := range packages {
-		pkgList = append(pkgList, pkg)
-	}
-
-	numTranspileWorkers := runtime.NumCPU()
-	if numTranspileWorkers < 1 {
-		numTranspileWorkers = 1
-	}
-	if numTranspileWorkers > len(pkgList) {
-		numTranspileWorkers = len(pkgList)
-	}
-
-	pkgCh := make(chan string, len(pkgList))
-	for _, pkg := range pkgList {
-		pkgCh <- pkg
-	}
-	close(pkgCh)
-
-	var transpileWg sync.WaitGroup
-	var transpileFirstErr error
-	var transpileErrOnce sync.Once
-
-	var workerGens []*codegen.Generator
-	for w := 0; w < numTranspileWorkers; w++ {
-		workerGens = append(workerGens, gen.CloneForPackage())
-	}
-
-	for w := 0; w < numTranspileWorkers; w++ {
-		transpileWg.Add(1)
-		wIdx := w
-		go func(pkgGen *codegen.Generator) {
-			defer transpileWg.Done()
-			for pkg := range pkgCh {
-				if transpileFirstErr != nil {
-					return
-				}
-
-				pkgCode, err := pkgGen.GeneratePackageCode(pkg)
-				if err != nil {
-					transpileErrOnce.Do(func() {
-						transpileFirstErr = fmt.Errorf("codegen error for package %s: %v", pkg, err)
-					})
-					return
-				}
-
-				packageTranspileMu.Lock()
-				packageCodeMap[pkg] = pkgCode
-				packageTranspileMu.Unlock()
-			}
-		}(workerGens[wIdx])
-	}
-
-	transpileWg.Wait()
-
-	if transpileFirstErr != nil {
-		return "", "", transpileFirstErr
-	}
-
-	for _, wg := range workerGens {
-		gen.MergeFrom(wg)
-	}
-
-	// Always generate shared contract header out.h BEFORE compiling package files so that C compilation can resolve includes!
-	headerCode, err := gen.GenerateHeader()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to generate out.h: %v", err)
-	}
-	outH := filepath.Join(buildDir, "out.h")
-	if err := os.WriteFile(outH, []byte(headerCode), 0644); err != nil {
-		return "", "", fmt.Errorf("error writing out.h: %v", err)
-	}
-
-	// Always generate shared globals file
-	globalsCode, err := gen.GenerateSharedGlobals()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to generate out_globals.c: %v", err)
-	}
-	outGlobalsC := filepath.Join(buildDir, "out_globals.c")
-	if err := os.WriteFile(outGlobalsC, []byte(globalsCode), 0644); err != nil {
-		return "", "", fmt.Errorf("error writing out_globals.c: %v", err)
-	}
-
-	if opts.Verbose {
-		fmt.Printf("[Nora] Transpilation completed in %v\n", time.Since(transpileStart))
-	} else {
-		fmt.Printf("  [Nora] Transpilation completed in %v\n", time.Since(transpileStart))
-	}
-
-	cObjStart := time.Now()
-
 	var allPackageObjects []string
 	var recompiledAny bool
 
@@ -2075,11 +1978,9 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 	}
 
 	var compileTasks []packageCompileTask
-	var allPackageObjectsMu sync.Mutex
-	var catalogMu sync.Mutex
-	var logMu sync.Mutex
+	var uncachedPkgs []string
 
-	// Determine cache hits vs misses and write package C files
+	// Determine cache hits vs misses BEFORE transpilation workers!
 	for pkg := range packages {
 		currentHash := getPackageHash(pkg, make(map[string]bool))
 
@@ -2110,11 +2011,11 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 			allPackageObjects = append(allPackageObjects, cachedEntry.ObjectPath)
 		} else {
 			recompiledAny = true
-			pkgCFile := filepath.Join(buildDir, fmt.Sprintf("out_pkg_%s.c", safePkgName))
-			if err := os.WriteFile(pkgCFile, []byte(packageCodeMap[pkg]), 0644); err != nil {
-				return "", "", fmt.Errorf("error writing package C file: %v", err)
+			if opts.Verbose {
+				fmt.Printf("[Nora] Cache MISS for package '%s'. Transpiling & Compiling...\n", pkg)
 			}
-
+			pkgCFile := filepath.Join(buildDir, fmt.Sprintf("out_pkg_%s.c", safePkgName))
+			uncachedPkgs = append(uncachedPkgs, pkg)
 			compileTasks = append(compileTasks, packageCompileTask{
 				pkg:         pkg,
 				currentHash: currentHash,
@@ -2124,8 +2025,115 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 		}
 	}
 
+	// Transpile ONLY uncached package C files concurrently across CPU cores!
+	packageCodeMap := make(map[string]string)
+	if len(uncachedPkgs) > 0 {
+		var packageTranspileMu sync.Mutex
+
+		numTranspileWorkers := runtime.NumCPU()
+		if numTranspileWorkers < 1 {
+			numTranspileWorkers = 1
+		}
+		if numTranspileWorkers > len(uncachedPkgs) {
+			numTranspileWorkers = len(uncachedPkgs)
+		}
+
+		pkgCh := make(chan string, len(uncachedPkgs))
+		for _, pkg := range uncachedPkgs {
+			pkgCh <- pkg
+		}
+		close(pkgCh)
+
+		var transpileWg sync.WaitGroup
+		var transpileFirstErr error
+		var transpileErrOnce sync.Once
+
+		var workerGens []*codegen.Generator
+		for w := 0; w < numTranspileWorkers; w++ {
+			workerGens = append(workerGens, gen.CloneForPackage())
+		}
+
+		for w := 0; w < numTranspileWorkers; w++ {
+			transpileWg.Add(1)
+			wIdx := w
+			go func(pkgGen *codegen.Generator) {
+				defer transpileWg.Done()
+				for pkg := range pkgCh {
+					if transpileFirstErr != nil {
+						return
+					}
+
+					pkgCode, err := pkgGen.GeneratePackageCode(pkg)
+					if err != nil {
+						transpileErrOnce.Do(func() {
+							transpileFirstErr = fmt.Errorf("codegen error for package %s: %v", pkg, err)
+						})
+						return
+					}
+
+					packageTranspileMu.Lock()
+					packageCodeMap[pkg] = pkgCode
+					packageTranspileMu.Unlock()
+				}
+			}(workerGens[wIdx])
+		}
+
+		transpileWg.Wait()
+
+		if transpileFirstErr != nil {
+			return "", "", transpileFirstErr
+		}
+
+		for _, wg := range workerGens {
+			gen.MergeFrom(wg)
+		}
+
+		// Write generated package C files for uncached packages
+		for _, task := range compileTasks {
+			if err := os.WriteFile(task.pkgCFile, []byte(packageCodeMap[task.pkg]), 0644); err != nil {
+				return "", "", fmt.Errorf("error writing package C file: %v", err)
+			}
+		}
+	}
+
+	// Always generate shared contract header out.h BEFORE compiling package files so that C compilation can resolve includes!
+	headerCode, err := gen.GenerateHeader()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to generate out.h: %v", err)
+	}
+	outH := filepath.Join(buildDir, "out.h")
+	if existingData, err := os.ReadFile(outH); err != nil || string(existingData) != headerCode {
+		if err := os.WriteFile(outH, []byte(headerCode), 0644); err != nil {
+			return "", "", fmt.Errorf("error writing out.h: %v", err)
+		}
+	}
+
+	// Always generate shared globals file
+	globalsCode, err := gen.GenerateSharedGlobals()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to generate out_globals.c: %v", err)
+	}
+	outGlobalsC := filepath.Join(buildDir, "out_globals.c")
+	if existingData, err := os.ReadFile(outGlobalsC); err != nil || string(existingData) != globalsCode {
+		if err := os.WriteFile(outGlobalsC, []byte(globalsCode), 0644); err != nil {
+			return "", "", fmt.Errorf("error writing out_globals.c: %v", err)
+		}
+	}
+
+	if opts.Verbose {
+		fmt.Printf("[Nora] Transpilation completed in %v\n", time.Since(transpileStart))
+	} else {
+		fmt.Printf("  [Nora] Transpilation completed in %v\n", time.Since(transpileStart))
+	}
+
+	cObjStart := time.Now()
+	var logMu sync.Mutex
+
 	// Compile package C files concurrently via worker pool
 	if len(compileTasks) > 0 {
+		var allPackageObjectsMu sync.Mutex
+		var catalogMu sync.Mutex
+
 		numWorkers := runtime.NumCPU()
 		if numWorkers < 1 {
 			numWorkers = 1
@@ -2153,11 +2161,7 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 						return
 					}
 
-					if opts.Verbose {
-						logMu.Lock()
-						fmt.Printf("[Nora] Cache MISS for package '%s'. Transpiling & Compiling...\n", task.pkg)
-						logMu.Unlock()
-					} else {
+					if !opts.Verbose {
 						logMu.Lock()
 						fmt.Printf("  [Nora] Compiling package: %s...\n", task.pkg)
 						logMu.Unlock()
@@ -2209,6 +2213,9 @@ func compile(inputFile string, exeName string, pluginPaths []string, dependencie
 	globalsHash := fmt.Sprintf("%x", sha256.Sum256([]byte(globalsCode)))[:16]
 	useGlobalsCache := globalsObjExists && catalog.GlobalsHash == globalsHash && !configChanged && !recompiledAny
 
+	if opts.Verbose {
+		fmt.Printf("[Nora] Globals cache check: objExists=%v, catalogHash=%s, currentHash=%s, configChanged=%v, recompiledAny=%v\n", globalsObjExists, catalog.GlobalsHash, globalsHash, configChanged, recompiledAny)
+	}
 	if useGlobalsCache {
 		if opts.Verbose {
 			fmt.Printf("[Nora] Cache HIT for shared globals. Reusing object: %s\n", outGlobalsObj)

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -128,8 +129,35 @@ func (l *Lowerer) LowerProgram(prog *ast.Program) *Program {
 		}
 	}
 
-	for _, instMap := range l.SemanticInfo.Instances {
-		for _, inst := range instMap {
+	var fnStmts []*ast.FunctionStatement
+	for fnStmt := range l.SemanticInfo.Instances {
+		fnStmts = append(fnStmts, fnStmt)
+	}
+	sort.Slice(fnStmts, func(i, j int) bool {
+		nameI := ""
+		if fnStmts[i].Name != nil {
+			nameI = fnStmts[i].Name.Value
+		}
+		nameJ := ""
+		if fnStmts[j].Name != nil {
+			nameJ = fnStmts[j].Name.Value
+		}
+		if nameI != nameJ {
+			return nameI < nameJ
+		}
+		return fnStmts[i].Pos().String() < fnStmts[j].Pos().String()
+	})
+
+	for _, fnStmt := range fnStmts {
+		instMap := l.SemanticInfo.Instances[fnStmt]
+		var typeKeys []string
+		for typeKey := range instMap {
+			typeKeys = append(typeKeys, typeKey)
+		}
+		sort.Strings(typeKeys)
+
+		for _, typeKey := range typeKeys {
+			inst := instMap[typeKey]
 			sym := l.SemanticInfo.Defs[inst.Name]
 			if sym == nil {
 				// Fallback just in case
@@ -162,6 +190,7 @@ func (l *Lowerer) lowerFunction(sym *semantic.Symbol, fn *ast.FunctionStatement)
 	l.CurrentFunc = sym
 	prevDefers := l.activeDefers
 	l.activeDefers = nil
+	l.tempCounter = 0
 	defer func() {
 		l.CurrentFunc = prevFunc
 		l.activeDefers = prevDefers
