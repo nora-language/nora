@@ -503,9 +503,6 @@ func (g *Generator) collectDefinitions() {
 				if len(s.TypeParameters) > 0 {
 					continue
 				}
-				if ast.GetAttribute(s.Attributes, "NoEmit") != nil {
-					continue
-				}
 				sym := g.SemanticInfo.Defs[s.Name]
 				if sym == nil {
 					if g.DebugSemantic {
@@ -518,6 +515,7 @@ func (g *Generator) collectDefinitions() {
 					fmt.Printf("[DEBUG-collectDefinitions] Name=%s, Type=%T\n", s.Name.Value, t)
 				}
 				mangled := g.mangleName(sym)
+				isNoEmit := ast.GetAttribute(s.Attributes, "NoEmit") != nil
 				if st, ok := t.(*types.StructType); ok {
 					if _, isStruct := s.Value.(*ast.StructLiteral); !isStruct {
 						continue
@@ -525,11 +523,13 @@ func (g *Generator) collectDefinitions() {
 					if len(st.TypeParams) > 0 {
 						continue
 					}
-					g.Structs[mangled] = st
+					if !isNoEmit {
+						g.Structs[mangled] = st
+						g.getEqMethod(st)
+					}
 					if g.getDropMethod(st) == "" && g.hasOwnedFields(st) {
 						g.requestAutoDrop(st)
 					}
-					g.getEqMethod(st)
 				} else if sum, ok := t.(*types.SumType); ok {
 					if _, isSum := s.Value.(*ast.SumTypeLiteral); !isSum {
 						continue
@@ -537,7 +537,9 @@ func (g *Generator) collectDefinitions() {
 					if len(sum.TypeParams) > 0 {
 						continue
 					}
-					g.SumTypes[mangled] = sum
+					if !isNoEmit {
+						g.SumTypes[mangled] = sum
+					}
 					if g.getDropMethod(sum) == "" && g.hasOwnedSumFields(sum) {
 						g.requestAutoDrop(sum)
 					}
@@ -545,7 +547,9 @@ func (g *Generator) collectDefinitions() {
 					if _, isIface := s.Value.(*ast.InterfaceLiteral); !isIface {
 						continue
 					}
-					g.Protocols[mangled] = proto
+					if !isNoEmit {
+						g.Protocols[mangled] = proto
+					}
 				}
 			case *ast.VarStatement:
 				sym := g.SemanticInfo.Defs[s.Name]
@@ -2036,20 +2040,93 @@ func (g *Generator) CollectDefinitions() {
 	g.collectDefinitions()
 }
 
-func (g *Generator) collectVTablesFromOperand(op hir.Operand) {
-	if op == nil {
+func (g *Generator) collectTypeDrops(t types.NRType, visited map[types.NRType]bool) {
+	if t == nil || visited[t] {
 		return
 	}
-	if instOp, ok := op.(*hir.InstOperand); ok && instOp.Inst != nil {
-		g.collectVTablesFromInst(instOp.Inst)
+	visited[t] = true
+	ut := types.UnwrapLease(t)
+	for {
+		if pt, ok := ut.(*types.PointerType); ok && !pt.IsArray {
+			ut = pt.Base
+		} else {
+			break
+		}
+	}
+	if ut == nil || visited[ut] || g.isGeneric(ut) {
+		return
+	}
+	visited[ut] = true
+	if arr, ok := ut.(*types.ArrayType); ok {
+		g.collectTypeDrops(arr.Base, visited)
+		return
+	}
+	if list, ok := ut.(*types.ListType); ok {
+		g.collectTypeDrops(list.ElementType, visited)
+		return
+	}
+	if mp, ok := ut.(*types.MapType); ok {
+		g.collectTypeDrops(mp.Key, visited)
+		g.collectTypeDrops(mp.Value, visited)
+		return
+	}
+	if st, ok := ut.(*types.StructType); ok {
+		if g.getDropMethod(st) == "" && g.hasOwnedFields(st) {
+			g.requestAutoDrop(st)
+		}
+		for _, fType := range st.Fields {
+			g.collectTypeDrops(fType, visited)
+		}
+		return
+	}
+	if sum, ok := ut.(*types.SumType); ok {
+		if g.getDropMethod(sum) == "" && g.hasOwnedSumFields(sum) {
+			g.requestAutoDrop(sum)
+		}
+		for _, v := range sum.Variants {
+			for _, fType := range v.Fields {
+				g.collectTypeDrops(fType, visited)
+			}
+		}
+		return
 	}
 }
 
-func (g *Generator) collectVTablesFromInst(inst hir.Instruction) {
+func (g *Generator) collectVTablesFromOperand(op hir.Operand, visited map[types.NRType]bool) {
+	if op == nil {
+		return
+	}
+	if op.GetType() != nil {
+		g.collectTypeDrops(op.GetType(), visited)
+	}
+	if instOp, ok := op.(*hir.InstOperand); ok && instOp.Inst != nil {
+		g.collectVTablesFromInst(instOp.Inst, visited)
+	}
+}
+
+func (g *Generator) collectVTablesFromInst(inst hir.Instruction, visited map[types.NRType]bool) {
 	if inst == nil {
 		return
 	}
+	if inst.GetType() != nil {
+		g.collectTypeDrops(inst.GetType(), visited)
+	}
 	switch i := inst.(type) {
+	case *hir.Drop:
+		if i.Symbol != nil {
+			g.collectTypeDrops(i.Symbol.Type, visited)
+		}
+		if i.Expr != nil {
+			g.collectTypeDrops(g.SemanticInfo.Types[i.Expr], visited)
+		}
+		if i.Field != nil {
+			g.collectTypeDrops(g.SemanticInfo.Types[i.Field], visited)
+		}
+		if i.Index != nil {
+			g.collectTypeDrops(g.SemanticInfo.Types[i.Index], visited)
+		}
+	case *hir.Alloca:
+		g.collectTypeDrops(i.Type, visited)
 	case *hir.InterfaceCast:
 		valType := i.Val.GetType()
 		if instOp, ok := i.Val.(*hir.InstOperand); ok {
@@ -2064,88 +2141,93 @@ func (g *Generator) collectVTablesFromInst(inst hir.Instruction) {
 		if _, ok := unwrapped.(*types.ProtocolType); !ok {
 			g.requestVTable(valType, i.Type)
 		}
-		g.collectVTablesFromOperand(i.Val)
+		g.collectVTablesFromOperand(i.Val, visited)
 	case *hir.InterfaceCall:
-		g.collectVTablesFromOperand(i.Base)
+		g.collectVTablesFromOperand(i.Base, visited)
 		for _, arg := range i.Args {
-			g.collectVTablesFromOperand(arg)
+			g.collectVTablesFromOperand(arg, visited)
 		}
 	case *hir.Call:
 		for _, arg := range i.Args {
-			g.collectVTablesFromOperand(arg)
+			g.collectVTablesFromOperand(arg, visited)
 		}
 	case *hir.Store:
-		g.collectVTablesFromOperand(i.Dest)
-		g.collectVTablesFromOperand(i.Val)
+		g.collectVTablesFromOperand(i.Dest, visited)
+		g.collectVTablesFromOperand(i.Val, visited)
 	case *hir.Assign:
-		g.collectVTablesFromOperand(i.Dest)
-		g.collectVTablesFromOperand(i.Val)
+		g.collectVTablesFromOperand(i.Dest, visited)
+		g.collectVTablesFromOperand(i.Val, visited)
 	case *hir.Ret:
 		if i.Val != nil {
-			g.collectVTablesFromOperand(i.Val)
+			g.collectVTablesFromOperand(i.Val, visited)
 		}
 	case *hir.AddressOf:
-		g.collectVTablesFromOperand(i.Val)
+		g.collectVTablesFromOperand(i.Val, visited)
 	case *hir.Deref:
-		g.collectVTablesFromOperand(i.Val)
+		g.collectVTablesFromOperand(i.Val, visited)
 	case *hir.FieldAccess:
-		g.collectVTablesFromOperand(i.Base)
+		g.collectVTablesFromOperand(i.Base, visited)
 	case *hir.IndexAccess:
-		g.collectVTablesFromOperand(i.Base)
-		g.collectVTablesFromOperand(i.Index)
+		g.collectVTablesFromOperand(i.Base, visited)
+		g.collectVTablesFromOperand(i.Index, visited)
 	case *hir.BinOp:
-		g.collectVTablesFromOperand(i.Left)
-		g.collectVTablesFromOperand(i.Right)
+		if i.Op == "==" || i.Op == "!=" {
+			g.getEqMethod(i.Left.GetType())
+			g.getEqMethod(i.Right.GetType())
+		}
+		g.collectVTablesFromOperand(i.Left, visited)
+		g.collectVTablesFromOperand(i.Right, visited)
 	case *hir.UnOp:
-		g.collectVTablesFromOperand(i.Val)
+		g.collectVTablesFromOperand(i.Val, visited)
 	case *hir.Cast:
-		g.collectVTablesFromOperand(i.Val)
+		g.collectVTablesFromOperand(i.Val, visited)
 	case *hir.Alloc:
-		g.collectVTablesFromOperand(i.Val)
+		g.collectTypeDrops(i.Type, visited)
+		g.collectVTablesFromOperand(i.Val, visited)
 	case *hir.Try:
-		g.collectVTablesFromOperand(i.Val)
+		g.collectVTablesFromOperand(i.Val, visited)
 	case *hir.VariantConstructor:
 		for _, arg := range i.Args {
-			g.collectVTablesFromOperand(arg)
+			g.collectVTablesFromOperand(arg, visited)
 		}
 	case *hir.Spawn:
 		if i.Call != nil {
-			g.collectVTablesFromInst(i.Call)
+			g.collectVTablesFromInst(i.Call, visited)
 		}
-		g.collectVTablesFromOperand(i.MonitorChannel)
+		g.collectVTablesFromOperand(i.MonitorChannel, visited)
 	case *hir.ChanSend:
-		g.collectVTablesFromOperand(i.Chan)
-		g.collectVTablesFromOperand(i.Val)
+		g.collectVTablesFromOperand(i.Chan, visited)
+		g.collectVTablesFromOperand(i.Val, visited)
 	case *hir.ChanRecv:
-		g.collectVTablesFromOperand(i.Chan)
+		g.collectVTablesFromOperand(i.Chan, visited)
 	}
 }
 
-func (g *Generator) collectVTablesFromBlock(block *hir.HIRBlock) {
+func (g *Generator) collectVTablesFromBlock(block *hir.HIRBlock, visited map[types.NRType]bool) {
 	if block == nil {
 		return
 	}
 	for _, el := range block.Elements {
 		switch e := el.(type) {
 		case *hir.InstElement:
-			g.collectVTablesFromInst(e.Inst)
+			g.collectVTablesFromInst(e.Inst, visited)
 		case *hir.HIRIf:
-			g.collectVTablesFromOperand(e.Condition)
-			g.collectVTablesFromBlock(e.Then)
-			g.collectVTablesFromBlock(e.Else)
+			g.collectVTablesFromOperand(e.Condition, visited)
+			g.collectVTablesFromBlock(e.Then, visited)
+			g.collectVTablesFromBlock(e.Else, visited)
 		case *hir.HIRLoop:
-			g.collectVTablesFromBlock(e.Init)
-			g.collectVTablesFromOperand(e.Condition)
-			g.collectVTablesFromBlock(e.Step)
-			g.collectVTablesFromBlock(e.Body)
+			g.collectVTablesFromBlock(e.Init, visited)
+			g.collectVTablesFromOperand(e.Condition, visited)
+			g.collectVTablesFromBlock(e.Step, visited)
+			g.collectVTablesFromBlock(e.Body, visited)
 		case *hir.IteratorLoop:
-			g.collectVTablesFromOperand(e.Iterator)
-			g.collectVTablesFromBlock(e.Body)
+			g.collectVTablesFromOperand(e.Iterator, visited)
+			g.collectVTablesFromBlock(e.Body, visited)
 		case *hir.Select:
 			for _, sc := range e.Cases {
-				g.collectVTablesFromOperand(sc.Chan)
-				g.collectVTablesFromOperand(sc.Val)
-				g.collectVTablesFromBlock(sc.Body)
+				g.collectVTablesFromOperand(sc.Chan, visited)
+				g.collectVTablesFromOperand(sc.Val, visited)
+				g.collectVTablesFromBlock(sc.Body, visited)
 			}
 		}
 	}
@@ -2166,9 +2248,33 @@ func (g *Generator) PrepareForMultiPackage() {
 		}
 	}
 
+	visited := make(map[types.NRType]bool)
+
+	// Pre-scan all AST type statements and Defs
+	for _, file := range g.Program.Files {
+		for _, stmt := range file.Statements {
+			if ts, ok := stmt.(*ast.TypeStatement); ok {
+				if sym := g.SemanticInfo.Defs[ts.Name]; sym != nil {
+					g.collectTypeDrops(sym.Type, visited)
+				}
+			}
+		}
+	}
+
+	// Pre-scan all SemanticInfo types and spec types
+	for _, t := range g.SemanticInfo.Types {
+		g.collectTypeDrops(t, visited)
+	}
+	for _, t := range g.SemanticInfo.SpecTypes {
+		g.collectTypeDrops(t, visited)
+	}
+
 	// Pre-scan all HIR instructions to register all VTables and AutoDrops upfront
 	for _, hf := range g.hirProg.Functions {
-		g.collectVTablesFromBlock(hf.Body)
+		if hf.FuncSymbol != nil {
+			g.collectTypeDrops(hf.FuncSymbol.Type, visited)
+		}
+		g.collectVTablesFromBlock(hf.Body, visited)
 	}
 
 	// Also scan AST expressions in SemanticInfo for interface conversions
@@ -2186,6 +2292,21 @@ func (g *Generator) PrepareForMultiPackage() {
 					}
 				}
 			}
+		}
+	}
+
+	// Fixpoint expansion for AutoDropMethods
+	for {
+		added := false
+		for _, t := range g.AutoDropMethods {
+			before := len(g.AutoDropMethods)
+			g.collectTypeDrops(t, visited)
+			if len(g.AutoDropMethods) > before {
+				added = true
+			}
+		}
+		if !added {
+			break
 		}
 	}
 }
