@@ -516,14 +516,6 @@ func (g *Generator) genHIRInstruction(inst hir.Instruction) {
 					g.emit(fmt.Sprintf("    %s = true;", g.dropFlagName(varOp.Symbol)))
 				}
 			}
-			if sym := g.getMovedHeapPointerSymbol(i.Val); sym != nil {
-				destType := i.Dest.GetType()
-				if destType != nil {
-					if !types.IsPointerLike(destType) {
-						g.emit(fmt.Sprintf("    nr_free(%s); %s = NULL;", g.variableName(sym), g.variableName(sym)))
-					}
-				}
-			}
 		}
 	case *hir.Assign:
 		isMapOrIndexSet := false
@@ -2020,7 +2012,8 @@ func (g *Generator) cleanMovedHeapPointers(inst hir.Instruction) {
 					}
 				}
 				if paramType != nil {
-					if !types.IsPointerLike(paramType) {
+					cParam := g.cType(paramType)
+					if !g.isPointerTypeInC(paramType) && !strings.HasSuffix(cParam, "*") && !types.IsPointerLike(paramType) {
 						g.emit(fmt.Sprintf("    nr_free(%s); %s = NULL;", g.variableName(sym), g.variableName(sym)))
 					}
 				}
@@ -2032,7 +2025,8 @@ func (g *Generator) cleanMovedHeapPointers(inst hir.Instruction) {
 		if sym := g.getMovedHeapPointerSymbol(val); sym != nil {
 			destType := dest.GetType()
 			if destType != nil {
-				if !types.IsPointerLike(destType) {
+				cDest := g.cType(destType)
+				if !g.isPointerTypeInC(destType) && !strings.HasSuffix(cDest, "*") && !types.IsPointerLike(destType) {
 					g.emit(fmt.Sprintf("    nr_free(%s); %s = NULL;", g.variableName(sym), g.variableName(sym)))
 				}
 			}

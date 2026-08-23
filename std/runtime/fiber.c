@@ -2,6 +2,10 @@
 
 #define NR_FIBER_STACK_SIZE (1 * 1024 * 1024)
 
+#ifndef FIBER_FLAG_FLOAT_SWITCH
+#define FIBER_FLAG_FLOAT_SWITCH 0x1
+#endif
+
 // Debugger hook for fiber start
 #ifdef _WIN32
 __declspec(noinline) void __nora_fiber_started(void* parent) {
@@ -292,7 +296,7 @@ void worker_loop(void* arg) {
     // affinity.Group = worker_id / 64;
     // SetThreadGroupAffinity(GetCurrentThread(), &affinity, NULL);
 
-    main_fibers[worker_id] = ConvertThreadToFiber(&main_fiber_infos[worker_id]);
+    main_fibers[worker_id] = ConvertThreadToFiberEx(&main_fiber_infos[worker_id], FIBER_FLAG_FLOAT_SWITCH);
     main_fiber_infos[worker_id].handle = main_fibers[worker_id];
     main_fiber_infos[worker_id].state = 0;
     main_fiber_infos[worker_id].is_main = true; 
@@ -337,6 +341,23 @@ void worker_loop(void* arg) {
             } else if (s == 4) { // TERMINATED
                 void* _wg = info->finish_wg;
                 info->finish_wg = NULL;
+                if (!info->is_main) {
+                    if (info->handle) {
+                        DeleteFiber(info->handle);
+                        info->handle = NULL;
+                    }
+                }
+                NR_MUTEX_LOCK(&g_fiber_list_lock);
+                if (info->prev_global) info->prev_global->next_global = info->next_global;
+                if (info->next_global) info->next_global->prev_global = info->prev_global;
+                if (info == g_fibers_head) g_fibers_head = info->next_global;
+
+                // Push to terminated list
+                info->next_global = g_terminated_fibers_head;
+                info->prev_global = NULL;
+                if (g_terminated_fibers_head) g_terminated_fibers_head->prev_global = info;
+                g_terminated_fibers_head = info;
+                NR_MUTEX_UNLOCK(&g_fiber_list_lock);
                 if (_wg) nr_sync_waitgroup_done(_wg);
             }
         } else {
@@ -383,7 +404,8 @@ void worker_loop(void* arg) {
             NR_ATOMIC_DEC(&g_sleeping_workers);
         }
     }
-    if (worker_id > 0) _endthread();
+    ConvertFiberToThread();
+    _endthread();
 }
 
 void scheduler_init() {
@@ -416,7 +438,7 @@ void scheduler_init() {
     main_fiber_infos[0].resume_pending = 0;
     main_fiber_infos[0].is_main = true;
     main_fiber_infos[0].temp_count = 0;
-    main_fibers[0] = ConvertThreadToFiber(&main_fiber_infos[0]);
+    main_fibers[0] = ConvertThreadToFiberEx(&main_fiber_infos[0], FIBER_FLAG_FLOAT_SWITCH);
     main_fiber_infos[0].handle = main_fibers[0];
     main_fiber_infos[0].state = 4;
     main_fiber_infos[0].name = "main";
@@ -482,6 +504,23 @@ void scheduler_run_loop() {
             } else if (s == 4) { // TERMINATED
                 void* _wg = info->finish_wg;
                 info->finish_wg = NULL;
+                if (!info->is_main) {
+                    if (info->handle) {
+                        DeleteFiber(info->handle);
+                        info->handle = NULL;
+                    }
+                }
+                NR_MUTEX_LOCK(&g_fiber_list_lock);
+                if (info->prev_global) info->prev_global->next_global = info->next_global;
+                if (info->next_global) info->next_global->prev_global = info->prev_global;
+                if (info == g_fibers_head) g_fibers_head = info->next_global;
+
+                // Push to terminated list
+                info->next_global = g_terminated_fibers_head;
+                info->prev_global = NULL;
+                if (g_terminated_fibers_head) g_terminated_fibers_head->prev_global = info;
+                g_terminated_fibers_head = info;
+                NR_MUTEX_UNLOCK(&g_fiber_list_lock);
                 if (_wg) nr_sync_waitgroup_done(_wg);
             }
         } else {
@@ -567,6 +606,7 @@ void scheduler_cleanup() {
     g_terminated_fibers_head = NULL;
     NR_MUTEX_UNLOCK(&g_fiber_list_lock);
     NR_MUTEX_DESTROY(&g_fiber_list_lock);
+    ConvertFiberToThread();
     nr_untracked_cleanup();
 }
 
@@ -613,28 +653,7 @@ void resume(fiber_info_t* info) {
             else queue_push(&g_queue, info);
         }
     } else {
-#ifdef NR_DEBUG_FIBER
-        printf("[C-SCHED] resume: CAS failed for fiber %s (%p) (not in PARKED state). Incrementing resume_pending (currently %ld)...\n", info->name ? info->name : "unnamed", info, (long)NR_ATOMIC_LOAD(&info->resume_pending));
-#endif
         NR_ATOMIC_ADD(&info->resume_pending, 1);
-        // Double check
-        expected = 3;
-        if (NR_ATOMIC_CAS(&info->state, &expected, 0)) {
-#ifdef NR_DEBUG_FIBER
-            printf("[C-SCHED] resume: Double-check CAS succeeded for fiber %s (%p)!\n", info->name ? info->name : "unnamed", info);
-#endif
-            NR_ATOMIC_SUB(&info->resume_pending, 1);
-            {
-                int id = worker_id;
-                if (id >= 0 && id < num_workers && num_workers > 1 && !is_yield) {
-                    if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
-                    else deque_push(&g_local_queues[id], info);
-                } else {
-                    if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
-                    else queue_push(&g_queue, info);
-                }
-            }
-        }
     }
 }
 
@@ -659,32 +678,18 @@ void nr_fiber_finish_scoped(void* _wg) {
 }
 
 void WINAPI fiber_wrapper(LPVOID p) {
-    while (1) {
-        fiber_info_t* info = (fiber_info_t*)p;
-        spawn_data_t* data = (spawn_data_t*)(info + 1);
-        data->fn(data->arg);
-        nr_flush_temps();
-        NR_ATOMIC_DEC(&g_active_fibers);
-        
-        NR_MUTEX_LOCK(&g_fiber_list_lock);
-        if (info->prev_global) info->prev_global->next_global = info->next_global;
-        if (info->next_global) info->next_global->prev_global = info->prev_global;
-        if (info == g_fibers_head) g_fibers_head = info->next_global;
-
-        // Push to terminated list
-        info->next_global = g_terminated_fibers_head;
-        info->prev_global = NULL;
-        if (g_terminated_fibers_head) g_terminated_fibers_head->prev_global = info;
-        g_terminated_fibers_head = info;
-        NR_MUTEX_UNLOCK(&g_fiber_list_lock);
-
-        if (info->is_main) {
-            g_running = false;
-            ReleaseSemaphore(g_worker_sem, num_workers, NULL);
-        }
-        NR_ATOMIC_STORE(&info->state, 4); // TERMINATED
-        park();
+    fiber_info_t* info = (fiber_info_t*)p;
+    spawn_data_t* data = (spawn_data_t*)(info + 1);
+    data->fn(data->arg);
+    nr_flush_temps();
+    NR_ATOMIC_DEC(&g_active_fibers);
+    
+    if (info->is_main) {
+        g_running = false;
+        ReleaseSemaphore(g_worker_sem, num_workers, NULL);
     }
+    NR_ATOMIC_STORE(&info->state, 4); // TERMINATED
+    park();
 }
 
 void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char* file, int line) {
@@ -727,14 +732,14 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
     info->prev_global = NULL;
     NR_MUTEX_UNLOCK(&g_fiber_list_lock);
 
-    long old_count = NR_ATOMIC_ADD(&g_active_fibers, 1);
-    info->is_main = (old_count == 0);
+    NR_ATOMIC_ADD(&g_active_fibers, 1);
+    info->is_main = (name && strcmp(name, "main") == 0);
     
     spawn_data_t* data = (spawn_data_t*)(info + 1);
     data->fn = fn;
     data->arg = arg;
     if (!info->handle) {
-        info->handle = CreateFiber(NR_FIBER_STACK_SIZE, (LPFIBER_START_ROUTINE)fiber_wrapper, info);
+        info->handle = CreateFiberEx(0, NR_FIBER_STACK_SIZE, FIBER_FLAG_FLOAT_SWITCH, (LPFIBER_START_ROUTINE)fiber_wrapper, info);
     }
 
     if (name && strcmp(name, "main") == 0) {
@@ -1087,8 +1092,8 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
     info->prev_global = NULL;
     NR_MUTEX_UNLOCK(&g_fiber_list_lock);
 
-    long old_count = NR_ATOMIC_ADD(&g_active_fibers, 1);
-    info->is_main = (old_count == 0);
+    NR_ATOMIC_ADD(&g_active_fibers, 1);
+    info->is_main = (name && strcmp(name, "main") == 0);
 #ifdef NR_USE_FIBERS
     info->handle = wasm_cont_new(fiber_wrapper, info);
     queue_push(&g_queue, info);
@@ -1826,8 +1831,8 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
     info->prev_global = NULL;
     NR_MUTEX_UNLOCK(&g_fiber_list_lock);
     
-    long old_count = atomic_fetch_add(&g_active_fibers, 1);
-    info->is_main = (old_count == 0);
+    atomic_fetch_add(&g_active_fibers, 1);
+    info->is_main = (name && strcmp(name, "main") == 0);
     
     spawn_data_t* data = (spawn_data_t*)(info + 1);
     data->fn = fn;
@@ -2196,9 +2201,8 @@ void* scheduler_spawn(void (*fn)(void*), void* arg, const char* name, const char
     info->prev_global = NULL;
     NR_MUTEX_UNLOCK(&g_fiber_list_lock);
     
-    bool is_main = (NR_ATOMIC_LOAD(&g_active_fibers) == 0);
     NR_ATOMIC_INC(&g_active_fibers);
-    info->is_main = is_main;
+    info->is_main = (name && strcmp(name, "main") == 0);
     
     queue_push(&g_queue, info);
     return (fiber_t)info;

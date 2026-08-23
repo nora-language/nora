@@ -2303,7 +2303,7 @@ func (g *Generator) genSpawnExpression(e *ast.SpawnExpression) {
 	}
 	sb.WriteString(");\n")
 	sb.WriteString("    }\n")
-	// Clean up arguments if they are owned types (like channels)
+	// Clean up arguments if they are channels (matches channel_ref)
 	for i, arg := range e.Call.Arguments {
 		t := g.SemanticInfo.Types[arg.Value]
 		if g.isChanType(t) {
