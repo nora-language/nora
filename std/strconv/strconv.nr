@@ -86,7 +86,10 @@ pub fn ParseInt(s: #str, base: i32) Result[i32, str] {
             return Err[i32, str]("invalid syntax")
         }
 
-        // Check overflow (i32 max is 2147483647)
+        // Check overflow (i32 max is 2147483647, i32 min is -2147483648)
+        if (neg && res == 214748364 && digit == 8 && actual_base == 10 && i + 1 == len_s) {
+            return Ok[i32, str](-2147483647 - 1)
+        }
         if (res > (2147483647 - digit) / actual_base) {
             return Err[i32, str]("value out of range")
         }

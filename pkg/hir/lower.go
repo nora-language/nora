@@ -26,6 +26,7 @@ type Lowerer struct {
 	tempCounter         int
 	DebugLog            bool
 	CurrentFunc         *semantic.Symbol
+	currentFuncBody     *ast.BlockStatement
 	lambdaFuncs         []*Function
 	lambdaCounter       int
 	activeDefers        []ast.Expression
@@ -188,11 +189,14 @@ func (l *Lowerer) emitDrop(d topology.DropInfo, field ast.Expression, index ast.
 func (l *Lowerer) lowerFunction(sym *semantic.Symbol, fn *ast.FunctionStatement) *Function {
 	prevFunc := l.CurrentFunc
 	l.CurrentFunc = sym
+	prevFuncBody := l.currentFuncBody
+	l.currentFuncBody = fn.Body
 	prevDefers := l.activeDefers
 	l.activeDefers = nil
 	l.tempCounter = 0
 	defer func() {
 		l.CurrentFunc = prevFunc
+		l.currentFuncBody = prevFuncBody
 		l.activeDefers = prevDefers
 	}()
 
@@ -286,6 +290,29 @@ func (l *Lowerer) lowerBlock(block *ast.BlockStatement) *HIRBlock {
 		}
 
 		l.lowerStatement(stmt)
+
+		if block == l.currentFuncBody && i == len(block.Statements)-1 && len(l.activeDefers) > 0 {
+			hasRet := false
+			if _, isRet := stmt.(*ast.ReturnStatement); isRet {
+				hasRet = true
+			} else if len(hirBlock.Elements) > 0 {
+				if instEl, ok := hirBlock.Elements[len(hirBlock.Elements)-1].(*InstElement); ok {
+					if _, isRet := instEl.Inst.(*Ret); isRet {
+						hasRet = true
+					}
+				}
+			}
+			if !hasRet {
+				defers := l.activeDefers
+				l.activeDefers = nil
+				for dIdx := len(defers) - 1; dIdx >= 0; dIdx-- {
+					op := l.lowerExpression(defers[dIdx])
+					if instOp, ok := op.(*InstOperand); ok {
+						l.CurrentBlock.AddInst(instOp.Inst)
+					}
+				}
+			}
+		}
 
 		// 3. Emit post-drops after this statement
 		if l.Solver != nil && l.Solver.Drops[block] != nil {
@@ -654,14 +681,30 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 					l.CurrentBlock.AddInst(&Alloca{Name: arrTemp, Type: iterOp.GetType(), Symbol: iterSym})
 					l.CurrentBlock.AddInst(&Store{Dest: &VarOperand{Name: arrTemp, Type: iterOp.GetType(), Symbol: iterSym}, Val: iterOp})
 
+					unwrappedIter := types.UnwrapLease(iterOp.GetType())
+					if pt, ok := unwrappedIter.(*types.PointerType); ok && !pt.IsArray {
+						unwrappedIter = pt.Base
+					}
+
 					lenTemp := l.makeTempName()
 					l.CurrentBlock.AddInst(&Alloca{Name: lenTemp, Type: types.I32})
-					l.CurrentBlock.AddInst(&Store{
-						Dest: &VarOperand{Name: lenTemp, Type: types.I32},
-						Val: &InstOperand{Inst: &Expression{
+					var lenVal Operand
+					if at, isFixedArr := unwrappedIter.(*types.ArrayType); isFixedArr {
+						lenVal = &LiteralOperand{Value: fmt.Sprintf("%d", at.Len), Type: types.I32}
+					} else if _, isMap := unwrappedIter.(*types.MapType); isMap {
+						lenVal = &InstOperand{Inst: &Expression{
+							Expr: fmt.Sprintf("((%s) ? ((HashMap*)(%s))->capacity : 0)", arrTemp, arrTemp),
+							Type: types.I32,
+						}}
+					} else {
+						lenVal = &InstOperand{Inst: &Expression{
 							Expr: fmt.Sprintf("array_count(%s)", arrTemp),
 							Type: types.I32,
-						}},
+						}}
+					}
+					l.CurrentBlock.AddInst(&Store{
+						Dest: &VarOperand{Name: lenTemp, Type: types.I32},
+						Val:  lenVal,
 					})
 
 					idxTemp := l.makeTempName()
@@ -675,55 +718,122 @@ func (l *Lowerer) lowerStatement(stmt ast.Statement) {
 					prevBlock := l.CurrentBlock
 					l.CurrentBlock = bodyBlock
 
-					if s.Key != nil {
-						keyType := types.I32
-						sym := l.SemanticInfo.Defs[s.Key]
-						if sym == nil {
-							sym = l.SemanticInfo.Uses[s.Key]
-						}
-						l.CurrentBlock.AddInst(&Alloca{Name: s.Key.Value, Type: keyType, Symbol: sym})
-						l.CurrentBlock.AddInst(&Store{
-							Dest: &VarOperand{Name: s.Key.Value, Type: keyType, Symbol: sym},
-							Val:  &VarOperand{Name: idxTemp, Type: types.I32},
-						})
-					}
+					if mt, isMap := unwrappedIter.(*types.MapType); isMap {
+						occupiedBlock := NewHIRBlock()
+						l.CurrentBlock = occupiedBlock
 
-					if s.Value != nil {
-						sym := l.SemanticInfo.Defs[s.Value]
-						if sym == nil {
-							sym = l.SemanticInfo.Uses[s.Value]
-						}
-						var elemType types.NRType = types.I32
-						if sym != nil && sym.Type != nil && sym.Type != types.ErrorType {
-							elemType = sym.Type
-						} else if lt, ok := iterOp.GetType().(*types.ListType); ok {
-							elemType = lt.ElementType
-						} else if at, ok := iterOp.GetType().(*types.ArrayType); ok {
-							elemType = at.Base
-						} else if pt, ok := iterOp.GetType().(*types.PointerType); ok {
-							if at, ok := pt.Base.(*types.ArrayType); ok {
-								elemType = at.Base
-							} else {
-								elemType = pt.Base
+						if s.Key != nil {
+							keyType := mt.Key
+							sym := l.SemanticInfo.Defs[s.Key]
+							if sym == nil {
+								sym = l.SemanticInfo.Uses[s.Key]
 							}
-						} else if iterOp.GetType() != nil && iterOp.GetType().Name() == "str" {
-							elemType = types.I8
+							if sym != nil && sym.Type != nil && sym.Type != types.ErrorType {
+								keyType = sym.Type
+							}
+							l.CurrentBlock.AddInst(&Alloca{Name: s.Key.Value, Type: keyType, Symbol: sym})
+							l.CurrentBlock.AddInst(&Store{
+								Dest: &VarOperand{Name: s.Key.Value, Type: keyType, Symbol: sym},
+								Val: &InstOperand{Inst: &IndexAccess{
+									Base: &InstOperand{Inst: &Expression{
+										Expr: fmt.Sprintf("(((HashMap*)(%s))->entries[%s].key)", arrTemp, idxTemp),
+										Type: types.Ptr,
+									}},
+									Index:         &LiteralOperand{Value: "0", Type: types.I32},
+									Type:          keyType,
+									NoBoundsCheck: true,
+								}},
+							})
 						}
-						l.CurrentBlock.AddInst(&Alloca{Name: s.Value.Value, Type: elemType, Symbol: sym})
-						l.CurrentBlock.AddInst(&Store{
-							Dest: &VarOperand{Name: s.Value.Value, Type: elemType, Symbol: sym},
-							Val: &InstOperand{Inst: &IndexAccess{
-								Base:          &VarOperand{Name: arrTemp, Type: iterOp.GetType()},
-								Index:         &VarOperand{Name: idxTemp, Type: types.I32},
-								Type:          elemType,
-								NoBoundsCheck: true,
-							}},
-						})
-					}
 
-					subBody := l.lowerBlock(s.Body)
-					for _, el := range subBody.Elements {
-						l.CurrentBlock.AddElement(el)
+						if s.Value != nil {
+							elemType := mt.Value
+							sym := l.SemanticInfo.Defs[s.Value]
+							if sym == nil {
+								sym = l.SemanticInfo.Uses[s.Value]
+							}
+							if sym != nil && sym.Type != nil && sym.Type != types.ErrorType {
+								elemType = sym.Type
+							}
+							l.CurrentBlock.AddInst(&Alloca{Name: s.Value.Value, Type: elemType, Symbol: sym})
+							l.CurrentBlock.AddInst(&Store{
+								Dest: &VarOperand{Name: s.Value.Value, Type: elemType, Symbol: sym},
+								Val: &InstOperand{Inst: &IndexAccess{
+									Base: &InstOperand{Inst: &Expression{
+										Expr: fmt.Sprintf("(((HashMap*)(%s))->entries[%s].val)", arrTemp, idxTemp),
+										Type: types.Ptr,
+									}},
+									Index:         &LiteralOperand{Value: "0", Type: types.I32},
+									Type:          elemType,
+									NoBoundsCheck: true,
+								}},
+							})
+						}
+
+						subBody := l.lowerBlock(s.Body)
+						for _, el := range subBody.Elements {
+							l.CurrentBlock.AddElement(el)
+						}
+
+						l.CurrentBlock = bodyBlock
+						l.CurrentBlock.AddElement(&HIRIf{
+							Condition: &InstOperand{Inst: &Expression{
+								Expr: fmt.Sprintf("(((HashMap*)(%s))->entries[%s].occupied)", arrTemp, idxTemp),
+								Type: types.Bool,
+							}},
+							Then: occupiedBlock,
+						})
+					} else {
+						if s.Key != nil {
+							keyType := types.I32
+							sym := l.SemanticInfo.Defs[s.Key]
+							if sym == nil {
+								sym = l.SemanticInfo.Uses[s.Key]
+							}
+							l.CurrentBlock.AddInst(&Alloca{Name: s.Key.Value, Type: keyType, Symbol: sym})
+							l.CurrentBlock.AddInst(&Store{
+								Dest: &VarOperand{Name: s.Key.Value, Type: keyType, Symbol: sym},
+								Val:  &VarOperand{Name: idxTemp, Type: types.I32},
+							})
+						}
+
+						if s.Value != nil {
+							sym := l.SemanticInfo.Defs[s.Value]
+							if sym == nil {
+								sym = l.SemanticInfo.Uses[s.Value]
+							}
+							var elemType types.NRType = types.I32
+							if sym != nil && sym.Type != nil && sym.Type != types.ErrorType {
+								elemType = sym.Type
+							} else if lt, ok := iterOp.GetType().(*types.ListType); ok {
+								elemType = lt.ElementType
+							} else if at, ok := iterOp.GetType().(*types.ArrayType); ok {
+								elemType = at.Base
+							} else if pt, ok := iterOp.GetType().(*types.PointerType); ok {
+								if at, ok := pt.Base.(*types.ArrayType); ok {
+									elemType = at.Base
+								} else {
+									elemType = pt.Base
+								}
+							} else if iterOp.GetType() != nil && iterOp.GetType().Name() == "str" {
+								elemType = types.I8
+							}
+							l.CurrentBlock.AddInst(&Alloca{Name: s.Value.Value, Type: elemType, Symbol: sym})
+							l.CurrentBlock.AddInst(&Store{
+								Dest: &VarOperand{Name: s.Value.Value, Type: elemType, Symbol: sym},
+								Val: &InstOperand{Inst: &IndexAccess{
+									Base:          &VarOperand{Name: arrTemp, Type: iterOp.GetType()},
+									Index:         &VarOperand{Name: idxTemp, Type: types.I32},
+									Type:          elemType,
+									NoBoundsCheck: true,
+								}},
+							})
+						}
+
+						subBody := l.lowerBlock(s.Body)
+						for _, el := range subBody.Elements {
+							l.CurrentBlock.AddElement(el)
+						}
 					}
 
 					l.CurrentBlock.AddInst(&Store{
@@ -1381,10 +1491,13 @@ func (l *Lowerer) lowerExpressionRaw(expr ast.Expression) Operand {
 
 	case *ast.TryExpression:
 		valOp := l.lowerExpression(e.Value)
+		defersCopy := make([]ast.Expression, len(l.activeDefers))
+		copy(defersCopy, l.activeDefers)
 		tryInst := &Try{
-			ASTNode: e,
-			Val:     valOp,
-			Type:    t,
+			ASTNode:      e,
+			Val:          valOp,
+			Type:         t,
+			ActiveDefers: defersCopy,
 		}
 		return &InstOperand{Inst: tryInst}
 
@@ -1558,18 +1671,20 @@ func (l *Lowerer) lowerStatementsWithDrops(block *ast.BlockStatement, tempOp Ope
 	for i, stmt := range block.Statements {
 		l.currentASTStmtIndex = i
 
-		if l.Solver != nil && l.Solver.PreDrops[block] != nil {
-			drops := l.Solver.PreDrops[block][i]
-			for _, d := range drops {
-				var field ast.Expression
-				if d.Field != nil {
-					field = d.Field
+		if _, isRet := stmt.(*ast.ReturnStatement); !isRet {
+			if l.Solver != nil && l.Solver.PreDrops[block] != nil {
+				drops := l.Solver.PreDrops[block][i]
+				for _, d := range drops {
+					var field ast.Expression
+					if d.Field != nil {
+						field = d.Field
+					}
+					var index ast.Expression
+					if d.Index != nil {
+						index = d.Index
+					}
+					l.emitDrop(d, field, index)
 				}
-				var index ast.Expression
-				if d.Index != nil {
-					index = d.Index
-				}
-				l.emitDrop(d, field, index)
 			}
 		}
 
@@ -1802,9 +1917,12 @@ func (l *Lowerer) lowerLambdaFunction(e *ast.LambdaExpression) *Function {
 
 	if e.Body != nil {
 		oldFunc := l.CurrentFunc
+		oldFuncBody := l.currentFuncBody
 		l.CurrentFunc = hirFn.FuncSymbol
+		l.currentFuncBody = e.Body
 		hirFn.Body = l.lowerBlock(e.Body)
 		l.CurrentFunc = oldFunc
+		l.currentFuncBody = oldFuncBody
 	}
 
 	if len(l.activeDefers) > 0 {

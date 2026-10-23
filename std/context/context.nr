@@ -3,6 +3,8 @@ package context
 import "sync"
 import "string"
 
+extern fn channel_close(ch: #chan[bool])
+
 [shared]
 pub type Context = struct {
     cancelled: @sync.AtomicBool,
@@ -21,7 +23,7 @@ pub fn WithCancel() @Context {
 pub fn (self: &Context) Cancel(err_msg: str) {
     if (self.cancelled.CAS(false, true)) {
         self.err_msg = err_msg
-        self.done_chan <- true
+        channel_close(#self.done_chan)
     }
 }
 

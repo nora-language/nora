@@ -37,6 +37,7 @@ type Lifecycle struct {
 	FieldMoves           map[string]bool  // Tracked field moves for this symbol
 	IsExempt             bool             // If true, IsMoved is only for RAII (preventing double-drops), not for reporting violations
 	IsMovedByTerminal    bool             // If true, the move was caused by a terminal statement (return, break, continue)
+	IsCaptured           bool             // If true, this symbol is captured from an enclosing scope inside a lambda
 }
 
 type Solver struct {
@@ -233,7 +234,7 @@ func (s *Solver) Solve(node ast.Node) {
 			}
 			if scope := s.SemanticInfo.Scopes[n]; scope != nil {
 				for sym := range scope.Captures {
-					params[sym] = &Lifecycle{Symbol: sym, DefinedAt: -1, LastUsedAt: 0}
+					params[sym] = &Lifecycle{Symbol: sym, DefinedAt: -1, LastUsedAt: 0, IsCaptured: true}
 				}
 			}
 			oldFn := s.CurrentFunction
@@ -253,7 +254,7 @@ func (s *Solver) Solve(node ast.Node) {
 			})
 			for _, sym := range lambdaParamSyms {
 				lc := params[sym]
-				if !lc.IsMoved && sym.Kind == semantic.SymParam {
+				if !lc.IsMoved && !lc.IsCaptured && sym.Kind == semantic.SymParam {
 					if s.isOwned(sym) {
 						dropIdx := lc.LastUsedAt + 1
 						if dropIdx > len(n.Body.Statements) {
@@ -307,7 +308,7 @@ func (s *Solver) registerPreDrop(block *ast.BlockStatement, index int, info Drop
 	}
 }
 
-func (s *Solver) registerTryDrops(try *ast.TryExpression, visible map[*semantic.Symbol]*Lifecycle) {
+func (s *Solver) registerTryDrops(try *ast.TryExpression, currentIdx int, excludeSym *semantic.Symbol, visible map[*semantic.Symbol]*Lifecycle) {
 	if s.InSecondPass {
 		return
 	}
@@ -319,9 +320,15 @@ func (s *Solver) registerTryDrops(try *ast.TryExpression, visible map[*semantic.
 		return syms[i].Name < syms[j].Name
 	})
 	for _, sym := range syms {
+		if sym == excludeSym {
+			continue
+		}
 		lc := visible[sym]
-		if !lc.IsMoved && (sym.Kind == semantic.SymVar || sym.Kind == semantic.SymParam) {
+		if !lc.IsMoved && !lc.IsCaptured && (sym.Kind == semantic.SymVar || sym.Kind == semantic.SymParam) {
 			if s.isOwned(sym) {
+				if lc.LastUsedAt < currentIdx {
+					lc.LastUsedAt = currentIdx
+				}
 				s.TryDrops[try] = append(s.TryDrops[try], DropInfo{Symbol: sym})
 			}
 		}
@@ -445,6 +452,10 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 		}
 
 		// [NEW] C. TRY EXPRESSION HANDLING
+		var currentVarSym *semantic.Symbol
+		if varStmt, ok := stmt.(*ast.VarStatement); ok && !isNilNode(varStmt.Name) {
+			currentVarSym = s.SemanticInfo.Defs[varStmt.Name]
+		}
 		ast.Inspect(stmt, func(node ast.Node) bool {
 			if node == nil {
 				return false
@@ -453,7 +464,7 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 			case *ast.BlockStatement, *ast.IfExpression, *ast.MatchExpression, *ast.WhileStatement, *ast.ForStatement, *ast.ParallelExpression, *ast.SpawnExpression:
 				return false
 			case *ast.TryExpression:
-				s.registerTryDrops(n, allVisible)
+				s.registerTryDrops(n, i, currentVarSym, allVisible)
 			}
 			return true
 		})
@@ -599,6 +610,9 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 			isComplex = true
 		}
 		if _, ok := stmt.(*ast.DeferStatement); ok {
+			isComplex = true
+		}
+		if _, ok := stmt.(*ast.BlockStatement); ok {
 			isComplex = true
 		}
 
@@ -796,6 +810,13 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 		ast.Inspect(stmt, func(node ast.Node) bool {
 			switch n := node.(type) {
 			case *ast.LambdaExpression:
+				if scope := s.SemanticInfo.Scopes[n]; scope != nil {
+					for capSym := range scope.Captures {
+						if lc, exists := allVisible[capSym]; exists {
+							lc.LastUsedAt = AnchorEndOfFunction
+						}
+					}
+				}
 				s.Solve(n)
 				return false
 
@@ -934,9 +955,9 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 				usages := s.findUsagesInNode(n.Call)
 				for _, id := range usages {
 					if sym := s.SemanticInfo.Uses[id]; sym != nil {
-						if lc, exists := allVisible[sym]; exists {
+						if _, exists := allVisible[sym]; exists {
 							s.debug("      DEFER: Anchoring %s to end of scope", sym.Name)
-							lc.LastUsedAt = AnchorEndOfFunction // Special value for 'end of function'
+							s.updateLifecycle(sym, AnchorEndOfFunction, allVisible, make(map[*semantic.Symbol]bool))
 						}
 					}
 				}
@@ -1081,6 +1102,17 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 					}
 					s.analyzeBlock(n.Body, s.cloneLifecycles(allVisible))
 				}
+				if n.MonitorChannel != nil {
+					for _, id := range s.findUsagesInNode(n.MonitorChannel) {
+						if sym := s.SemanticInfo.Uses[id]; sym != nil {
+							if lc, exists := allVisible[sym]; exists {
+								s.debug("      CAPTURE: %s is captured by spawn monitor channel. Anchoring to end of function", sym.Name)
+								lc.LastUsedAt = AnchorEndOfFunction
+							}
+							s.updateLifecycle(sym, i, allVisible, make(map[*semantic.Symbol]bool))
+						}
+					}
+				}
 				if n.Call != nil {
 					// We must still analyze the call arguments for dependencies/usages
 					// Since we return false, we do it here manually.
@@ -1098,7 +1130,10 @@ func (s *Solver) analyzeBlock(block *ast.BlockStatement, trackedLifecycles map[*
 
 			case *ast.BlockStatement:
 				if node != block {
-					s.analyzeBlock(node.(*ast.BlockStatement), s.cloneLifecycles(allVisible))
+					subBlock := node.(*ast.BlockStatement)
+					subLifecycles := s.cloneLifecycles(allVisible)
+					s.analyzeBlock(subBlock, subLifecycles)
+					s.mergeBranchLifecycles(allVisible, []map[*semantic.Symbol]*Lifecycle{subLifecycles}, []bool{s.isTerminalBlock(subBlock)})
 				}
 				return false
 			}
@@ -1289,7 +1324,7 @@ func (s *Solver) registerScopeDrops(block *ast.BlockStatement, index int, visibl
 			continue
 		}
 		if sym.Kind == semantic.SymVar || sym.Kind == semantic.SymParam {
-			if !lc.IsMoved && s.isOwned(sym) {
+			if !lc.IsMoved && !lc.IsCaptured && s.isOwned(sym) {
 				s.registerPreDrop(block, index, DropInfo{Symbol: sym}, reason)
 			}
 			lc.IsMoved = true           // Prevent double-drop statically in subsequent unreachable code
@@ -1365,6 +1400,7 @@ func (s *Solver) cloneLifecycles(orig map[*semantic.Symbol]*Lifecycle) map[*sema
 			IsConditionallyMoved: v.IsConditionallyMoved,
 			IsExempt:             v.IsExempt,
 			IsMovedByTerminal:    v.IsMovedByTerminal,
+			IsCaptured:           v.IsCaptured,
 			MovedBy:              v.MovedBy,
 			AliasOf:              v.AliasOf,
 			FieldMoves:           make(map[string]bool),

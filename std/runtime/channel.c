@@ -55,6 +55,7 @@ struct channel_s {
     waiter_queue_t receivers;
     NR_MUTEX_T lock;
     NR_ATOMIC_INT ref_count;
+    bool closed;
 };
 
 void waiter_queue_init(waiter_queue_t* q) {
@@ -134,6 +135,7 @@ channel_t* channel_make(int capacity, int elem_size) {
     c->size = 0;
     c->head = 0;
     c->tail = 0;
+    c->closed = false;
     NR_ATOMIC_STORE(&c->ref_count, 1);
     c->buffer = capacity > 0 ? malloc(capacity * elem_size) : NULL;
     NR_MUTEX_INIT(&c->lock);
@@ -249,6 +251,13 @@ void channel_recv(channel_t* c, void* res) {
         if (st) select_state_release(st);
         return;
     }
+    if (c->closed) {
+        if (res && c->elem_size > 0) {
+            memset(res, 1, c->elem_size);
+        }
+        NR_MUTEX_UNLOCK(&c->lock);
+        return;
+    }
     select_state_t state;
     NR_ATOMIC_STORE(&state.value, 0);
     NR_ATOMIC_STORE(&state.ref_count, 1);
@@ -286,6 +295,29 @@ void channel_free(channel_t* c) {
     if (NR_ATOMIC_SUB(&c->ref_count, 1) == 1) {
         channel_destroy(c);
     }
+}
+
+void channel_close(channel_t* c) {
+    if (!c) return;
+    NR_MUTEX_LOCK(&c->lock);
+    c->closed = true;
+    while (1) {
+        waiter_t r = waiter_queue_pop(&c->receivers);
+        if (!r.info) break;
+        if (r.state) {
+            NR_INT expected = 0;
+            if (!NR_ATOMIC_CAS(&r.state->value, &expected, r.index)) {
+                select_state_release(r.state);
+                continue;
+            }
+        }
+        if (r.data_ptr && c->elem_size > 0) {
+            memset(r.data_ptr, 1, c->elem_size);
+        }
+        resume(r.info);
+        if (r.state) select_state_release(r.state);
+    }
+    NR_MUTEX_UNLOCK(&c->lock);
 }
 
 int channel_select(select_op_t* ops, int count, bool has_default) {
@@ -376,6 +408,13 @@ int channel_select(select_op_t* ops, int count, bool has_default) {
                     NR_MUTEX_UNLOCK(&c->lock);
                     resume(f);
                     if (st) select_state_release(st);
+                    return i;
+                }
+                if (c->closed) {
+                    if (ops[i].data && c->elem_size > 0) {
+                        memset(ops[i].data, 1, c->elem_size);
+                    }
+                    NR_MUTEX_UNLOCK(&c->lock);
                     return i;
                 }
             }

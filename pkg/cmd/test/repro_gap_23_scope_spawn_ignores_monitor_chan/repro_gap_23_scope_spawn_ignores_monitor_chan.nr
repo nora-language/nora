@@ -6,6 +6,7 @@ package main
 import "os"
 
 fn worker() {
+    panic("boom")
 }
 
 fn main() i32 {
@@ -14,7 +15,7 @@ fn main() i32 {
         spawn(mon_ch) worker()
     }
     var status = <-mon_ch
-    if status != "normal" {
+    if status != "boom" {
         os.Exit(1)
     }
     return 0

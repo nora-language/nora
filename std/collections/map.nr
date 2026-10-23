@@ -55,6 +55,7 @@ pub fn (m: &HashMap[K, V]) rehash[K: hash.Hashable, V](new_cap: i32) {
     var i = 0
     while i < old_cap {
         if (old_entries[i].occupied) {
+            old_entries[i].occupied = false
             var entry = @old_entries[i]
             m.Insert(@entry.key, @entry.value)
         }
@@ -65,7 +66,7 @@ pub fn (m: &HashMap[K, V]) rehash[K: hash.Hashable, V](new_cap: i32) {
 [unsafe]
 pub fn (m: &HashMap[K, V]) Insert[K: hash.Hashable, V](key: K, value: V) bool {
     // 70% load factor threshold
-    if (m.size * 10 >= m.capacity * 7) {
+    if ((m.size + 1) * 10 >= m.capacity * 7) {
         m.rehash[K, V](m.capacity * 2)
     }
 
@@ -81,8 +82,8 @@ pub fn (m: &HashMap[K, V]) Insert[K: hash.Hashable, V](key: K, value: V) bool {
         var entry_idx = (idx + i) % m.capacity
         if (m.entries[entry_idx].occupied) {
             if (m.entries[entry_idx].key == key) {
-                var _old_val = m.entries[entry_idx].value
-                m.entries[entry_idx].value = value
+                var _old_val = @m.entries[entry_idx].value
+                m.entries[entry_idx].value = @value
                 return false
             }
         } else {
@@ -95,10 +96,12 @@ pub fn (m: &HashMap[K, V]) Insert[K: hash.Hashable, V](key: K, value: V) bool {
                 if (first_deleted != -1) {
                     insert_idx = first_deleted
                 }
-                m.entries[insert_idx].key = key
-                m.entries[insert_idx].value = value
-                m.entries[insert_idx].occupied = true
-                m.entries[insert_idx].deleted = false
+                m.entries.unchecked_set(insert_idx, MapEntry[K, V] {
+                    key: @key,
+                    value: @value,
+                    occupied: true,
+                    deleted: false
+                })
                 m.size = m.size + 1
                 return true
             }
@@ -107,14 +110,17 @@ pub fn (m: &HashMap[K, V]) Insert[K: hash.Hashable, V](key: K, value: V) bool {
     }
 
     if (first_deleted != -1) {
-        m.entries[first_deleted].key = key
-        m.entries[first_deleted].value = value
-        m.entries[first_deleted].occupied = true
-        m.entries[first_deleted].deleted = false
+        m.entries.unchecked_set(first_deleted, MapEntry[K, V] {
+            key: @key,
+            value: @value,
+            occupied: true,
+            deleted: false
+        })
         m.size = m.size + 1
         return true
     }
-    return false
+    m.rehash[K, V](m.capacity * 2)
+    return m.Insert[K, V](@key, @value)
 }
 
 pub fn (m: #HashMap[K, V]) Get[K: hash.Hashable, V](key: #K) Option[#V] {

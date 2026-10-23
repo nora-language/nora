@@ -60,6 +60,7 @@ var precedences = map[token.TokenType]int{
 	token.XOR_ASSIGN:      ASSIGN,
 	token.SHL_ASSIGN:      ASSIGN,
 	token.SHR_ASSIGN:      ASSIGN,
+	token.AND_NOT_ASSIGN:  ASSIGN,
 	token.ARROW:           ASSIGN,
 }
 
@@ -192,6 +193,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.XOR_ASSIGN, p.parseAssignmentExpression)
 	p.registerInfix(token.SHL_ASSIGN, p.parseAssignmentExpression)
 	p.registerInfix(token.SHR_ASSIGN, p.parseAssignmentExpression)
+	p.registerInfix(token.AND_NOT_ASSIGN, p.parseAssignmentExpression)
 	p.registerInfix(token.ARROW, p.parseSendExpression) // ch <- val
 
 	p.nextToken()
@@ -764,6 +766,26 @@ func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
 
 	stmt := &ast.ExpressionStatement{Token: p.curToken}
 	stmt.Expression = p.parseExpression(LOWEST)
+
+	if stmt.Expression != nil && (p.peekTokenIs(token.INC) || p.peekTokenIs(token.DEC)) {
+		p.nextToken() // move to ++ or --
+		var op token.TokenType = token.PLUS
+		var opLit string = "+"
+		if p.curTokenIs(token.DEC) {
+			op = token.MINUS
+			opLit = "-"
+		}
+		stmt.Expression = &ast.AssignmentStatement{
+			Token: p.curToken,
+			Left:  stmt.Expression,
+			Value: &ast.InfixExpression{
+				Token:    token.Token{Type: op, Literal: opLit},
+				Left:     stmt.Expression,
+				Operator: opLit,
+				Right:    &ast.IntegerLiteral{Token: token.Token{Type: token.INT, Literal: "1"}, Value: 1},
+			},
+		}
+	}
 
 	return stmt
 }

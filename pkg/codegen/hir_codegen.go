@@ -355,8 +355,30 @@ func (g *Generator) genHIRBlock(b *hir.HIRBlock) {
 					}
 					if c.IsSend {
 						t := c.Val.GetType()
-						if _, ok := types.UnwrapLease(t).(*types.ChanType); ok {
-							g.emit(fmt.Sprintf("    if (_res != %d) { channel_free(_send_val_%d); }", opIdx, opIdx))
+						if movedSym := g.getMovedSymbolFromSelectSend(c.Val); movedSym != nil {
+							if g.hasDropFlag(movedSym) {
+								g.emit(fmt.Sprintf("    if (_res != %d) { %s = _send_val_%d; %s = true; }", opIdx, g.variableName(movedSym), opIdx, g.dropFlagName(movedSym)))
+							} else if types.IsOwnedType(t) {
+								g.emit(fmt.Sprintf("    if (_res != %d) {", opIdx))
+								g.emitDrop(fmt.Sprintf("_send_val_%d", opIdx), t, g.isPointerTypeInC(t))
+								g.emit("    }")
+							}
+						} else if types.IsOwnedType(t) {
+							isStaticStr := false
+							if _, isLit := c.Val.(*hir.LiteralOperand); isLit {
+								isStaticStr = true
+							} else if instOp, ok := c.Val.(*hir.InstOperand); ok {
+								if astExpr, ok := instOp.Inst.(*hir.ASTExpr); ok {
+									if _, isStrLit := astExpr.ASTNode.(*ast.StringLiteral); isStrLit {
+										isStaticStr = true
+									}
+								}
+							}
+							if !isStaticStr {
+								g.emit(fmt.Sprintf("    if (_res != %d) {", opIdx))
+								g.emitDrop(fmt.Sprintf("_send_val_%d", opIdx), t, g.isPointerTypeInC(t))
+								g.emit("    }")
+							}
 						}
 					}
 					opIdx++
@@ -1140,6 +1162,18 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 		return res
 	case *hir.IndexAccess:
 		cElemType := g.cType(i.Type)
+		if baseType := i.Base.GetType(); baseType != nil {
+			ut := types.UnwrapLease(baseType)
+			if pt, ok := ut.(*types.PointerType); ok && !pt.IsArray {
+				ut = pt.Base
+			}
+			if _, isFixedArr := ut.(*types.ArrayType); isFixedArr {
+				if g.isOperandPointerInC(i.Base) || strings.HasSuffix(g.cTypeOfOperand(i.Base), "*") {
+					return fmt.Sprintf("((%s)->data[%s])", g.hirOperandStr(i.Base), g.hirOperandStr(i.Index))
+				}
+				return fmt.Sprintf("((%s).data[%s])", g.hirOperandStr(i.Base), g.hirOperandStr(i.Index))
+			}
+		}
 		if i.NoBoundsCheck {
 			return fmt.Sprintf("((((%s*)%s)[%s]))", cElemType, g.hirOperandStr(i.Base), g.hirOperandStr(i.Index))
 		}
@@ -1190,11 +1224,18 @@ func (g *Generator) hirInstructionStr(inst hir.Instruction) string {
 			}
 		}
 
+		if i.Op == "&^" {
+			return fmt.Sprintf("(%s & ~(%s))", leftStr, rightStr)
+		}
 		return fmt.Sprintf("(%s %s %s)", leftStr, i.Op, rightStr)
 	case *hir.UnOp:
 		return fmt.Sprintf("(%s%s)", i.Op, g.hirOperandStr(i.Val))
 	case *hir.Try:
-		return g.exprToString(i.ASTNode)
+		prevDefers := g.ActiveDefers
+		g.ActiveDefers = i.ActiveDefers
+		res := g.exprToString(i.ASTNode)
+		g.ActiveDefers = prevDefers
+		return res
 	case *hir.ASTExpr:
 		return g.exprToString(i.ASTNode)
 	case *hir.Expression:
@@ -1937,6 +1978,38 @@ func (g *Generator) wrapHIRTemporaryHeapPointer(op hir.Operand, valStr string) s
 
 	return fmt.Sprintf("({ %s _temp_ptr = %s; %s _val; memset(&_val, 0, sizeof(_val)); if (_temp_ptr) { _val = *_temp_ptr; nr_free(_temp_ptr); } _val; })",
 		cTypeStr, valStr, cBaseTypeStr)
+}
+
+func (g *Generator) getMovedSymbolFromSelectSend(op hir.Operand) *semantic.Symbol {
+	if op == nil {
+		return nil
+	}
+	if varOp, ok := op.(*hir.VarOperand); ok {
+		if varOp.Symbol != nil {
+			return varOp.Symbol
+		}
+		return g.findDefSymbol(varOp.Name)
+	}
+	if instOp, ok := op.(*hir.InstOperand); ok {
+		switch inst := instOp.Inst.(type) {
+		case *hir.AddressOf:
+			return g.getMovedSymbolFromSelectSend(inst.Val)
+		case *hir.Load:
+			return g.getMovedSymbolFromSelectSend(inst.Src)
+		case *hir.ASTExpr:
+			switch node := inst.ASTNode.(type) {
+			case *ast.Identifier:
+				return g.SemanticInfo.Uses[node]
+			case *ast.PrefixExpression:
+				if node.Operator == "@" {
+					if id, ok := node.Right.(*ast.Identifier); ok {
+						return g.SemanticInfo.Uses[id]
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (g *Generator) getMovedHeapPointerSymbol(op hir.Operand) *semantic.Symbol {

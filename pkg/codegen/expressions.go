@@ -402,6 +402,15 @@ func (g *Generator) genInfixExpression(e *ast.InfixExpression) {
 		}
 	}
 
+	if e.Operator == "&^" {
+		g.buf.WriteString("(")
+		g.genValueExpression(e.Left)
+		g.buf.WriteString(" & ~(")
+		g.genValueExpression(e.Right)
+		g.buf.WriteString("))")
+		return
+	}
+
 	g.buf.WriteString("(")
 	g.genValueExpression(e.Left)
 	g.buf.WriteString(" " + e.Operator + " ")
@@ -1130,6 +1139,25 @@ func (g *Generator) genCallExpression(e *ast.CallExpression) {
 	// 4. Built-in: len(x) -> array_count(x)
 	if ident, ok := e.Function.(*ast.Identifier); ok && ident.Value == "len" {
 		if len(e.Arguments) >= 1 {
+			argType := g.SemanticInfo.Types[e.Arguments[0].Value]
+			unwrappedArg := types.UnwrapLease(argType)
+			for {
+				if pt, ok := unwrappedArg.(*types.PointerType); ok && !pt.IsArray {
+					unwrappedArg = pt.Base
+				} else {
+					break
+				}
+			}
+			if at, ok := unwrappedArg.(*types.ArrayType); ok {
+				g.buf.WriteString(fmt.Sprintf("%d", at.Len))
+				return
+			}
+			if _, ok := unwrappedArg.(*types.MapType); ok {
+				g.buf.WriteString("map_count(")
+				g.genExpression(e.Arguments[0].Value)
+				g.buf.WriteString(")")
+				return
+			}
 			g.buf.WriteString("array_count(")
 
 			isDoublePtrSliceParam := false
@@ -2180,6 +2208,9 @@ func (g *Generator) genSpawnExpression(e *ast.SpawnExpression) {
 	if hasScope {
 		sb.WriteString("    void* _scope_wg;\n")
 	}
+	if e.MonitorChannel != nil {
+		sb.WriteString("    channel_t* monitor_chan;\n")
+	}
 
 	for i, arg := range e.Call.Arguments {
 		t := g.SemanticInfo.Types[arg.Value]
@@ -2252,7 +2283,14 @@ func (g *Generator) genSpawnExpression(e *ast.SpawnExpression) {
 
 	sb.WriteString("    void* self = nr_fiber_current();\n")
 	sb.WriteString("    if (self && setjmp(*nr_fiber_panic_buf_ptr(self)) != 0) {\n")
-	if hasScope {
+	if e.MonitorChannel != nil {
+		sb.WriteString("        if (args->monitor_chan != NULL) {\n")
+		sb.WriteString("            const char* msg = nr_fiber_panic_msg(self);\n")
+		sb.WriteString("            if (msg == NULL) msg = \"unknown panic\";\n")
+		sb.WriteString("            char* panic_str = nr_str_from_cstring((void*)msg);\n")
+		sb.WriteString("            channel_send(args->monitor_chan, &panic_str);\n")
+		sb.WriteString("        }\n")
+	} else if hasScope {
 		sb.WriteString("        nr_sync_waitgroup_panic(args->_scope_wg, nr_fiber_panic_msg(self), nr_fiber_panic_file(self), nr_fiber_panic_line(self));\n")
 	}
 	sb.WriteString("    } else {\n")
@@ -2275,20 +2313,24 @@ func (g *Generator) genSpawnExpression(e *ast.SpawnExpression) {
 			if i < len(ft.ParamLeases) {
 				lease = ft.ParamLeases[i]
 			}
-			erasedParam := g.eraseType(ft.Params[i])
-			if types.IsPointerLike(ft.Params[i]) {
-				if pt, ok := erasedParam.(*types.PointerType); ok {
-					if _, ok := pt.Base.(*types.StructType); ok {
-					} else if _, ok := pt.Base.(*types.SumType); ok {
-					} else if _, ok := pt.Base.(*types.FunctionType); ok {
+			paramType := ft.Params[i]
+			if g.ErasedFuncs[fnName] {
+				erasedParam := g.eraseType(ft.Params[i])
+				if types.IsPointerLike(ft.Params[i]) {
+					if pt, ok := erasedParam.(*types.PointerType); ok {
+						if _, ok := pt.Base.(*types.StructType); ok {
+						} else if _, ok := pt.Base.(*types.SumType); ok {
+						} else if _, ok := pt.Base.(*types.FunctionType); ok {
+						} else {
+							erasedParam = types.Ptr
+						}
 					} else {
 						erasedParam = types.Ptr
 					}
-				} else {
-					erasedParam = types.Ptr
 				}
+				paramType = erasedParam
 			}
-			paramCType = g.cParamType(erasedParam, lease, false)
+			paramCType = g.cParamType(paramType, lease, false)
 		}
 		memberCType := g.cType(unwrapped)
 		if strings.HasSuffix(paramCType, "*") && !strings.HasSuffix(memberCType, "*") {
@@ -2304,6 +2346,9 @@ func (g *Generator) genSpawnExpression(e *ast.SpawnExpression) {
 	sb.WriteString(");\n")
 	sb.WriteString("    }\n")
 	// Clean up arguments if they are channels (matches channel_ref)
+	if e.MonitorChannel != nil {
+		sb.WriteString("    if (args->monitor_chan) channel_free(args->monitor_chan);\n")
+	}
 	for i, arg := range e.Call.Arguments {
 		t := g.SemanticInfo.Types[arg.Value]
 		if g.isChanType(t) {
@@ -2323,6 +2368,14 @@ func (g *Generator) genSpawnExpression(e *ast.SpawnExpression) {
 
 	// 3. Emit the call to scheduler_spawn
 	g.buf.WriteString(fmt.Sprintf("({ struct %s* _args = (struct %s*)nr_malloc_untracked(sizeof(struct %s)); ", structName, structName, structName))
+	if e.MonitorChannel != nil {
+		oldBuf := g.buf
+		g.buf = new(bytes.Buffer)
+		g.genExpression(e.MonitorChannel)
+		monStr := g.buf.String()
+		g.buf = oldBuf
+		g.buf.WriteString(fmt.Sprintf("_args->monitor_chan = %s; if (_args->monitor_chan) channel_ref(_args->monitor_chan); ", monStr))
+	}
 	for i, arg := range e.Call.Arguments {
 		targetType := g.unwrapSpawnArgType(g.SemanticInfo.Types[arg.Value])
 		targetCType := g.cType(targetType)
@@ -2888,7 +2941,13 @@ func (g *Generator) genTryExpression(e *ast.TryExpression) {
 	resName := g.cType(valType)
 
 	g.buf.WriteString(fmt.Sprintf("%s _res = ", resName))
-	g.genExpression(e.Value)
+	if g.isPointerInC(e.Value) && !strings.HasSuffix(resName, "*") && !(g.Solver != nil && g.Solver.Moves[e.Value]) {
+		g.buf.WriteString("*(")
+		g.genExpression(e.Value)
+		g.buf.WriteString(")")
+	} else {
+		g.genExpression(e.Value)
+	}
 	g.emit(";")
 
 	// Early return condition
@@ -2898,13 +2957,16 @@ func (g *Generator) genTryExpression(e *ast.TryExpression) {
 		g.emit("if (_res.tag == %s_TAG_None) {", g.mangledTypeName(st))
 	}
 
+	// Emit active defers LIFO before early return drops
+	for i := len(g.ActiveDefers) - 1; i >= 0; i-- {
+		g.buf.WriteString("    ")
+		g.genExpression(g.ActiveDefers[i])
+		g.emit(";")
+	}
+
 	// Emit RAII drops for early return
 	if g.Solver != nil && g.Solver.TryDrops[e] != nil {
-		for _, drop := range g.Solver.TryDrops[e] {
-			sym := drop.Symbol
-			isPtr := g.isPointerTypeInC(sym.Type)
-			g.emitDrop(g.variableName(sym), sym.Type, isPtr)
-		}
+		g.emitReturnDrops(g.Solver.TryDrops[e])
 	}
 
 	// Construct return value for current function
@@ -2913,6 +2975,7 @@ func (g *Generator) genTryExpression(e *ast.TryExpression) {
 		retType := ft.Return
 		retResName := g.cType(retType)
 
+		g.emit("    nr_flush_temps();")
 		if isResult {
 			// Return Result_Err_make(_res.data.Err)
 			g.emit("    return %s_Err_make(_res.data.Err);", retResName)
@@ -2921,6 +2984,7 @@ func (g *Generator) genTryExpression(e *ast.TryExpression) {
 			g.emit("    return %s_None_make();", retResName)
 		}
 	} else {
+		g.emit("    nr_flush_temps();")
 		g.emit("    return; /* error: no current function */")
 	}
 	g.emit("}")

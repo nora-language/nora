@@ -33,8 +33,10 @@ pub fn nr_deserialize_json_i32(data: str) @i32 {
     return i32(v.GetNumber())
 }
 
+extern fn nr_i64_to_str(v: i64) str
+
 pub fn nr_serialize_json_i64(val: #i64) str {
-    return io.FormatInt(i32(val)) // Format via standard i32 for simplicity or strconv
+    return nr_i64_to_str(val)
 }
 
 pub fn nr_deserialize_json_i64(data: str) @i64 {

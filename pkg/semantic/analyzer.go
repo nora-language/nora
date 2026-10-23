@@ -1107,7 +1107,10 @@ func (sa *SemanticAnalyzer) analyzePattern(pattern ast.Expression, targetType ty
 				if len(call.Arguments) != len(variant.Fields) {
 					sa.AddError(call.Pos(), "variant %s expects %d fields, got %d", variant.Name, len(variant.Fields), len(call.Arguments))
 				} else {
-					fieldNames := sa.sortedFieldNames(variant.Fields)
+					fieldNames := variant.FieldNames
+					if len(fieldNames) != len(variant.Fields) {
+						fieldNames = sa.sortedFieldNames(variant.Fields)
+					}
 					for j, arg := range call.Arguments {
 						fieldType := variant.Fields[fieldNames[j]]
 						sa.analyzePattern(arg.Value, fieldType, isMove)
@@ -1433,7 +1436,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 		switch n.Operator {
 
 		// Arithmetic & Bitwise: Result type == Operand type (e.g. i32 + i32 = i32)
-		case "+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>":
+		case "+", "-", "*", "/", "%", "&", "|", "^", "&^", "<<", ">>":
 			// 1. Check for struct operator overloads
 			if st, ok := leftBase.(*types.StructType); ok {
 				methodName := ""
@@ -1877,7 +1880,7 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					sa.SemanticInfo.Types[n] = rightType
 				}
 			} else if n.Operator == "~" {
-				if rightType != types.I32 && rightType != types.Int && rightType.GetKind() != types.KindGeneric {
+				if !isIntegerType(rightType) && rightType.GetKind() != types.KindGeneric {
 					sa.AddError(n.Token.Position, "cannot apply '~' to %s without 'bitnot' method", rightType.Name())
 					sa.SemanticInfo.Types[n] = types.ErrorType
 				} else {
@@ -2616,19 +2619,34 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 					sa.AddError(n.Pos(), "match statement on type '%s' is not exhaustive; missing variants: %s (or use a wildcard '_')", targetType.Name(), strings.Join(missing, ", "))
 				}
 			}
-		} else {
-			_, isProto := types.UnwrapLease(targetType).(*types.ProtocolType)
-			if isProto {
-				hasWildcard := false
-				for _, c := range n.Cases {
-					if ident, ok := c.Pattern.(*ast.Identifier); ok && ident.Value == "_" {
+		} else if targetType != nil && targetType != types.ErrorType {
+			hasWildcard := false
+			hasTrue := false
+			hasFalse := false
+			for _, c := range n.Cases {
+				if ident, ok := c.Pattern.(*ast.Identifier); ok {
+					if ident.Value == "_" {
+						hasWildcard = true
+						break
+					}
+					if sym := sa.SemanticInfo.Defs[ident]; sym != nil && sym.Kind == SymVar {
 						hasWildcard = true
 						break
 					}
 				}
-				if !hasWildcard {
-					sa.AddError(n.Pos(), "match statement on type '%s' is not exhaustive; missing fallback wildcard '_'", targetType.Name())
+				if b, ok := c.Pattern.(*ast.Boolean); ok {
+					if b.Value {
+						hasTrue = true
+					} else {
+						hasFalse = true
+					}
 				}
+			}
+			if targetType == types.Bool && hasTrue && hasFalse {
+				hasWildcard = true
+			}
+			if !hasWildcard {
+				sa.AddError(n.Pos(), "match statement on type '%s' is not exhaustive; missing fallback wildcard '_'", targetType.Name())
 			}
 		}
 
@@ -3724,6 +3742,10 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			isIterable := false
 			if _, ok := actualType.(*types.ListType); ok {
 				isIterable = true
+			} else if _, ok := actualType.(*types.ArrayType); ok {
+				isIterable = true
+			} else if _, ok := actualType.(*types.MapType); ok {
+				isIterable = true
 			} else if pt, ok := actualType.(*types.PointerType); ok && pt.IsArray {
 				isIterable = true
 			} else if actualType != nil && actualType.Name() == "str" {
@@ -4434,7 +4456,10 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 			}
 			// Return a constructor function type
 			params := []types.NRType{}
-			fieldNames := sa.sortedFieldNames(variant.Fields)
+			fieldNames := variant.FieldNames
+			if len(fieldNames) != len(variant.Fields) {
+				fieldNames = sa.sortedFieldNames(variant.Fields)
+			}
 			for _, fName := range fieldNames {
 				params = append(params, variant.Fields[fName])
 			}
@@ -4785,6 +4810,8 @@ func (sa *SemanticAnalyzer) AnalyzeLambdaExpression(n *ast.LambdaExpression) {
 					case "#":
 						lease = types.LeaseRead
 					}
+				} else if types.IsOwnedType(pType) {
+					lease = types.LeaseMove
 				}
 				sym.LeaseKind = lease
 				if lease == types.LeaseWrite || lease == types.LeaseMove {
@@ -4815,16 +4842,21 @@ func (sa *SemanticAnalyzer) AnalyzeLambdaExpression(n *ast.LambdaExpression) {
 		CapturesLease: capturesLease,
 	}
 	for _, p := range n.Parameters {
-		fnType.Params = append(fnType.Params, sa.resolveTypeNode(p.Type))
+		pType := sa.resolveTypeNode(p.Type)
+		fnType.Params = append(fnType.Params, pType)
 
 		lease := types.LeaseRead
 		if pref, ok := p.Type.(*ast.PrefixExpression); ok {
 			switch pref.Operator {
-			case "#":
+			case "&":
 				lease = types.LeaseWrite
 			case "@":
 				lease = types.LeaseMove
+			case "#":
+				lease = types.LeaseRead
 			}
+		} else if types.IsOwnedType(pType) {
+			lease = types.LeaseMove
 		}
 		fnType.ParamLeases = append(fnType.ParamLeases, lease)
 	}
@@ -5935,6 +5967,15 @@ func (sa *SemanticAnalyzer) substituteType(t types.NRType, subs map[string]types
 		return &types.MapType{
 			Key:   sa.substituteType(kt.Key, subs),
 			Value: sa.substituteType(kt.Value, subs),
+		}
+	case *types.ChanType:
+		return &types.ChanType{
+			Elem: sa.substituteType(kt.Elem, subs),
+		}
+	case *types.ArrayType:
+		return &types.ArrayType{
+			Base: sa.substituteType(kt.Base, subs),
+			Len:  kt.Len,
 		}
 	case *types.FunctionType:
 		newParams := []types.NRType{}
@@ -7333,6 +7374,81 @@ func (sa *SemanticAnalyzer) cloneAndSubstituteHelper(node ast.Node, mapping map[
 		}
 		return res
 
+	case *ast.TryExpression:
+		return &ast.TryExpression{
+			Token: n.Token,
+			Value: sa.cloneAndSubstitute(n.Value, mapping).(ast.Expression),
+		}
+
+	case *ast.ChanType:
+		res := &ast.ChanType{
+			Token: n.Token,
+		}
+		if !ast.IsNil(n.Value) {
+			res.Value = sa.cloneAndSubstitute(n.Value, mapping).(ast.TypeNode)
+		}
+		return res
+
+	case *ast.RangeExpression:
+		return &ast.RangeExpression{
+			Token: n.Token,
+			Start: sa.cloneAndSubstitute(n.Start, mapping).(ast.Expression),
+			End:   sa.cloneAndSubstitute(n.End, mapping).(ast.Expression),
+		}
+
+	case *ast.SliceExpression:
+		res := &ast.SliceExpression{
+			Token: n.Token,
+		}
+		if !ast.IsNil(n.Start) {
+			res.Start = sa.cloneAndSubstitute(n.Start, mapping).(ast.Expression)
+		}
+		if !ast.IsNil(n.End) {
+			res.End = sa.cloneAndSubstitute(n.End, mapping).(ast.Expression)
+		}
+		return res
+
+	case *ast.ConstStatement:
+		stmt := &ast.ConstStatement{
+			Token:    n.Token,
+			Name:     &ast.Identifier{Token: n.Name.Token, Value: n.Name.Value},
+			IsPublic: n.IsPublic,
+		}
+		if !ast.IsNil(n.Type) {
+			stmt.Type = sa.cloneAndSubstitute(n.Type, mapping).(ast.TypeNode)
+		}
+		if !ast.IsNil(n.Value) {
+			stmt.Value = sa.cloneAndSubstitute(n.Value, mapping).(ast.Expression)
+		}
+		return stmt
+
+	case *ast.SelectStatement:
+		res := &ast.SelectStatement{
+			Token: n.Token,
+		}
+		for _, c := range n.Cases {
+			newCase := &ast.SelectCase{
+				Token: c.Token,
+			}
+			if !ast.IsNil(c.Condition) {
+				newCase.Condition = sa.cloneAndSubstitute(c.Condition, mapping).(ast.Statement)
+			}
+			if c.Body != nil {
+				newCase.Body = sa.cloneAndSubstitute(c.Body, mapping).(*ast.BlockStatement)
+			}
+			res.Cases = append(res.Cases, newCase)
+		}
+		return res
+
+	case *ast.PinStatement:
+		res := &ast.PinStatement{
+			Token: n.Token,
+		}
+		for _, t := range n.Targets {
+			res.Targets = append(res.Targets, &ast.Identifier{Token: t.Token, Value: t.Value})
+		}
+		return res
+
 	default:
 		return n // Fallback
 	}
@@ -7405,6 +7521,14 @@ func (sa *SemanticAnalyzer) implements(concrete types.NRType, protocol *types.Pr
 		if fnType.Receiver != nil {
 			actualSelf = fnType.Receiver
 			actualMethodParams = fnType.Params
+			if pt, ok := concrete.(*types.PointerType); ok && pt.Leased {
+				if pt.Kind == types.LeaseRead && (fnType.ReceiverLease == types.LeaseWrite || fnType.ReceiverLease == types.LeaseMove) {
+					return false
+				}
+				if pt.Kind == types.LeaseWrite && fnType.ReceiverLease == types.LeaseMove {
+					return false
+				}
+			}
 		} else {
 			if len(fnType.Params) == 0 {
 				return false
@@ -7617,7 +7741,31 @@ func (sa *SemanticAnalyzer) matchType(pattern ast.Node, actual types.NRType, typ
 			}
 		}
 	case *ast.IndexExpression:
-		// Handle List[T], Map[K, V], Box[T]
+		// Handle slice syntax T[] (len(pt.Indices) == 0) as well as List[T], Map[K, V], Box[T]
+		if len(pt.Indices) == 0 {
+			if lt, ok := actual.(*types.ListType); ok {
+				sa.matchType(pt.Left, lt.ElementType, typeParams, inferred, false)
+				return
+			} else if at, ok := actual.(*types.ArrayType); ok {
+				sa.matchType(pt.Left, at.Base, typeParams, inferred, false)
+				return
+			} else if ptrT, ok := actual.(*types.PointerType); ok {
+				if ptrT.IsArray {
+					sa.matchType(pt.Left, ptrT.Base, typeParams, inferred, false)
+					return
+				}
+				if lt, ok := ptrT.Base.(*types.ListType); ok {
+					sa.matchType(pt.Left, lt.ElementType, typeParams, inferred, false)
+					return
+				} else if at, ok := ptrT.Base.(*types.ArrayType); ok {
+					sa.matchType(pt.Left, at.Base, typeParams, inferred, false)
+					return
+				} else if innerPtr, ok := ptrT.Base.(*types.PointerType); ok && innerPtr.IsArray {
+					sa.matchType(pt.Left, innerPtr.Base, typeParams, inferred, false)
+					return
+				}
+			}
+		}
 		baseNode, ok := pt.Left.(ast.TypeNode)
 		if !ok {
 			return
@@ -7644,6 +7792,14 @@ func (sa *SemanticAnalyzer) matchType(pattern ast.Node, actual types.NRType, typ
 				for i, idx := range pt.Indices {
 					sa.matchType(idx, st.TypeArgs[i], typeParams, inferred, false)
 				}
+			}
+		}
+	case *ast.ChanType:
+		if ct, ok := actual.(*types.ChanType); ok {
+			sa.matchType(pt.Value, ct.Elem, typeParams, inferred, false)
+		} else if ptrT, ok := actual.(*types.PointerType); ok {
+			if ct, ok := ptrT.Base.(*types.ChanType); ok {
+				sa.matchType(pt.Value, ct.Elem, typeParams, inferred, false)
 			}
 		}
 	case *ast.FunctionType:
@@ -7681,20 +7837,37 @@ func (sa *SemanticAnalyzer) typeToTypeNode(t types.NRType) ast.TypeNode {
 				sa.typeToTypeNode(kt.Value).(ast.Expression),
 			},
 		}
-	case *types.PointerType:
-		op := "@"
-		var tokType token.TokenType = token.MOVE
-		if kt.Kind == types.LeaseRead {
-			op = "#"
-			tokType = token.HASH
-		} else if kt.Kind == types.LeaseWrite {
-			op = "&"
-			tokType = token.AND
+	case *types.ChanType:
+		res = &ast.ChanType{
+			Token: token.Token{Type: token.CHAN, Literal: "chan"},
+			Value: sa.typeToTypeNode(kt.Elem),
 		}
-		res = &ast.PrefixExpression{
-			Token:    token.Token{Type: tokType, Literal: op},
-			Operator: op,
-			Right:    sa.typeToTypeNode(kt.Base).(ast.Expression),
+	case *types.PointerType:
+		if kt.IsArray && !kt.Leased {
+			res = &ast.IndexExpression{
+				Token:   token.Token{Type: token.LBRACKET, Literal: "["},
+				Left:    sa.typeToTypeNode(kt.Base).(ast.Expression),
+				Indices: []ast.Expression{},
+			}
+		} else {
+			op := "@"
+			var tokType token.TokenType = token.MOVE
+			if kt.Kind == types.LeaseRead {
+				op = "#"
+				tokType = token.HASH
+			} else if kt.Kind == types.LeaseWrite {
+				op = "&"
+				tokType = token.AND
+			}
+			inner := kt.Base
+			if kt.IsArray {
+				inner = &types.PointerType{Base: kt.Base, IsArray: true}
+			}
+			res = &ast.PrefixExpression{
+				Token:    token.Token{Type: tokType, Literal: op},
+				Operator: op,
+				Right:    sa.typeToTypeNode(inner).(ast.Expression),
+			}
 		}
 	default:
 		// Fallback for named types (Structs, SumTypes)
@@ -7917,7 +8090,11 @@ func isIntegerType(t types.NRType) bool {
 		return false
 	}
 	name := t.Name()
-	return name == "int" || name == "i32" || name == "i64" || name == "u64" || name == "i8" || name == "byte"
+	switch name {
+	case "int", "uint", "i8", "u8", "byte", "i16", "u16", "i32", "u32", "i64", "u64", "isize", "usize":
+		return true
+	}
+	return false
 }
 
 func (sa *SemanticAnalyzer) isHeapAllocated(t types.NRType) bool {
@@ -8243,6 +8420,10 @@ func (sa *SemanticAnalyzer) hasGeneric(t types.NRType) bool {
 		return sa.hasGeneric(kt.ElementType)
 	case *types.MapType:
 		return sa.hasGeneric(kt.Key) || sa.hasGeneric(kt.Value)
+	case *types.ChanType:
+		return sa.hasGeneric(kt.Elem)
+	case *types.ArrayType:
+		return sa.hasGeneric(kt.Base)
 	case *types.StructType:
 		if len(kt.TypeParams) > 0 {
 			return true

@@ -252,6 +252,7 @@ void nr_free_str(void* ptr);
 
 void nr_mem_init();
 void nr_mem_report();
+extern NR_ATOMIC_LONG g_total_allocations;
 void scheduler_init();
 void* scheduler_spawn(void (*func)(void*), void* data, const char* name, const char* file, int line);
 void* nr_fiber_current(void);
@@ -290,10 +291,26 @@ void* array_slice(void* arr, int start, int end, int elem_size);
 char* string_slice(char* s, int start, int end);
 void* array_bounds_check(void* arr, int index, const char* file, int line);
 
+typedef struct {
+    void* key;
+    void* val;
+    bool occupied;
+} MapEntry;
+
+typedef struct {
+    int capacity;
+    int size;
+    MapEntry* entries;
+    int key_size;
+    int val_size;
+    bool is_str_key;
+} HashMap;
+
 void* map_make(int key_size, int val_size, bool is_str_key, const char* file, int line);
 void map_set(void* _m, void* key, void* val);
 void* map_get(void* _m, void* key);
 bool map_contains(void* _m, void* key);
+int map_count(void* _m);
 void map_free(void* _m);
 
 void* nr_malloc_debug(size_t size, const char* file, int line);
@@ -383,6 +400,7 @@ void channel_recv(channel_t* c, void* res);
 void channel_ref(channel_t* c);
 void channel_destroy(channel_t* c);
 void channel_free(channel_t* c);
+void channel_close(channel_t* c);
 int channel_select(select_op_t* ops, int count, bool has_default);
 
 #ifdef __cplusplus

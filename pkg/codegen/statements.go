@@ -686,6 +686,9 @@ func (g *Generator) genMatchWithTarget(s *ast.MatchExpression, targetVar string)
 							g.emit("    memset(&%s, 0, sizeof(%s));", id.Value, g.cType(tId))
 						}
 					}
+					if g.hasDropFlag(sym) {
+						g.emit("    %s = false;", g.dropFlagName(sym))
+					}
 				}
 			} else if sel, ok := moveSource.(*ast.SelectorExpression); ok {
 				tSel := g.SemanticInfo.Types[sel]
@@ -786,6 +789,9 @@ func (g *Generator) genMatchWithTarget(s *ast.MatchExpression, targetVar string)
 					for _, cap := range captures {
 						g.emit("        %s;", cap)
 					}
+				}
+				if isMove && !st.IsPrimitiveEnum {
+					g.emit("        _target.tag = -1;")
 				}
 			}
 

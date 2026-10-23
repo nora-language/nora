@@ -65,6 +65,17 @@ func Inspect(node Node, f Inspector) {
 		Inspect(n.Name, f)  // Variable Name
 		Inspect(n.Value, f) // The Expression
 
+	case *ConstStatement:
+		if n.Name != nil {
+			Inspect(n.Name, f)
+		}
+		if n.Type != nil {
+			Inspect(n.Type, f)
+		}
+		if n.Value != nil {
+			Inspect(n.Value, f)
+		}
+
 	case *AssignmentStatement:
 		Inspect(n.Left, f)
 
@@ -173,6 +184,9 @@ func Inspect(node Node, f Inspector) {
 		}
 
 	case *SpawnExpression:
+		if n.MonitorChannel != nil {
+			Inspect(n.MonitorChannel, f)
+		}
 		if n.Call != nil {
 			Inspect(n.Call, f)
 		}

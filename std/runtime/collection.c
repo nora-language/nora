@@ -1,20 +1,6 @@
 #include "runtime.h"
 
 // --- COLLECTION RUNTIME ---
-typedef struct {
-    void* key;
-    void* val;
-    bool occupied;
-} MapEntry;
-
-typedef struct {
-    int capacity;
-    int size;
-    MapEntry* entries;
-    int key_size;
-    int val_size;
-    bool is_str_key;
-} HashMap;
 
 unsigned int map_hash(HashMap* m, void* key) {
     unsigned int hash = 2166136261u;
@@ -112,6 +98,12 @@ void* map_get(void* _m, void* key) {
 
 bool map_contains(void* _m, void* key) {
     return map_get(_m, key) != NULL;
+}
+
+int map_count(void* _m) {
+    HashMap* m = (HashMap*)_m;
+    if (!m) return 0;
+    return m->size;
 }
 
 void map_free(void* _m) {
@@ -230,8 +222,11 @@ char* string_slice(char* s, int start, int end) {
     void* p = nr_malloc(new_len + 1);
     char* res = (char*)p;
     nr_header_t* h = (nr_header_t*)((char*)p - NR_HEADER_SIZE);
-    h->count = 0;
-    h->elem_size = new_len;
+    h->count = new_len;
+    h->elem_size = 1;
+    if (new_len > 0) {
+        NR_ATOMIC_SUB(&g_total_allocations, 1);
+    }
     h->magic = NR_HEADER_MAGIC;
     memcpy(res, s + start, new_len);
     res[new_len] = 0;

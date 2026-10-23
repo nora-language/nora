@@ -12,6 +12,9 @@ char* nr_str_concat(char* s1, char* s2) {
     nr_header_t* h = (nr_header_t*)((char*)p - NR_HEADER_SIZE);
     h->count = (int)(l1 + l2);
     h->elem_size = 1;
+    if (l1 + l2 > 0) {
+        NR_ATOMIC_SUB(&g_total_allocations, 1);
+    }
     NR_ATOMIC_STORE(&h->ref_count, 0);
     h->magic = NR_HEADER_MAGIC;
     memcpy(res, s1, l1);
@@ -34,6 +37,9 @@ char* nr_str_from_cstring(void* s) {
     nr_header_t* h = (nr_header_t*)((char*)p - NR_HEADER_SIZE);
     h->count = (int)len;
     h->elem_size = 1;
+    if (len > 0) {
+        NR_ATOMIC_SUB(&g_total_allocations, 1);
+    }
     NR_ATOMIC_STORE(&h->ref_count, 0);
     h->magic = NR_HEADER_MAGIC;
     if (len > 0) {
@@ -83,8 +89,11 @@ char* nr_strdup(const char* s) {
     void* p = nr_malloc(len + 1);
     char* res = (char*)p;
     nr_header_t* h = (nr_header_t*)((char*)p - NR_HEADER_SIZE);
-    h->count = 0;
-    h->elem_size = (int)len;
+    h->count = (int)len;
+    h->elem_size = 1;
+    if (len > 0) {
+        NR_ATOMIC_SUB(&g_total_allocations, 1);
+    }
     NR_ATOMIC_STORE(&h->ref_count, 0);
     h->magic = NR_HEADER_MAGIC;
     memcpy(res, s, len + 1);

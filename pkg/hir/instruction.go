@@ -283,9 +283,10 @@ func (a *Alloc) String() string {
 }
 
 type Try struct {
-	ASTNode *ast.TryExpression
-	Val     Operand
-	Type    types.NRType
+	ASTNode      *ast.TryExpression
+	Val          Operand
+	Type         types.NRType
+	ActiveDefers []ast.Expression
 }
 
 func (t *Try) GetInstructionKind() InstructionKind { return InstTry }

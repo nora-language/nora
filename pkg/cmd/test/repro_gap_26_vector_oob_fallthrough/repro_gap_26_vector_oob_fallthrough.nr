@@ -3,14 +3,21 @@
 package main
 
 import "collections"
-import "io"
 import "os"
 
+fn pop_empty(v: &collections.Vector[i32]) {
+    var _ = v.Pop[i32]()
+}
+
+[unsafe]
 fn main() i32 {
     var v = collections.NewVector[i32](4)
-    var dummy = v.Pop[i32]()
-    if v.Len[i32]() < 0 {
-        io.PrintLn("FAIL: Vector.Pop on empty vector corrupted v.size to ${v.Len[i32]()}")
+    var mon_ch = make(chan[str], 1)
+    scope {
+        spawn(mon_ch) pop_empty(&v)
+    }
+    var msg = <-mon_ch
+    if msg != "Pop from empty vector" || v.Len[i32]() != 0 {
         os.Exit(1)
     }
     return 0

@@ -1400,14 +1400,35 @@ func (g *Generator) emitAutoDropMethods() {
 			g.emit("    if (self == NULL) return;")
 
 			if st, ok := t.(*types.StructType); ok {
+				if strings.HasPrefix(st.TypeName, "MapEntry") {
+					if _, hasOcc := st.Fields["occupied"]; hasOcc {
+						g.emit("    if (!self->occupied) return;")
+					}
+				}
 				if userDrop := g.getUserDropMethod(t); userDrop != "" {
 					g.emit("    %s(NULL, self);", userDrop)
 				}
-				for _, fName := range st.FieldNames {
-					fType := st.Fields[fName]
-					if types.IsOwnedType(fType) {
-						fExpr := fmt.Sprintf("self->%s", fName)
-						g.emitDrop(fExpr, fType, g.isPointerTypeInC(fType))
+				if strings.HasPrefix(st.TypeName, "Vector") && st.Fields["data"] != nil && st.Fields["size"] != nil {
+					fType := st.Fields["data"]
+					if pt, isPtr := fType.(*types.PointerType); isPtr && pt.IsArray {
+						elemType := pt.Base
+						if elemType != nil && types.IsOwnedType(elemType) {
+							g.emit("    if (self->data != NULL) {")
+							g.emit("        for (int _i = 0; _i < self->size; _i++) {")
+							elemExpr := fmt.Sprintf("((%s*)array_data(self->data))[_i]", g.cType(elemType))
+							g.emitDrop(elemExpr, elemType, g.isPointerTypeInC(elemType))
+							g.emit("        }")
+							g.emit("    }")
+						}
+						g.emit("    nr_free(self->data);")
+					}
+				} else {
+					for _, fName := range st.FieldNames {
+						fType := st.Fields[fName]
+						if types.IsOwnedType(fType) {
+							fExpr := fmt.Sprintf("self->%s", fName)
+							g.emitDrop(fExpr, fType, g.isPointerTypeInC(fType))
+						}
 					}
 				}
 			} else if st, ok := t.(*types.SumType); ok {
@@ -2905,12 +2926,6 @@ func (g *Generator) emitLambdaEnvDrops() {
 				g.emit(fmt.Sprintf("void %s_env_drop(void* env_ptr) {", fnName))
 				g.emit("    if (!env_ptr) return;")
 				g.emit(fmt.Sprintf("    %s* env = (%s*)env_ptr;", envStructName, envStructName))
-				for _, cap := range captures {
-					if types.IsOwnedType(cap.Type) {
-						fieldExpr := fmt.Sprintf("env->%s", g.mangleName(cap))
-						g.emitDrop(fieldExpr, cap.Type, g.isPointerTypeInC(cap.Type))
-					}
-				}
 				g.emit("    nr_free(env);")
 				g.emit("}")
 				g.emit("")
@@ -2936,23 +2951,9 @@ func (g *Generator) emitPackageLambdaEnvDrops(pkgName string) {
 				hasCaptures = true
 			}
 			if hasCaptures {
-				var captures []*semantic.Symbol
-				for sym := range scope.Captures {
-					captures = append(captures, sym)
-				}
-				sort.Slice(captures, func(i, j int) bool {
-					return captures[i].Name < captures[j].Name
-				})
-
 				g.emit(fmt.Sprintf("void %s_env_drop(void* env_ptr) {", fnName))
 				g.emit("    if (!env_ptr) return;")
 				g.emit(fmt.Sprintf("    %s* env = (%s*)env_ptr;", envStructName, envStructName))
-				for _, cap := range captures {
-					if types.IsOwnedType(cap.Type) {
-						fieldExpr := fmt.Sprintf("env->%s", g.mangleName(cap))
-						g.emitDrop(fieldExpr, cap.Type, g.isPointerTypeInC(cap.Type))
-					}
-				}
 				g.emit("    nr_free(env);")
 				g.emit("}")
 				g.emit("")

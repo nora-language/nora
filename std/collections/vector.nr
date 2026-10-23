@@ -54,7 +54,7 @@ pub fn (v: &Vector[T]) Push[T](val: T) {
 
 pub fn (v: #Vector[T]) Get[T](index: i32) #T {
     if (index < 0 || index >= v.size) {
-        io.PrintLn("Error: Index ${index} out of bounds (size ${v.size}) in Get")
+        panic("Index out of bounds in Vector.Get")
     }
     return v.data.unchecked_get(index)
 }
@@ -62,7 +62,7 @@ pub fn (v: #Vector[T]) Get[T](index: i32) #T {
 [unsafe]
 pub fn (v: &Vector[T]) GetMut[T](index: i32) &T {
     if (index < 0 || index >= v.size) {
-        io.PrintLn("Error: Index ${index} out of bounds (size ${v.size}) in GetMut")
+        panic("Index out of bounds in Vector.GetMut")
     }
     return &v.data.unchecked_get(index)
 }
@@ -71,23 +71,25 @@ pub fn (v: &Vector[T]) GetMut[T](index: i32) &T {
 [unsafe]
 pub fn (v: &Vector[T]) Pop[T]() T {
     if (v.size == 0) {
-        io.PrintLn("Error: Pop from empty vector")
+        panic("Pop from empty vector")
     }
     v.size = v.size - 1
-    return v.data[v.size]
+    return @v.data.unchecked_get(v.size)
 }
 
 [unsafe]
 pub fn (v: &Vector[T]) Set[T](index: i32, val: T) {
-    if (index >= 0 && index < v.size) {
-        v.data.unchecked_set(index, @val)
+    if (index < 0 || index >= v.size) {
+        panic("Index out of bounds in Vector.Set")
     }
+    var _old: T = @v.data.unchecked_get(index)
+    v.data.unchecked_set(index, @val)
 }
 
 [unsafe]
 pub fn (v: &Vector[T]) Remove[T](index: i32) T {
     if (index < 0 || index >= v.size) {
-        io.PrintLn("Error: Index ${index} out of bounds (size ${v.size}) in Set")
+        panic("Index out of bounds in Vector.Remove")
     }
     var val: T = @v.data.unchecked_get(index)
     var i = index
@@ -102,7 +104,7 @@ pub fn (v: &Vector[T]) Remove[T](index: i32) T {
 [unsafe]
 pub fn (v: &Vector[T]) Insert[T](index: i32, val: T) {
     if (index < 0 || index > v.size) {
-        io.PrintLn("Error: Index ${index} out of bounds (size ${v.size})")
+        panic("Index out of bounds in Vector.Insert")
     }
     if (v.size == v.capacity) {
         var new_cap = v.capacity * 2
@@ -122,21 +124,31 @@ pub fn (v: &Vector[T]) Insert[T](index: i32, val: T) {
         v.data.unchecked_set(i, @v.data.unchecked_get(i - 1))
         i = i - 1
     }
-    v.data.unchecked_set(index, val)
+    v.data.unchecked_set(index, @val)
     v.size = v.size + 1
 }
 
 [unsafe]
 pub fn (v: &Vector[T]) Clear[T]() {
+    var i = 0
+    while i < v.size {
+        var _old: T = @v.data.unchecked_get(i)
+        i = i + 1
+    }
     v.size = 0
 }
 
 [unsafe]
 pub fn (v: &Vector[T]) Resize[T](new_size: i32) {
     if (new_size < 0) {
-        io.PrintLn("Error: Resize size cannot be negative")
+        panic("Resize size cannot be negative")
     }
     if (new_size < v.size) {
+        var j = new_size
+        while j < v.size {
+            var _old: T = @v.data.unchecked_get(j)
+            j = j + 1
+        }
         var new_data = alloc T[new_size]
         var i = 0
         while i < new_size {
