@@ -950,8 +950,18 @@ void scheduler_run_loop() {
                 }
             } else if (s == 4) { // TERMINATED
                 void* _wg = info->finish_wg;
-                info->finish_wg = NULL;
                 if (_wg) nr_sync_waitgroup_done(_wg);
+                info->finish_wg = NULL;
+                NR_MUTEX_LOCK(&g_fiber_list_lock);
+                if (info->prev_global) info->prev_global->next_global = info->next_global;
+                if (info->next_global) info->next_global->prev_global = info->prev_global;
+                if (info == g_fibers_head) g_fibers_head = info->next_global;
+
+                info->next_global = g_terminated_fibers_head;
+                info->prev_global = NULL;
+                if (g_terminated_fibers_head) g_terminated_fibers_head->prev_global = info;
+                g_terminated_fibers_head = info;
+                NR_MUTEX_UNLOCK(&g_fiber_list_lock);
             }
         } else {
             if (NR_ATOMIC_LOAD(&g_active_fibers) == 0) break;
@@ -1434,6 +1444,9 @@ void* worker_loop(void* arg) {
                 }
             } else if (s == 4) { // TERMINATED
                 void* _wg = info->finish_wg;
+                if (_wg) {
+                    nr_sync_waitgroup_done(_wg);
+                }
                 info->finish_wg = NULL;
                 NR_MUTEX_LOCK(&g_fiber_list_lock);
                 if (info->prev_global) info->prev_global->next_global = info->next_global;
@@ -1446,9 +1459,6 @@ void* worker_loop(void* arg) {
                 if (g_terminated_fibers_head) g_terminated_fibers_head->prev_global = info;
                 g_terminated_fibers_head = info;
                 NR_MUTEX_UNLOCK(&g_fiber_list_lock);
-                if (_wg) {
-                    nr_sync_waitgroup_done(_wg);
-                }
             }
         } else {
             if (__nora_debug_locked_fiber) {
@@ -1597,6 +1607,9 @@ void scheduler_run_loop() {
                 }
             } else if (s == 4) { // TERMINATED
                 void* _wg = info->finish_wg;
+                if (_wg) {
+                    nr_sync_waitgroup_done(_wg);
+                }
                 info->finish_wg = NULL;
                 NR_MUTEX_LOCK(&g_fiber_list_lock);
                 if (info->prev_global) info->prev_global->next_global = info->next_global;
@@ -1609,9 +1622,6 @@ void scheduler_run_loop() {
                 if (g_terminated_fibers_head) g_terminated_fibers_head->prev_global = info;
                 g_terminated_fibers_head = info;
                 NR_MUTEX_UNLOCK(&g_fiber_list_lock);
-                if (_wg) {
-                    nr_sync_waitgroup_done(_wg);
-                }
             }
         } else {
             if (__nora_debug_locked_fiber) {
