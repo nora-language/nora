@@ -340,6 +340,7 @@ void worker_loop(void* arg) {
                 }
             } else if (s == 4) { // TERMINATED
                 void* _wg = info->finish_wg;
+                if (_wg) nr_sync_waitgroup_done(_wg);
                 info->finish_wg = NULL;
                 if (!info->is_main) {
                     if (info->handle) {
@@ -358,7 +359,6 @@ void worker_loop(void* arg) {
                 if (g_terminated_fibers_head) g_terminated_fibers_head->prev_global = info;
                 g_terminated_fibers_head = info;
                 NR_MUTEX_UNLOCK(&g_fiber_list_lock);
-                if (_wg) nr_sync_waitgroup_done(_wg);
             }
         } else {
             if (__nora_debug_locked_fiber) {
@@ -371,10 +371,13 @@ void worker_loop(void* arg) {
             if (NR_ATOMIC_LOAD(&g_sleeping_workers) == num_workers && NR_ATOMIC_LOAD(&g_active_fibers) > 0) {
                 NR_MUTEX_LOCK(&g_fiber_list_lock);
                 fiber_info_t* curr = g_fibers_head;
-                bool any_runnable = false;
-                while (curr) {
+                bool any_runnable = (NR_ATOMIC_LOAD(&g_sleeping_workers) < num_workers) || (g_queue.count > 0);
+                for (int k = 0; k < num_workers && !any_runnable; k++) {
+                    if (g_pinned_queues[k].count > 0) any_runnable = true;
+                }
+                while (curr && !any_runnable) {
                     long s = NR_ATOMIC_LOAD(&curr->state);
-                    if (s == 0 || s == 1 || s == 2) {
+                    if (s == 0 || s == 1 || s == 2 || curr->finish_wg != NULL || NR_ATOMIC_LOAD(&curr->resume_pending) > 0 || curr->yield_pending) {
                         any_runnable = true;
                         break;
                     }
@@ -382,7 +385,7 @@ void worker_loop(void* arg) {
                 }
                 NR_MUTEX_UNLOCK(&g_fiber_list_lock);
                 
-                if (!any_runnable && NR_ATOMIC_LOAD(&g_net_waiters_count) == 0 && NR_ATOMIC_LOAD(&g_timer_waiters_count) == 0) {
+                if (!any_runnable && NR_ATOMIC_LOAD(&g_sleeping_workers) == num_workers && NR_ATOMIC_LOAD(&g_active_fibers) > 0 && NR_ATOMIC_LOAD(&g_net_waiters_count) == 0 && NR_ATOMIC_LOAD(&g_timer_waiters_count) == 0) {
                     printf("\nFATAL: Deadlock detected! All %ld fibers are blocked.\n", (long)NR_ATOMIC_LOAD(&g_active_fibers));
                     nr_fiber_report();
                     nr_panic("deadlock", "runtime", 0);
@@ -396,6 +399,7 @@ void worker_loop(void* arg) {
                 }
             }
             if (other_pinned_work) {
+                NR_ATOMIC_DEC(&g_sleeping_workers);
                 ReleaseSemaphore(g_worker_sem, 1, NULL);
                 SwitchToThread();
                 continue;
@@ -503,6 +507,7 @@ void scheduler_run_loop() {
                 }
             } else if (s == 4) { // TERMINATED
                 void* _wg = info->finish_wg;
+                if (_wg) nr_sync_waitgroup_done(_wg);
                 info->finish_wg = NULL;
                 if (!info->is_main) {
                     if (info->handle) {
@@ -521,7 +526,6 @@ void scheduler_run_loop() {
                 if (g_terminated_fibers_head) g_terminated_fibers_head->prev_global = info;
                 g_terminated_fibers_head = info;
                 NR_MUTEX_UNLOCK(&g_fiber_list_lock);
-                if (_wg) nr_sync_waitgroup_done(_wg);
             }
         } else {
             if (__nora_debug_locked_fiber) {
@@ -534,10 +538,13 @@ void scheduler_run_loop() {
             if (NR_ATOMIC_LOAD(&g_sleeping_workers) == num_workers && NR_ATOMIC_LOAD(&g_active_fibers) > 0) {
                 NR_MUTEX_LOCK(&g_fiber_list_lock);
                 fiber_info_t* curr = g_fibers_head;
-                bool any_runnable = false;
-                while (curr) {
+                bool any_runnable = (NR_ATOMIC_LOAD(&g_sleeping_workers) < num_workers) || (g_queue.count > 0);
+                for (int k = 0; k < num_workers && !any_runnable; k++) {
+                    if (g_pinned_queues[k].count > 0) any_runnable = true;
+                }
+                while (curr && !any_runnable) {
                     long s = NR_ATOMIC_LOAD(&curr->state);
-                    if (s == 0 || s == 1 || s == 2) {
+                    if (s == 0 || s == 1 || s == 2 || curr->finish_wg != NULL || NR_ATOMIC_LOAD(&curr->resume_pending) > 0 || curr->yield_pending) {
                         any_runnable = true;
                         break;
                     }
@@ -545,7 +552,7 @@ void scheduler_run_loop() {
                 }
                 NR_MUTEX_UNLOCK(&g_fiber_list_lock);
                 
-                if (!any_runnable && NR_ATOMIC_LOAD(&g_net_waiters_count) == 0 && NR_ATOMIC_LOAD(&g_timer_waiters_count) == 0) {
+                if (!any_runnable && NR_ATOMIC_LOAD(&g_sleeping_workers) == num_workers && NR_ATOMIC_LOAD(&g_active_fibers) > 0 && NR_ATOMIC_LOAD(&g_net_waiters_count) == 0 && NR_ATOMIC_LOAD(&g_timer_waiters_count) == 0) {
                     printf("\nFATAL: Deadlock detected! All %ld fibers are blocked.\n", (long)NR_ATOMIC_LOAD(&g_active_fibers));
                     nr_fiber_report();
                     nr_panic("deadlock", "runtime", 0);
@@ -559,6 +566,7 @@ void scheduler_run_loop() {
                 }
             }
             if (other_pinned_work) {
+                NR_ATOMIC_DEC(&g_sleeping_workers);
                 ReleaseSemaphore(g_worker_sem, 1, NULL);
                 SwitchToThread();
                 continue;
@@ -1453,10 +1461,13 @@ void* worker_loop(void* arg) {
             if (NR_ATOMIC_LOAD(&g_sleeping_workers) == num_workers && NR_ATOMIC_LOAD(&g_active_fibers) > 0) {
                 NR_MUTEX_LOCK(&g_fiber_list_lock);
                 fiber_info_t* curr = g_fibers_head;
-                bool any_runnable = false;
-                while (curr) {
+                bool any_runnable = (NR_ATOMIC_LOAD(&g_sleeping_workers) < num_workers) || (g_queue.count > 0);
+                for (int k = 0; k < num_workers && !any_runnable; k++) {
+                    if (g_pinned_queues[k].count > 0) any_runnable = true;
+                }
+                while (curr && !any_runnable) {
                     long s = NR_ATOMIC_LOAD(&curr->state);
-                    if (s == 0 || s == 1 || s == 2) {
+                    if (s == 0 || s == 1 || s == 2 || curr->finish_wg != NULL || NR_ATOMIC_LOAD(&curr->resume_pending) > 0 || curr->yield_pending) {
                         any_runnable = true;
                         break;
                     }
@@ -1464,7 +1475,7 @@ void* worker_loop(void* arg) {
                 }
                 NR_MUTEX_UNLOCK(&g_fiber_list_lock);
                 
-                if (!any_runnable && NR_ATOMIC_LOAD(&g_net_waiters_count) == 0 && NR_ATOMIC_LOAD(&g_timer_waiters_count) == 0) {
+                if (!any_runnable && NR_ATOMIC_LOAD(&g_sleeping_workers) == num_workers && NR_ATOMIC_LOAD(&g_active_fibers) > 0 && NR_ATOMIC_LOAD(&g_net_waiters_count) == 0 && NR_ATOMIC_LOAD(&g_timer_waiters_count) == 0) {
                     printf("\nFATAL: Deadlock detected! All %ld fibers are blocked.\n", (long)NR_ATOMIC_LOAD(&g_active_fibers));
                     nr_fiber_report();
                     nr_panic("deadlock", "runtime", 0);
@@ -1613,10 +1624,13 @@ void scheduler_run_loop() {
             if (NR_ATOMIC_LOAD(&g_sleeping_workers) == num_workers && NR_ATOMIC_LOAD(&g_active_fibers) > 0) {
                 NR_MUTEX_LOCK(&g_fiber_list_lock);
                 fiber_info_t* curr = g_fibers_head;
-                bool any_runnable = false;
-                while (curr) {
+                bool any_runnable = (NR_ATOMIC_LOAD(&g_sleeping_workers) < num_workers) || (g_queue.count > 0);
+                for (int k = 0; k < num_workers && !any_runnable; k++) {
+                    if (g_pinned_queues[k].count > 0) any_runnable = true;
+                }
+                while (curr && !any_runnable) {
                     long s = NR_ATOMIC_LOAD(&curr->state);
-                    if (s == 0 || s == 1 || s == 2) {
+                    if (s == 0 || s == 1 || s == 2 || curr->finish_wg != NULL || NR_ATOMIC_LOAD(&curr->resume_pending) > 0 || curr->yield_pending) {
                         any_runnable = true;
                         break;
                     }
@@ -1624,7 +1638,7 @@ void scheduler_run_loop() {
                 }
                 NR_MUTEX_UNLOCK(&g_fiber_list_lock);
                 
-                if (!any_runnable && NR_ATOMIC_LOAD(&g_net_waiters_count) == 0 && NR_ATOMIC_LOAD(&g_timer_waiters_count) == 0) {
+                if (!any_runnable && NR_ATOMIC_LOAD(&g_sleeping_workers) == num_workers && NR_ATOMIC_LOAD(&g_active_fibers) > 0 && NR_ATOMIC_LOAD(&g_net_waiters_count) == 0 && NR_ATOMIC_LOAD(&g_timer_waiters_count) == 0) {
                     printf("\nFATAL: Deadlock detected! All %ld fibers are blocked. g_net_waiters_count: %d\n", (long)NR_ATOMIC_LOAD(&g_active_fibers), (int)NR_ATOMIC_LOAD(&g_net_waiters_count));
                     nr_fiber_report();
                     nr_panic("deadlock", "runtime", 0);
@@ -1638,6 +1652,7 @@ void scheduler_run_loop() {
                 }
             }
             if (other_pinned_work) {
+                NR_ATOMIC_DEC(&g_sleeping_workers);
                 sem_post(&g_worker_sem);
                 sched_yield();
                 continue;
