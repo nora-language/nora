@@ -327,14 +327,17 @@ void worker_loop(void* arg) {
                 NR_ATOMIC_STORE(&info->state, 3); // PARKED
                 if (info->yield_pending) {
                     resume(info);
-                } else {
-                    while (1) {
-                        long rp = NR_ATOMIC_LOAD(&info->resume_pending);
-                        if (rp <= 0) break;
-                        long new_rp = rp - 1;
-                        if (NR_ATOMIC_CAS(&info->resume_pending, &rp, new_rp)) {
-                            resume(info);
-                            break;
+                } else if (NR_ATOMIC_LOAD(&info->resume_pending) > 0) {
+                    long expected = 3;
+                    if (NR_ATOMIC_CAS(&info->state, &expected, 0)) {
+                        NR_ATOMIC_SUB(&info->resume_pending, 1);
+                        int wid = worker_id;
+                        if (wid >= 0 && wid < num_workers && num_workers > 1) {
+                            if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+                            else deque_push(&g_local_queues[wid], info);
+                        } else {
+                            if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+                            else queue_push(&g_queue, info);
                         }
                     }
                 }
@@ -494,14 +497,17 @@ void scheduler_run_loop() {
                 NR_ATOMIC_STORE(&info->state, 3); // PARKED
                 if (info->yield_pending) {
                     resume(info);
-                } else {
-                    while (1) {
-                        long rp = NR_ATOMIC_LOAD(&info->resume_pending);
-                        if (rp <= 0) break;
-                        long new_rp = rp - 1;
-                        if (NR_ATOMIC_CAS(&info->resume_pending, &rp, new_rp)) {
-                            resume(info);
-                            break;
+                } else if (NR_ATOMIC_LOAD(&info->resume_pending) > 0) {
+                    long expected = 3;
+                    if (NR_ATOMIC_CAS(&info->state, &expected, 0)) {
+                        NR_ATOMIC_SUB(&info->resume_pending, 1);
+                        int wid = worker_id;
+                        if (wid >= 0 && wid < num_workers && num_workers > 1) {
+                            if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+                            else deque_push(&g_local_queues[wid], info);
+                        } else {
+                            if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+                            else queue_push(&g_queue, info);
                         }
                     }
                 }
@@ -662,6 +668,18 @@ void resume(fiber_info_t* info) {
         }
     } else {
         NR_ATOMIC_ADD(&info->resume_pending, 1);
+        expected = 3;
+        if (NR_ATOMIC_CAS(&info->state, &expected, 0)) {
+            NR_ATOMIC_SUB(&info->resume_pending, 1);
+            int id = worker_id;
+            if (id >= 0 && id < num_workers && num_workers > 1 && !is_yield) {
+                if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+                else deque_push(&g_local_queues[id], info);
+            } else {
+                if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+                else queue_push(&g_queue, info);
+            }
+        }
     }
 }
 
@@ -1431,14 +1449,17 @@ void* worker_loop(void* arg) {
                 NR_ATOMIC_STORE(&info->state, 3); // PARKED
                 if (info->yield_pending) {
                     resume(info);
-                } else {
-                    while (1) {
-                        int rp = NR_ATOMIC_LOAD(&info->resume_pending);
-                        if (rp <= 0) break;
-                        int new_rp = rp - 1;
-                        if (NR_ATOMIC_CAS(&info->resume_pending, &rp, new_rp)) {
-                            resume(info);
-                            break;
+                } else if (NR_ATOMIC_LOAD(&info->resume_pending) > 0) {
+                    int expected = 3;
+                    if (NR_ATOMIC_CAS(&info->state, &expected, 0)) {
+                        NR_ATOMIC_SUB(&info->resume_pending, 1);
+                        int wid = worker_id;
+                        if (wid >= 0 && wid < num_workers && num_workers > 1) {
+                            if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+                            else deque_push(&g_local_queues[wid], info);
+                        } else {
+                            if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+                            else queue_push(&g_queue, info);
                         }
                     }
                 }
@@ -1594,14 +1615,17 @@ void scheduler_run_loop() {
                 NR_ATOMIC_STORE(&info->state, 3); // PARKED
                 if (info->yield_pending) {
                     resume(info);
-                } else {
-                    while (1) {
-                        int rp = NR_ATOMIC_LOAD(&info->resume_pending);
-                        if (rp <= 0) break;
-                        int new_rp = rp - 1;
-                        if (NR_ATOMIC_CAS(&info->resume_pending, &rp, new_rp)) {
-                            resume(info);
-                            break;
+                } else if (NR_ATOMIC_LOAD(&info->resume_pending) > 0) {
+                    int expected = 3;
+                    if (NR_ATOMIC_CAS(&info->state, &expected, 0)) {
+                        NR_ATOMIC_SUB(&info->resume_pending, 1);
+                        int wid = worker_id;
+                        if (wid >= 0 && wid < num_workers && num_workers > 1) {
+                            if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+                            else deque_push(&g_local_queues[wid], info);
+                        } else {
+                            if (info->pinned_worker_id >= 0) queue_push(&g_pinned_queues[info->pinned_worker_id], info);
+                            else queue_push(&g_queue, info);
                         }
                     }
                 }

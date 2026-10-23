@@ -428,20 +428,37 @@ int channel_select(select_op_t* ops, int count, bool has_default) {
         NR_ATOMIC_STORE(&state.ref_count, 1);
         fiber_info_t* self = (fiber_info_t*)GetFiberData();
         
+        bool ready_during_register = false;
+        int registered_count = 0;
         for (int i = 0; i < count; i++) {
             channel_t* c = ops[i].chan;
             if (!c) continue;
             NR_MUTEX_LOCK(&c->lock);
             if (ops[i].is_send) {
+                if (c->receivers.head != NULL || c->size < c->capacity) {
+                    NR_MUTEX_UNLOCK(&c->lock);
+                    ready_during_register = true;
+                    break;
+                }
                 waiter_queue_push(&c->senders, self, ops[i].data, &state, i + 1);
             } else {
+                if (c->size > 0 || c->senders.head != NULL || c->closed) {
+                    NR_MUTEX_UNLOCK(&c->lock);
+                    ready_during_register = true;
+                    break;
+                }
                 waiter_queue_push(&c->receivers, self, ops[i].data, &state, i + 1);
             }
             NR_MUTEX_UNLOCK(&c->lock);
+            registered_count = i + 1;
         }
         
-        park();
-        for (int i = 0; i < count; i++) {
+        if (!ready_during_register) {
+            while (NR_ATOMIC_LOAD(&state.value) == 0) {
+                park();
+            }
+        }
+        for (int i = 0; i < registered_count; i++) {
             channel_t* c = ops[i].chan;
             if (!c) continue;
             if (ops[i].is_send) {
@@ -458,6 +475,11 @@ int channel_select(select_op_t* ops, int count, bool has_default) {
             #endif
         }
         int result = NR_ATOMIC_LOAD(&state.value);
-        if (result > 0) return result - 1;
+        if (result > 0) {
+            if (ready_during_register) {
+                park();
+            }
+            return result - 1;
+        }
     }
 }
