@@ -1410,18 +1410,27 @@ func (g *Generator) emitAutoDropMethods() {
 				}
 				if strings.HasPrefix(st.TypeName, "Vector") && st.Fields["data"] != nil && st.Fields["size"] != nil {
 					fType := st.Fields["data"]
-					if pt, isPtr := fType.(*types.PointerType); isPtr && pt.IsArray {
-						elemType := pt.Base
-						if elemType != nil && types.IsOwnedType(elemType) {
-							g.emit("    if (self->data != NULL) {")
-							g.emit("        for (int _i = 0; _i < self->size; _i++) {")
-							elemExpr := fmt.Sprintf("((%s*)array_data(self->data))[_i]", g.cType(elemType))
-							g.emitDrop(elemExpr, elemType, g.isPointerTypeInC(elemType))
-							g.emit("        }")
-							g.emit("    }")
-						}
-						g.emit("    nr_free(self->data);")
+					utField := types.UnwrapLease(fType)
+					if pt, ok := utField.(*types.PointerType); ok && !pt.IsArray {
+						utField = pt.Base
 					}
+					var elemType types.NRType
+					if lt, ok := utField.(*types.ListType); ok {
+						elemType = lt.ElementType
+					} else if pt, ok := utField.(*types.PointerType); ok && pt.IsArray {
+						elemType = pt.Base
+					} else if pt, ok := fType.(*types.PointerType); ok && pt.IsArray {
+						elemType = pt.Base
+					}
+					if elemType != nil && types.IsOwnedType(elemType) {
+						g.emit("    if (self->data != NULL) {")
+						g.emit("        for (int _i = 0; _i < self->size; _i++) {")
+						elemExpr := fmt.Sprintf("((%s*)array_data(self->data))[_i]", g.cType(elemType))
+						g.emitDrop(elemExpr, elemType, g.isPointerTypeInC(elemType))
+						g.emit("        }")
+						g.emit("    }")
+					}
+					g.emit("    nr_free(self->data);")
 				} else {
 					for _, fName := range st.FieldNames {
 						fType := st.Fields[fName]

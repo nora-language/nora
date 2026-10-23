@@ -2634,6 +2634,28 @@ func (sa *SemanticAnalyzer) Analyze(node ast.Node) {
 						break
 					}
 				}
+				if sl, ok := c.Pattern.(*ast.StructLiteral); ok {
+					allIrrefutable := true
+					for _, f := range sl.Fields {
+						if f.Value == nil {
+							continue
+						}
+						if fIdent, isId := f.Value.(*ast.Identifier); isId {
+							if fIdent.Value == "_" {
+								continue
+							}
+							if sym := sa.SemanticInfo.Defs[fIdent]; sym != nil && sym.Kind == SymVar {
+								continue
+							}
+						}
+						allIrrefutable = false
+						break
+					}
+					if allIrrefutable {
+						hasWildcard = true
+						break
+					}
+				}
 				if b, ok := c.Pattern.(*ast.Boolean); ok {
 					if b.Value {
 						hasTrue = true
